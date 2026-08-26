@@ -1,65 +1,176 @@
-# Cetus · 鲸鱼座
+# CETUS · 鲸鱼座
 
-**DeepSeek Harness 的 Windows .NET 桌面壳**：双击即起，无需命令行、无需浏览器标签页、无需自己装 Node。
+**将 DeepSeek Harness 带到 Windows 桌面的原生工作台。**
 
-> 核心哲学：**只做壳，不重做产品**。官方 Web UI、agent 能力、插件生态 100% 复用；我们交付的是"把官方界面装进原生窗口"的那层壳，以及它带来的桌面体验（托盘、单实例、一键启动）。
-> 设计思路、调研与开放问题见 [`PLAN.md`](PLAN.md)。
+CETUS 使用 .NET、WPF 与 WebView2，将 DeepSeek Harness 的官方 Web UI、Agent 能力和插件生态装进一个开箱即用的 Windows 应用。无需命令行，也不必一直保留浏览器标签页；启动、托盘驻留和后台进程回收都由 CETUS 负责。
 
-## 状态
+> CETUS 是独立社区项目，并非 DeepSeek 官方产品。
 
-**M0 骨架 ✅ 已构建并冒烟通过**（.NET 10 版）。技术栈：**.NET 10 + WPF + WebView2**（Node 以 sidecar 子进程形式内嵌运行 `dsh web`）。
+## 面向用户
 
-> 注：仓库历史中保留过一版 .NET 8 实现及其打包管线（便携 zip + Inno 安装程序），2026-08-27 决定统一为 .NET 10 后已移除；打包管线如需可参照历史提交重建。
+### CETUS 能做什么
 
-## 运行前提
+- 双击启动 DeepSeek Harness，无需手动运行 `dsh web`
+- 在独立原生窗口中使用官方 Web UI
+- 关闭窗口后驻留系统托盘，随时重新打开
+- 保证应用单实例运行，避免重复启动多个 Harness
+- 退出 CETUS 时自动回收由它启动的 Node 子进程
+- 完整复用 DeepSeek Harness 的 Agent 能力与插件生态
+
+### 当前状态
+
+CETUS 目前处于早期开发阶段，**M0 桌面骨架与 M2 自包含打包已经完成并通过冒烟测试**。
+
+当前版本已经可以正常启动、加载和退出 DeepSeek Harness，但崩溃自动恢复、代码签名、自动更新、正式图标等能力仍在开发中。现阶段更适合愿意参与测试和反馈的用户，不建议将它视为完全稳定的正式产品。
+
+### 系统要求
+
+- Windows 10 或 Windows 11（x64）
+- WebView2 Runtime（Windows 10/11 通常已经预装）
+
+正式打包版本已内嵌 .NET、Node.js 与 DeepSeek Harness，目标电脑无需另外安装开发环境。
+
+### 安装与使用
+
+安装包与便携版将在 [Releases](https://github.com/AvroraCL/CETUS-Desktop/releases) 中提供：
+
+- `Cetus-Setup-0.1.1.exe`：中文安装向导，按当前用户安装，无需管理员权限
+- `Cetus-0.1.1-win-x64-portable.zip`：解压后直接运行
+
+启动后，CETUS 会自动完成以下流程：
+
+1. 查找已经运行的 DeepSeek Harness 服务。
+2. 如果没有可用服务，启动内嵌的 Node.js 与 DSH Runtime。
+3. 等待服务健康检查通过。
+4. 在桌面窗口中加载 DeepSeek Harness 官方界面。
+
+关闭主窗口时，CETUS 会继续驻留系统托盘。需要彻底退出时，请在托盘菜单中选择“退出”。
+
+### 已知限制
+
+- 当前版本尚未进行代码签名，Windows 可能显示安全提醒。
+- 暂无自动更新通道，新版本需要手动下载。
+- 崩溃自动重启与安全模式仍在开发中。
+- 界面与 Agent 能力主要来自 DeepSeek Harness 上游，部分问题可能随上游版本变化。
+
+### 设计与计划
+
+更完整的设计思路、技术调研与开放问题见 [`PLAN.md`](PLAN.md)。
+
+---
+
+## 面向开发者
+
+### 设计原则
+
+> **只做壳，不重做产品。**
+
+CETUS 复用 DeepSeek Harness 的官方 Web UI、Agent 能力和插件生态，桌面层只负责 Windows 宿主能力：窗口、托盘、单实例、Runtime 定位、进程生命周期、健康检查与打包分发。
+
+### 技术栈
+
+- .NET 10
+- WPF
+- WebView2
+- Node.js sidecar
+- `@deepseek-ai/dsh`
+
+仓库历史中曾保留一版 .NET 8 实现及其打包管线。项目于 2026-08-27 统一迁移到 .NET 10，旧实现随后移除；如有需要，可从历史提交参考便携 zip 与 Inno Setup 管线。
+
+### 开发环境
 
 - Windows 10/11
-- Node.js ≥ 22.19（M0 阶段直接复用本机 dsh；打包阶段再内嵌）
-- 已安装 `@deepseek-ai/dsh`（`npm i -g @deepseek-ai/dsh` 或本机已可用 `dsh web`）
-- .NET 10 SDK（已装于 `%USERPROFILE%\.dotnet`，用户 PATH 已含；新开终端生效）
+- Node.js ≥ 22.19
+- `@deepseek-ai/dsh`
+- .NET 10 SDK
 
-## 运行
+安装 DeepSeek Harness：
+
+```powershell
+npm install --global @deepseek-ai/dsh
+```
+
+运行桌面项目：
 
 ```powershell
 dotnet run --project src/Cetus.Desktop
 ```
 
-或直接运行构建产物：`src\Cetus.Desktop\bin\Debug\net10.0-windows\Cetus.exe`
+也可以直接运行 Debug 构建产物：
 
-预期行为：启动窗口 → 状态行显示"正在启动 DSH 主机…" → 健康检查通过（GET http://127.0.0.1:3080 且含 `id="root"`）→ WebView2 加载 GUI → 关窗进托盘 → 托盘"退出"时回收 node 子进程。
-
-## 目录结构
-
+```text
+src\Cetus.Desktop\bin\Debug\net10.0-windows\Cetus.exe
 ```
+
+### 运行流程
+
+预期行为：
+
+1. 启动窗口，状态行显示“正在启动 DSH 主机…”。
+2. CETUS 对 `http://127.0.0.1:3080` 发起健康检查，并确认页面包含 `id="root"`。
+3. 健康检查通过后，WebView2 加载 DeepSeek Harness GUI。
+4. 关闭窗口后应用进入系统托盘。
+5. 从托盘退出时，CETUS 回收由它创建的 Node 子进程。
+
+### 目录结构
+
+```text
 src/Cetus.Desktop/
 ├── App.xaml(.cs)           # 单实例互斥（Mutex）
-├── MainWindow.xaml(.cs)    # 窗口 + WebView2（显式用户数据目录）+ 托盘
+├── MainWindow.xaml(.cs)    # 窗口、WebView2 用户数据目录与托盘
 └── Hosting/
-    ├── DshLocator.cs       # 运行时定位：打包内 runtime → env 覆盖 → PATH → npm 全局 → dsh shim
-    └── DshHost.cs          # 拉起/健康检查/端口占用观察/退出回收；sidecar 日志落盘
+    ├── DshLocator.cs       # Runtime 定位：内嵌 → 环境变量 → PATH → npm 全局 → dsh shim
+    └── DshHost.cs          # 启动、健康检查、端口观察、退出回收与 sidecar 日志
 ```
 
-## 打包（M2）
+### 构建与打包
 
-一键发布：`scripts\publish.ps1`（.NET 10 SDK + npm，需网络）。产物（`dist\`）：
+运行一键发布脚本：
 
-- `app\` — 自包含运行目录（目标机无需 .NET/Node），内嵌钉版本 `runtime\node.exe`（v24.14.0）+ `runtime\dsh\`（`@deepseek-ai/dsh@0.1.0-rc.6`，`--omit=dev`）；版本清单 `runtime\VERSIONS.txt`
-- `Cetus-0.1.1-win-x64-portable.zip` — 便携包
-- `Cetus-Setup-0.1.1.exe` — Inno 安装程序（中文向导，按用户安装 `%LOCALAPPDATA%\Cetus`，无需管理员；安装前自动关闭运行中的 Cetus 及其残留 node；卸载零残留——WebView2 数据在 `%LOCALAPPDATA%\Cetus\WebView2`；版本信息：文件版本 0.0.1.1 / 产品名称 CETUS鲸鱼座 / 产品版本 0.1.1 / 版权 AvroraCL）
+```powershell
+scripts\publish.ps1
+```
 
-运行验证场景：
+脚本需要 .NET 10 SDK、npm 与网络连接。构建产物位于 `dist\`：
 
-| 场景 | 做法 | 预期 |
+- `app\`：自包含运行目录，目标电脑无需安装 .NET 或 Node.js
+- `Cetus-0.1.1-win-x64-portable.zip`：便携版
+- `Cetus-Setup-0.1.1.exe`：Inno Setup 安装程序
+
+当前 Runtime 固定版本：
+
+- Node.js `v24.14.0`
+- `@deepseek-ai/dsh@0.1.0-rc.6`（`--omit=dev`）
+
+具体版本记录在 `runtime\VERSIONS.txt`。安装程序默认安装到 `%LOCALAPPDATA%\Cetus`，WebView2 数据位于 `%LOCALAPPDATA%\Cetus\WebView2`；卸载时会一并清理。安装前会自动关闭正在运行的 CETUS 及其残留 Node 进程。
+
+版本信息：
+
+- 文件版本：`0.0.1.1`
+- 产品名称：`CETUS鲸鱼座`
+- 产品版本：`0.1.1`
+- 版权：`AvroraCL`
+
+### 验证场景
+
+| 场景 | 操作 | 预期结果 |
 |---|---|---|
-| 复用路径 | 已有健康 dsh（如 3080）再启动 | 直接加载，不 spawn node |
-| 拉起路径 | 无 3080 服务 | 隐藏拉起打包内 node，加载 UI；托盘"退出"回收 node 树 |
-| 隔离测试 | `$env:CETUS_PORT=3084; $env:DSH_HOME="F:\Cetus\.test-home"` | 独立端口/数据目录，不影响实机 |
+| 复用已有服务 | 保持健康的 DSH 服务运行（如端口 3080），再启动 CETUS | 直接加载已有服务，不创建 Node 子进程 |
+| 自动启动服务 | 确保端口 3080 没有 DSH 服务，再启动 CETUS | 使用内嵌 Node.js 启动 DSH；托盘退出后回收进程树 |
+| 隔离测试 | `$env:CETUS_PORT=3084; $env:DSH_HOME="F:\Cetus\.test-home"` | 使用独立端口与数据目录，不影响本机现有环境 |
 
-日志：sidecar → `%LOCALAPPDATA%\Cetus\logs\dsh-*.log`；壳层崩溃 → `cetus-crash.log`。
+日志位置：
 
-## 里程碑
+- DSH sidecar：`%LOCALAPPDATA%\Cetus\logs\dsh-*.log`
+- CETUS 壳层崩溃：`cetus-crash.log`
 
-- [x] M0 骨架：WPF + WebView2 + dsh 进程生命周期（构建通过 + 冒烟通过）
-- [x] M2 打包：自包含发布 + 内嵌钉版本 node/dsh + 便携 zip + Inno 安装程序
+### 开发里程碑
+
+- [x] M0：WPF + WebView2 + DSH 进程生命周期，构建与冒烟测试通过
+- [x] M2：自包含发布 + 内嵌固定版本 Node/DSH + 便携 zip + Inno 安装程序
 - [ ] M1：崩溃自动重启、皮肤引导安装、Job Object 加固
 - [ ] M2 余项：代码签名、更新通道、图标资源
+
+### 参与开发
+
+欢迎通过 Issue 提交问题、建议与复现步骤。准备贡献代码前，建议先阅读 [`PLAN.md`](PLAN.md)，确认改动与 CETUS 当前的桌面壳定位一致。
