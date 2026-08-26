@@ -174,7 +174,7 @@ Cetus.exe（WPF 主进程）
 
 - [ ] GitHub 组织名 / npm 包名 / 域名 占用核查（cetus / cetus-desktop / whalecetus 等）
 - [ ] **项目性质终选（2026-08 热度调研后新增）**：桌面壳品类社区热度极低（Tauri2 项目 2–16 stars）——定调三选一：① 个人练手/自用（Cetus 照做，限 M0–M1 规模，不期待用户）；② 产品化（以"鲸鱼娘品牌桌面体验"为卖点做精，壳技术栈无所谓）；③ 不造壳（浏览器 + 皮肤已是 1.7k stars 的选择）。**当前按 ① 推进：M0 骨架先行，规模受限**
-- [x] **壳技术栈终选：.NET 8 + WPF + WebView2**（2026-08-26 决策：目标仅 Windows + 实现交 AI Agent + 鲸鱼启动器 C# 进程管理代码可直接复用 + .NET 桌面壳社区空白）
+- [x] **壳技术栈终选：.NET 10 + WPF + WebView2**（2026-08-26 初选 .NET 8，2026-08-27 终选 .NET 10：实现已完成并冒烟通过；目标仅 Windows + 实现交 AI Agent + 鲸鱼启动器 C# 进程管理代码可直接复用 + .NET 桌面壳社区空白）
 - [ ] **壳技术栈终选：.NET + WebView2（原案） vs Tauri 2（社区已验证） vs 直接使用社区 Tauri/Electron 成品**——若选 .NET 需明确差异化点（Windows 系统集成 / 鲸鱼娘品牌 / C# 生态）；若选 Tauri 2 则参考 dsh-desktop/dsh-desk 直接改造
 - [ ] WPF vs WinUI 3 最终确认（默认 WPF；仅当终选 .NET 时适用）
 - [ ] 独立数据目录（`--home`）策略与迁移指引
