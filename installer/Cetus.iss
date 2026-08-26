@@ -25,6 +25,7 @@ Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayIcon={app}\Cetus.exe
+SetupIconFile=..\src\Cetus.Desktop\Assets\cetus.ico
 CloseApplications=no
 RestartApplications=no
 

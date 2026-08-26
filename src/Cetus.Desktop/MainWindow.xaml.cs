@@ -84,9 +84,10 @@ public partial class MainWindow : Window
 
     private void SetupTray()
     {
+        // Use the brand icon embedded in the exe (ApplicationIcon) for the tray.
         _tray = new NotifyIcon
         {
-            Icon = SystemIcons.Application,
+            Icon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath),
             Text = "Cetus · 鲸鱼座",
             Visible = true,
         };

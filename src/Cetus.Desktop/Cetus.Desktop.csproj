@@ -9,6 +9,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>Cetus</AssemblyName>
     <RootNamespace>Cetus</RootNamespace>
+    <ApplicationIcon>Assets\cetus.ico</ApplicationIcon>
     <Version>0.1.0</Version>
     <Product>Cetus</Product>
     <Description>DeepSeek Harness Windows desktop shell</Description>
