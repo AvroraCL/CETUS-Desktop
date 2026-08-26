@@ -1,8 +1,10 @@
 using System.ComponentModel;
 using System.Drawing;
+using System.IO;
 using System.Windows;
 using System.Windows.Forms;
 using Cetus.Hosting;
+using Microsoft.Web.WebView2.Core;
 using WpfMessageBox = System.Windows.MessageBox;
 
 namespace Cetus;
@@ -13,7 +15,22 @@ namespace Cetus;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private const string DshUrl = "http://127.0.0.1:3080/";
+    // Default 3080; override with CETUS_PORT (used when 3080 is occupied by
+    // another service, and by packaging tests).
+    private static string DshUrl
+    {
+        get
+        {
+            string? port = Environment.GetEnvironmentVariable("CETUS_PORT");
+            if (port is { Length: > 0 }
+                && int.TryParse(port, out int parsed)
+                && parsed is > 0 and <= 65535)
+            {
+                return $"http://127.0.0.1:{parsed}/";
+            }
+            return "http://127.0.0.1:3080/";
+        }
+    }
 
     private readonly DshHost _host;
     private NotifyIcon? _tray;
@@ -38,7 +55,14 @@ public partial class MainWindow : Window
             await _host.StartAsync();
 
             StatusText.Text = "正在加载界面…";
-            await Browser.EnsureCoreWebView2Async();
+            // Explicit user data folder: WebView2's default (next to the exe)
+            // would pollute the install directory and survive uninstall.
+            string userDataFolder = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Cetus", "WebView2");
+            var environment = await CoreWebView2Environment.CreateAsync(
+                browserExecutableFolder: null, userDataFolder: userDataFolder);
+            await Browser.EnsureCoreWebView2Async(environment);
             Browser.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
             Browser.CoreWebView2.Settings.IsStatusBarEnabled = false;
             Browser.CoreWebView2.Navigate(DshUrl);

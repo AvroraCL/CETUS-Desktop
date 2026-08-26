@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.NetworkInformation;
@@ -23,6 +24,8 @@ public sealed class DshHost
     private readonly string _url;
     private readonly HttpClient _client;
     private Process? _process;
+    private FileStream? _logStream;
+    private string? _logPath;
 
     public DshHost(DshCommand command, string url)
     {
@@ -30,6 +33,9 @@ public sealed class DshHost
         _url = url;
         _client = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
     }
+
+    /// <summary>Sidecar log file (<c>%LOCALAPPDATA%\Cetus\logs\dsh-*.log</c>), when we spawned it.</summary>
+    public string? LogPath => _logPath;
 
     public async Task StartAsync(CancellationToken ct = default)
     {
@@ -59,17 +65,25 @@ public sealed class DshHost
         _process = StartHostProcess();
 
         DateTime readyDeadline = DateTime.UtcNow.AddSeconds(ReadyWaitSeconds);
-        while (DateTime.UtcNow < readyDeadline && !_process.HasExited)
+        while (DateTime.UtcNow < readyDeadline)
         {
             ct.ThrowIfCancellationRequested();
             if (await IsHealthyAsync(ct))
             {
                 return;
             }
+            if (_process.HasExited)
+            {
+                throw new InvalidOperationException(
+                    $"DSH 主机提前退出（exit code {_process.ExitCode}）。" +
+                    (_logPath is not null ? $"日志：{_logPath}" : ""));
+            }
             await Task.Delay(PollIntervalMs, ct);
         }
 
-        throw new InvalidOperationException("DSH 主机在 60 秒内未能就绪。");
+        throw new InvalidOperationException(
+            "DSH 主机在 60 秒内未能就绪。" +
+            (_logPath is not null ? $"日志：{_logPath}" : ""));
     }
 
     public void Stop()
@@ -88,6 +102,8 @@ public sealed class DshHost
         }
         _process?.Dispose();
         _process = null;
+        _logStream?.Dispose();   // pumps end on EOF or ObjectDisposedException
+        _logStream = null;
     }
 
     /// <summary>
@@ -139,9 +155,67 @@ public sealed class DshHost
             psi.FileName = _command.NodeExe!;
             psi.ArgumentList.Add(_command.EntryScript!);
             psi.ArgumentList.Add("web");
+            psi.ArgumentList.Add("--no-open");   // the shell IS the UI; don't open the default browser
+            int port = new Uri(_url).Port;
+            if (port != 3080)
+            {
+                // dsh web binds the composed default port; pass --port when overridden.
+                psi.ArgumentList.Add("--port");
+                psi.ArgumentList.Add(port.ToString());
+            }
+            RedirectToLog(psi);
         }
 
-        return Process.Start(psi)
-            ?? throw new InvalidOperationException("无法启动 DSH 主机进程。");
+        Process process;
+        try
+        {
+            process = Process.Start(psi)
+                ?? throw new InvalidOperationException("无法启动 DSH 主机进程。");
+        }
+        catch
+        {
+            _logStream?.Dispose();
+            _logStream = null;
+            _logPath = null;
+            throw;
+        }
+
+        if (_logStream is not null)
+        {
+            // Drain the redirected pipes into the log file so node can never
+            // block on a full buffer.
+            _ = PumpAsync(process.StandardOutput.BaseStream, _logStream);
+            _ = PumpAsync(process.StandardError.BaseStream, _logStream);
+        }
+        return process;
+    }
+
+    /// <summary>Sidecar stdout/stderr → %LOCALAPPDATA%\Cetus\logs\dsh-*.log.</summary>
+    private void RedirectToLog(ProcessStartInfo psi)
+    {
+        _logPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Cetus", "logs", $"dsh-{DateTime.Now:yyyyMMdd-HHmmss}.log");
+        Directory.CreateDirectory(Path.GetDirectoryName(_logPath)!);
+        _logStream = new FileStream(_logPath, FileMode.Create, FileAccess.Write, FileShare.Read);
+        psi.RedirectStandardOutput = true;
+        psi.RedirectStandardError = true;
+    }
+
+    private static async Task PumpAsync(Stream source, Stream sink)
+    {
+        try
+        {
+            byte[] buffer = new byte[81920];
+            int read;
+            while ((read = await source.ReadAsync(buffer)) > 0)
+            {
+                await sink.WriteAsync(buffer.AsMemory(0, read));
+                await sink.FlushAsync();
+            }
+        }
+        catch (IOException) { }
+        catch (ObjectDisposedException) { }
+        catch (OperationCanceledException) { }
     }
 }

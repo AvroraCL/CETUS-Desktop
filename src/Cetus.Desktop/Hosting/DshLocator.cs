@@ -12,10 +12,11 @@ public sealed record DshCommand(string? NodeExe, string? EntryScript, bool UseSh
 
 /// <summary>
 /// Locates node.exe and the dsh entry script. Probe order:
-/// 1. <c>CETUS_NODE_EXE</c> / <c>CETUS_DSH_ENTRY</c> environment overrides;
-/// 2. PATH scan for node.exe;
-/// 3. npm global layout (<c>%APPDATA%\npm\node_modules\@deepseek-ai\dsh\lib\bin.js</c>);
-/// 4. fallback: <c>dsh</c> shim on PATH, invoked through cmd.
+/// 1. bundled with the package (<c>runtime\node.exe</c> + <c>runtime\dsh\…\lib\bin.js</c>);
+/// 2. <c>CETUS_NODE_EXE</c> / <c>CETUS_DSH_ENTRY</c> environment overrides;
+/// 3. PATH scan for node.exe;
+/// 4. npm global layout (<c>%APPDATA%\npm\node_modules\@deepseek-ai\dsh\lib\bin.js</c>);
+/// 5. fallback: <c>dsh</c> shim on PATH, invoked through cmd.
 /// </summary>
 public static class DshLocator
 {
@@ -24,6 +25,17 @@ public static class DshLocator
 
     public static DshCommand Resolve()
     {
+        // 1) Bundled runtime (packaged builds): node.exe + dsh pinned next to the exe.
+        //    Layout: runtime\node.exe + runtime\dsh\node_modules\@deepseek-ai\dsh\lib\bin.js
+        string appDir = AppContext.BaseDirectory;
+        string bundledNode = Path.Combine(appDir, "runtime", "node.exe");
+        string bundledEntry = Path.Combine(appDir, "runtime", "dsh", DefaultEntry);
+        if (File.Exists(bundledNode) && File.Exists(bundledEntry))
+        {
+            return new DshCommand(bundledNode, bundledEntry, UseShim: false);
+        }
+
+        // 2) Environment overrides.
         string? nodeExe = Environment.GetEnvironmentVariable("CETUS_NODE_EXE");
         nodeExe ??= FindOnPath("node.exe");
 

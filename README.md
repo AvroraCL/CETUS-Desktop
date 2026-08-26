@@ -33,14 +33,33 @@ dotnet run --project src/Cetus.Desktop
 ```
 src/Cetus.Desktop/
 ├── App.xaml(.cs)           # 单实例互斥（Mutex）
-├── MainWindow.xaml(.cs)    # 窗口 + WebView2 + 托盘
+├── MainWindow.xaml(.cs)    # 窗口 + WebView2（显式用户数据目录）+ 托盘
 └── Hosting/
-    ├── DshLocator.cs       # 定位 node.exe 与 dsh 入口（env 覆盖 → PATH 扫描 → npm 全局探测）
-    └── DshHost.cs          # 拉起/健康检查/端口占用观察/退出回收
+    ├── DshLocator.cs       # 运行时定位：打包内 runtime → env 覆盖 → PATH → npm 全局 → dsh shim
+    └── DshHost.cs          # 拉起/健康检查/端口占用观察/退出回收；sidecar 日志落盘
 ```
+
+## 打包（M2）
+
+一键发布：`scripts\publish.ps1`（.NET 10 SDK + npm，需网络）。产物（`dist\`）：
+
+- `app\` — 自包含运行目录（目标机无需 .NET/Node），内嵌钉版本 `runtime\node.exe`（v24.14.0）+ `runtime\dsh\`（`@deepseek-ai/dsh@0.1.0-rc.6`，`--omit=dev`）；版本清单 `runtime\VERSIONS.txt`
+- `Cetus-0.1.0-win-x64-portable.zip` — 便携包
+- `Cetus-Setup-0.1.0.exe` — Inno 安装程序（中文向导，按用户安装 `%LOCALAPPDATA%\Cetus`，无需管理员；安装前自动关闭运行中的 Cetus 及其残留 node；卸载零残留——WebView2 数据在 `%LOCALAPPDATA%\Cetus\WebView2`）
+
+运行验证场景：
+
+| 场景 | 做法 | 预期 |
+|---|---|---|
+| 复用路径 | 已有健康 dsh（如 3080）再启动 | 直接加载，不 spawn node |
+| 拉起路径 | 无 3080 服务 | 隐藏拉起打包内 node，加载 UI；托盘"退出"回收 node 树 |
+| 隔离测试 | `$env:CETUS_PORT=3084; $env:DSH_HOME="F:\Cetus\.test-home"` | 独立端口/数据目录，不影响实机 |
+
+日志：sidecar → `%LOCALAPPDATA%\Cetus\logs\dsh-*.log`；壳层崩溃 → `cetus-crash.log`。
 
 ## 里程碑
 
 - [x] M0 骨架：WPF + WebView2 + dsh 进程生命周期（构建通过 + 冒烟通过）
-- [ ] M1：托盘完善、崩溃自动重启、皮肤引导安装
-- [ ] M2：内嵌 Node 打包、安装器、签名
+- [x] M2 打包：自包含发布 + 内嵌钉版本 node/dsh + 便携 zip + Inno 安装程序
+- [ ] M1：崩溃自动重启、皮肤引导安装、Job Object 加固
+- [ ] M2 余项：代码签名、更新通道、图标资源
