@@ -1,20 +1,20 @@
-; Cetus installer script — Inno Setup 6 (NET 10 build)
-; Compile: ISCC.exe Cetus.iss /DVersion=0.1.0
+﻿; Cetus installer script — Inno Setup 6 (NET 10 build)
+; Compile: ISCC.exe Cetus.iss /DVersion=0.1.1
 ; Save as UTF-8 with BOM (Inno requirement for non-ASCII text).
 
 #ifndef Version
-  #define Version "0.1.0"
+  #define Version "0.1.1"
 #endif
 
 [Setup]
 AppId={{588C7C05-5114-479B-90D3-0FB5829FB0EF}
-AppName=Cetus 鲸鱼座
+AppName=CETUS鲸鱼座
 AppVersion={#Version}
-AppVerName=Cetus 鲸鱼座 {#Version}
-AppPublisher=Cetus
+AppVerName=CETUS鲸鱼座 {#Version}
+AppPublisher=AvroraCL
 AppComments=DeepSeek Harness Windows 桌面壳
 DefaultDirName={localappdata}\Cetus
-DefaultGroupName=Cetus 鲸鱼座
+DefaultGroupName=CETUS鲸鱼座
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
@@ -28,6 +28,10 @@ UninstallDisplayIcon={app}\Cetus.exe
 SetupIconFile=..\src\Cetus.Desktop\Assets\cetus.ico
 CloseApplications=no
 RestartApplications=no
+VersionInfoVersion=0.0.1.1
+VersionInfoProductName=CETUS鲸鱼座
+VersionInfoProductVersion=0.1.1
+VersionInfoCopyright=AvroraCL
 
 [Languages]
 Name: "chs"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"

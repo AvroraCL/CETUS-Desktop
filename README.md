@@ -44,8 +44,8 @@ src/Cetus.Desktop/
 一键发布：`scripts\publish.ps1`（.NET 10 SDK + npm，需网络）。产物（`dist\`）：
 
 - `app\` — 自包含运行目录（目标机无需 .NET/Node），内嵌钉版本 `runtime\node.exe`（v24.14.0）+ `runtime\dsh\`（`@deepseek-ai/dsh@0.1.0-rc.6`，`--omit=dev`）；版本清单 `runtime\VERSIONS.txt`
-- `Cetus-0.1.0-win-x64-portable.zip` — 便携包
-- `Cetus-Setup-0.1.0.exe` — Inno 安装程序（中文向导，按用户安装 `%LOCALAPPDATA%\Cetus`，无需管理员；安装前自动关闭运行中的 Cetus 及其残留 node；卸载零残留——WebView2 数据在 `%LOCALAPPDATA%\Cetus\WebView2`）
+- `Cetus-0.1.1-win-x64-portable.zip` — 便携包
+- `Cetus-Setup-0.1.1.exe` — Inno 安装程序（中文向导，按用户安装 `%LOCALAPPDATA%\Cetus`，无需管理员；安装前自动关闭运行中的 Cetus 及其残留 node；卸载零残留——WebView2 数据在 `%LOCALAPPDATA%\Cetus\WebView2`；版本信息：文件版本 0.0.1.1 / 产品名称 CETUS鲸鱼座 / 产品版本 0.1.1 / 版权 AvroraCL）
 
 运行验证场景：
 
