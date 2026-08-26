@@ -14,15 +14,20 @@
 param(
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64",
-    [string]$Version = "0.1.1"
+    [string]$Version = "0.1.5"
 )
 
 $ErrorActionPreference = "Stop"
 
+if ($Version -notmatch '^\d+\.\d+\.\d+$') {
+    throw "Version must use the semantic major.minor.patch form (for example, 0.1.5)."
+}
+$fileVersion = "0.$Version"
+
 $root       = Split-Path -Parent $PSScriptRoot          # F:\Cetus
 $src        = Join-Path $root "src\Cetus.Desktop"
 $dist       = Join-Path $root "dist"
-$appDir     = Join-Path $dist "app"
+$appDir     = Join-Path $dist "app-$Version"
 $runtimeDir = Join-Path $dist "runtime"
 
 # Version pins — bump deliberately, and re-verify the app against them.
@@ -35,8 +40,11 @@ if (-not (Test-Path $dotnet)) { $dotnet = Join-Path $env:LOCALAPPDATA "Microsoft
 if (-not (Test-Path $dotnet)) { $dotnet = "dotnet" }
 
 Write-Host "==> [1/6] publish (self-contained, $Runtime, $Configuration)"
-Remove-Item $appDir -Recurse -Force -ErrorAction SilentlyContinue   # idempotent output
-& $dotnet publish $src -c $Configuration -r $Runtime --self-contained true -o $appDir -v q
+if (Test-Path $appDir) {
+    throw "Release app directory already exists: $appDir. Bump Version instead of replacing an existing release."
+}
+& $dotnet publish $src -c $Configuration -r $Runtime --self-contained true -o $appDir -v q `
+    "-p:Version=$Version" "-p:FileVersion=$fileVersion"
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
 
 Write-Host "==> [2/6] bundle node.exe ($nodeVersion)"
@@ -83,17 +91,24 @@ Copy-Item (Join-Path $runtimeDir "dsh") (Join-Path $appDir "runtime\dsh") -Recur
 
 Write-Host "==> [5/6] zip"
 $zip = Join-Path $dist "Cetus-$Version-$Runtime-portable.zip"
-Remove-Item $zip -ErrorAction SilentlyContinue
+if (Test-Path $zip) {
+    throw "Portable release already exists: $zip. Bump Version instead of replacing an existing release."
+}
 Compress-Archive -Path (Join-Path $appDir "*") -DestinationPath $zip -CompressionLevel Optimal
 
 Write-Host "==> [6/6] installer (Inno Setup)"
+$setupExe = Join-Path $dist "Cetus-Setup-$Version.exe"
 $iscc = $env:CETUS_ISCC
 if (-not $iscc -or -not (Test-Path $iscc)) {
     $iscc = Join-Path $root "tools\innosetup\ISCC.exe"   # portable extract
     if (-not (Test-Path $iscc)) { $iscc = "" }
 }
 if ($iscc) {
-    & $iscc (Join-Path $root "installer\Cetus.iss") /DVersion=$Version
+    if (Test-Path $setupExe) {
+        throw "Installer release already exists: $setupExe. Bump Version instead of replacing an existing release."
+    }
+    & $iscc (Join-Path $root "installer\Cetus.iss") "/DVersion=$Version" `
+        "/DFileVersion=$fileVersion" "/DAppSourceDir=$appDir"
     if ($LASTEXITCODE -ne 0) { throw "ISCC compile failed" }
 } else {
     Write-Host "      ISCC not found — installer skipped (set CETUS_ISCC to enable)"
@@ -105,7 +120,6 @@ Write-Host ""
 Write-Host "DONE"
 Write-Host "  app dir : $appDir   ($appSize MB)"
 Write-Host "  zip     : $zip   ($zipSize MB)"
-$setupExe = Join-Path $dist "Cetus-Setup-$Version.exe"
 if (Test-Path $setupExe) {
     $setupSize = [math]::Round((Get-Item $setupExe).Length / 1MB, 1)
     Write-Host "  setup   : $setupExe   ($setupSize MB)"

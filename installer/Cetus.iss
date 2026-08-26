@@ -1,9 +1,15 @@
-﻿; Cetus installer script — Inno Setup 6 (NET 10 build)
-; Compile: ISCC.exe Cetus.iss /DVersion=0.1.1
+; Cetus installer script — Inno Setup 6 (NET 10 build)
+; Compile: ISCC.exe Cetus.iss /DVersion=0.1.5 /DFileVersion=0.0.1.5
 ; Save as UTF-8 with BOM (Inno requirement for non-ASCII text).
 
 #ifndef Version
-  #define Version "0.1.1"
+  #define Version "0.1.5"
+#endif
+#ifndef FileVersion
+  #define FileVersion "0.0.1.5"
+#endif
+#ifndef AppSourceDir
+  #define AppSourceDir "..\dist\app"
 #endif
 
 [Setup]
@@ -28,9 +34,9 @@ UninstallDisplayIcon={app}\Cetus.exe
 SetupIconFile=..\src\Cetus.Desktop\Assets\cetus.ico
 CloseApplications=no
 RestartApplications=no
-VersionInfoVersion=0.0.1.1
+VersionInfoVersion={#FileVersion}
 VersionInfoProductName=CETUS鲸鱼座
-VersionInfoProductVersion=0.1.1
+VersionInfoProductVersion={#Version}
 VersionInfoCopyright=AvroraCL
 
 [Languages]
@@ -40,7 +46,7 @@ Name: "chs"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加任务："
 
 [Files]
-Source: "..\dist\app\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "*.pdb"
+Source: "{#AppSourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "*.pdb"
 
 [Icons]
 Name: "{userprograms}\Cetus 鲸鱼座"; Filename: "{app}\Cetus.exe"; WorkingDir: "{app}"

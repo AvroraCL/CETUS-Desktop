@@ -3,9 +3,12 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Forms;
 using System.Windows.Interop;
+using System.Windows.Media;
+using Microsoft.Win32;
 using Cetus.Configuration;
 using Cetus.Hosting;
 using Microsoft.Web.WebView2.Core;
@@ -35,6 +38,7 @@ public partial class MainWindow : Window
     private bool _isStarting;
     private bool _isExiting;
     private bool _navigationPolicyAttached;
+    private bool _themeBridgeAttached;
     private int _automaticRestartAttempts;
     private DateTime _lastDshReadyAt;
     private CancellationTokenSource? _startupCancellation;
@@ -44,6 +48,7 @@ public partial class MainWindow : Window
     {
         _settings = CetusSettings.LoadDefault();
         InitializeComponent();
+        ApplyWindowTheme(IsSystemDarkMode());
     }
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
@@ -109,6 +114,7 @@ public partial class MainWindow : Window
             Browser.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
             Browser.CoreWebView2.Settings.IsStatusBarEnabled = false;
             AttachNavigationPolicy();
+            await AttachThemeBridgeAsync();
             Browser.CoreWebView2.Navigate(DshUrl);
 
             Browser.Visibility = Visibility.Visible;
@@ -170,6 +176,113 @@ public partial class MainWindow : Window
         _recoveryCancellation = null;
         cancellation?.Cancel();
     }
+
+    private static readonly string ThemeBridgeScript = """
+        (() => {
+          const source = 'cetus-window';
+          const report = () => {
+            const root = document.documentElement;
+            if (!root || !window.chrome || !window.chrome.webview) return;
+            const classes = [
+              root.className,
+              root.getAttribute('data-theme'),
+              document.body && document.body.className,
+              document.body && document.body.getAttribute('data-theme')
+            ].filter(Boolean).join(' ').toLowerCase();
+            const scheme = getComputedStyle(root).colorScheme.toLowerCase();
+            const dark = /(^|[^a-z])(dark|night)(?=$|[^a-z])/.test(classes)
+              || (!/(^|[^a-z])(light|day)(?=$|[^a-z])/.test(classes)
+                  && (scheme.includes('dark') || window.matchMedia('(prefers-color-scheme: dark)').matches));
+            window.chrome.webview.postMessage({ source, type: 'theme', mode: dark ? 'dark' : 'light' });
+          };
+          const install = () => {
+            const root = document.documentElement;
+            if (!root) return;
+            const observer = new MutationObserver(report);
+            observer.observe(root, { attributes: true, attributeFilter: ['class', 'data-theme', 'style'] });
+            if (document.body) {
+              observer.observe(document.body, { attributes: true, attributeFilter: ['class', 'data-theme', 'style'] });
+            }
+            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', report);
+            report();
+          };
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', install, { once: true });
+          } else {
+            install();
+          }
+        })();
+        """;
+
+    private async Task AttachThemeBridgeAsync()
+    {
+        if (_themeBridgeAttached)
+        {
+            return;
+        }
+
+        Browser.CoreWebView2.Settings.IsWebMessageEnabled = true;
+        Browser.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
+        await Browser.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ThemeBridgeScript);
+        _themeBridgeAttached = true;
+    }
+
+    private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        try
+        {
+            using JsonDocument message = JsonDocument.Parse(e.WebMessageAsJson);
+            JsonElement root = message.RootElement;
+            if (!root.TryGetProperty("source", out JsonElement source)
+                || source.GetString() != "cetus-window"
+                || !root.TryGetProperty("type", out JsonElement type)
+                || type.GetString() != "theme"
+                || !root.TryGetProperty("mode", out JsonElement mode))
+            {
+                return;
+            }
+
+            ApplyWindowTheme(mode.GetString() == "dark");
+        }
+        catch (JsonException)
+        {
+            // Ignore messages not emitted by Cetus's document-created bridge.
+        }
+    }
+
+    private static bool IsSystemDarkMode()
+    {
+        try
+        {
+            object? value = Registry.GetValue(
+                @"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+                "AppsUseLightTheme", 1);
+            return value is int mode && mode == 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void ApplyWindowTheme(bool isDark)
+    {
+        System.Windows.Media.Brush background = CreateBrush(isDark ? "#151517" : "#F8FAFC");
+        System.Windows.Media.Brush foreground = CreateBrush(isDark ? "#E5E7EB" : "#253041");
+        System.Windows.Media.Brush statusForeground = CreateBrush(isDark ? "#AAB7CC" : "#52627A");
+
+        WindowFrame.Background = background;
+        TitleBar.Background = background;
+        TitleText.Foreground = foreground;
+        MinimizeButton.Foreground = foreground;
+        MaximizeButton.Foreground = foreground;
+        RestoreButton.Foreground = foreground;
+        CloseButton.Foreground = foreground;
+        StatusText.Foreground = statusForeground;
+    }
+
+    private static System.Windows.Media.Brush CreateBrush(string color) =>
+        new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(color));
 
     /// <summary>
     /// Keep the embedded browser on Cetus's loopback DSH origin. Top-level

@@ -34,8 +34,8 @@ CETUS 目前处于早期开发阶段，**M0 桌面骨架与 M2 自包含打包�
 
 安装包与便携版将在 [Releases](https://github.com/AvroraCL/CETUS-Desktop/releases) 中提供：
 
-- `Cetus-Setup-0.1.1.exe`：中文安装向导，按当前用户安装，无需管理员权限
-- `Cetus-0.1.1-win-x64-portable.zip`：解压后直接运行
+- `Cetus-Setup-0.1.5.exe`：中文安装向导，按当前用户安装，无需管理员权限
+- `Cetus-0.1.5-win-x64-portable.zip`：解压后直接运行
 
 启动后，CETUS 会自动完成以下流程：
 
@@ -134,8 +134,8 @@ scripts\publish.ps1
 脚本需要 .NET 10 SDK、npm 与网络连接。构建产物位于 `dist\`：
 
 - `app\`：自包含运行目录，目标电脑无需安装 .NET 或 Node.js
-- `Cetus-0.1.1-win-x64-portable.zip`：便携版
-- `Cetus-Setup-0.1.1.exe`：Inno Setup 安装程序
+- `Cetus-0.1.5-win-x64-portable.zip`：便携版
+- `Cetus-Setup-0.1.5.exe`：Inno Setup 安装程序
 
 当前 Runtime 固定版本：
 
@@ -146,9 +146,9 @@ scripts\publish.ps1
 
 版本信息：
 
-- 文件版本：`0.0.1.1`
+- 文件版本：`0.0.1.5`
 - 产品名称：`CETUS鲸鱼座`
-- 产品版本：`0.1.1`
+- 产品版本：`0.1.5`
 - 版权：`AvroraCL`
 
 ### 验证场景

@@ -10,8 +10,8 @@
     <AssemblyName>Cetus</AssemblyName>
     <RootNamespace>Cetus</RootNamespace>
     <ApplicationIcon>Assets\cetus.ico</ApplicationIcon>
-    <Version>0.1.1</Version>
-    <FileVersion>0.0.1.1</FileVersion>
+    <Version>0.1.5</Version>
+    <FileVersion>0.0.1.5</FileVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Product>CETUS鲸鱼座</Product>
     <Copyright>AvroraCL</Copyright>
@@ -19,12 +19,18 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="MahApps.Metro" Version="2.4.10" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
   </ItemGroup>
 
   <ItemGroup>
     <!-- WinForms implicit usings collide with WPF's Application; MainWindow imports them explicitly. -->
     <Using Remove="System.Windows.Forms" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The custom title bar reuses the application's packaged icon. -->
+    <Resource Include="Assets\cetus.ico" />
   </ItemGroup>
 
 </Project>
