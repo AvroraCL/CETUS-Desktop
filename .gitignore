@@ -1,0 +1,18 @@
+bin/
+obj/
+.vs/
+*.user
+*.suo
+
+# --- build artifacts (packaging pipeline output) ---
+dist/
+
+# --- local tooling (Inno Setup portable extract, downloads, dotnet-install) ---
+tools/
+
+# --- test scratch dirs ---
+.test-home/
+.test-install/
+
+# --- logs ---
+*.log
