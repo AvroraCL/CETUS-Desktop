@@ -400,7 +400,7 @@ public sealed class DshHostTests
                 const http = require('http');
                 const args = process.argv.slice(2);
                 const portIndex = args.indexOf('--port');
-                if (!args.includes('web') || !args.includes('--no-open') || portIndex < 0) {
+                if (!args.includes('web') || portIndex < 0 || args.length !== 3) {
                   process.exit(41);
                 }
                 const port = Number(args[portIndex + 1]);

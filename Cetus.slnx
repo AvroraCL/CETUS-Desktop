@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Cetus.Desktop/Cetus.Desktop.csproj" />
+    <Project Path="src/Cetus.Runtime/Cetus.Runtime.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Cetus.Desktop.Tests/Cetus.Desktop.Tests.csproj" />
+  </Folder>
+</Solution>

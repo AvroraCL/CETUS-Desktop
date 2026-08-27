@@ -1,12 +1,11 @@
 #Requires -Version 7
 <#
 .SYNOPSIS
-    Runs Cetus's repeatable lifecycle smoke suite.
+    Runs Cetus's repeatable regression suite.
 
 .DESCRIPTION
-    Exercises direct-node and dsh.cmd startup paths on ephemeral loopback ports,
-    verifies reuse of a healthy external DSH-compatible service, and checks that
-    cancellation cleans up an owned but unready sidecar.
+    Builds the complete solution and runs runtime lifecycle, desktop state
+    machine, browser policy, configuration and single-instance tests.
 #>
 [CmdletBinding()]
 param(
@@ -17,15 +16,14 @@ param(
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
-$testProject = Join-Path $root "tests\Cetus.Desktop.Tests\Cetus.Desktop.Tests.csproj"
-$dotnet = Join-Path $env:USERPROFILE ".dotnet\dotnet.exe"
-if (-not (Test-Path $dotnet)) { $dotnet = Join-Path $env:LOCALAPPDATA "Microsoft\dotnet\dotnet.exe" }
-if (-not (Test-Path $dotnet)) { $dotnet = "dotnet" }
+$solution = Join-Path $root "Cetus.slnx"
+. (Join-Path $PSScriptRoot "common.ps1")
+$dotnet = Resolve-CetusDotNet
 
-Write-Host "==> Cetus lifecycle smoke tests ($Configuration)"
-& $dotnet test $testProject -c $Configuration -v minimal
+Write-Host "==> Cetus regression suite ($Configuration)"
+& $dotnet test $solution -c $Configuration -v minimal
 if ($LASTEXITCODE -ne 0) {
-    throw "Cetus lifecycle smoke tests failed"
+    throw "Cetus regression suite failed"
 }
 
-Write-Host "PASS: Cetus lifecycle smoke tests"
+Write-Host "PASS: Cetus regression suite"

@@ -6,7 +6,7 @@
     + portable zip + Inno Setup installer.
 
     Output:
-      dist\app\           runnable folder (double-click Cetus.exe)
+      dist\app-<v>\       runnable folder (double-click Cetus.exe)
       dist\Cetus-<v>-win-x64-portable.zip
       dist\Cetus-Setup-<v>.exe
 #>
@@ -14,20 +14,15 @@
 param(
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64",
-    [string]$Version = "0.1.5"
+    [string]$Version = ""
 )
 
 $ErrorActionPreference = "Stop"
 
-if ($Version -notmatch '^\d+\.\d+\.\d+$') {
-    throw "Version must use the semantic major.minor.patch form (for example, 0.1.5)."
-}
-$fileVersion = "0.$Version"
-
 $root       = Split-Path -Parent $PSScriptRoot          # F:\Cetus
 $src        = Join-Path $root "src\Cetus.Desktop"
+$solution   = Join-Path $root "Cetus.slnx"
 $dist       = Join-Path $root "dist"
-$appDir     = Join-Path $dist "app-$Version"
 $runtimeDir = Join-Path $dist "runtime"
 
 # Version pins — bump deliberately, and re-verify the app against them.
@@ -35,11 +30,25 @@ $nodeVersion = "v24.14.0"
 $dshVersion  = "0.1.0-rc.6"
 $nodeSource  = "C:\Program Files\nodejs\node.exe"
 
-$dotnet = Join-Path $env:USERPROFILE ".dotnet\dotnet.exe"          # .NET 10 (this machine)
-if (-not (Test-Path $dotnet)) { $dotnet = Join-Path $env:LOCALAPPDATA "Microsoft\dotnet\dotnet.exe" }
-if (-not (Test-Path $dotnet)) { $dotnet = "dotnet" }
+. (Join-Path $PSScriptRoot "common.ps1")
+$dotnet = Resolve-CetusDotNet
 
-Write-Host "==> [1/6] publish (self-contained, $Runtime, $Configuration)"
+if ([string]::IsNullOrWhiteSpace($Version)) {
+    $Version = (& $dotnet msbuild (Join-Path $src "Cetus.Desktop.csproj") `
+        -nologo -getProperty:Version | Select-Object -Last 1).Trim()
+    if ($LASTEXITCODE -ne 0) { throw "failed to read the project version" }
+}
+if ($Version -notmatch '^\d+\.\d+\.\d+$') {
+    throw "Version must use the semantic major.minor.patch form (for example, 0.1.8)."
+}
+$fileVersion = "0.$Version"
+$appDir = Join-Path $dist "app-$Version"
+
+Write-Host "==> [1/7] regression suite ($Configuration)"
+& $dotnet test $solution -c $Configuration -v minimal
+if ($LASTEXITCODE -ne 0) { throw "regression suite failed" }
+
+Write-Host "==> [2/7] publish (self-contained, $Runtime, $Configuration)"
 if (Test-Path $appDir) {
     throw "Release app directory already exists: $appDir. Bump Version instead of replacing an existing release."
 }
@@ -47,7 +56,7 @@ if (Test-Path $appDir) {
     "-p:Version=$Version" "-p:FileVersion=$fileVersion"
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
 
-Write-Host "==> [2/6] bundle node.exe ($nodeVersion)"
+Write-Host "==> [3/7] bundle node.exe ($nodeVersion)"
 New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
 $bundledNode = Join-Path $runtimeDir "node.exe"
 $needNode = $true
@@ -61,7 +70,7 @@ if ($needNode) {
     Copy-Item $nodeSource $bundledNode -Force
 }
 
-Write-Host "==> [3/6] bundle dsh ($dshVersion, --omit=dev)"
+Write-Host "==> [4/7] bundle dsh ($dshVersion, --omit=dev)"
 $dshPkgJson = Join-Path $runtimeDir "dsh\node_modules\@deepseek-ai\dsh\package.json"
 $needDsh = $true
 if (Test-Path $dshPkgJson) {
@@ -75,7 +84,7 @@ if ($needDsh) {
     if ($LASTEXITCODE -ne 0) { throw "npm install failed" }
 }
 
-Write-Host "==> [4/6] copy runtime into app output + manifest"
+Write-Host "==> [5/7] copy runtime into app output + manifest"
 # Wipe the previous copy first: Copy-Item -Recurse onto an existing directory
 # nests the source folder instead of replacing it (dsh\dsh\... duplication).
 Remove-Item (Join-Path $appDir "runtime") -Recurse -Force -ErrorAction SilentlyContinue
@@ -89,14 +98,26 @@ Copy-Item (Join-Path $runtimeDir "dsh") (Join-Path $appDir "runtime\dsh") -Recur
     "built=$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss zzz')"
 ) | Set-Content (Join-Path $appDir "runtime\VERSIONS.txt") -Encoding UTF8
 
-Write-Host "==> [5/6] zip"
+$defaultInstallRoot = Join-Path $env:LOCALAPPDATA "Cetus"
+$longestInstalledPath = Get-ChildItem -LiteralPath $appDir -Recurse -File |
+    ForEach-Object {
+        Join-Path $defaultInstallRoot $_.FullName.Substring($appDir.Length + 1)
+    } |
+    Sort-Object Length -Descending |
+    Select-Object -First 1
+if ($longestInstalledPath.Length -ge 240) {
+    throw "Packaged runtime path is too long for safe installation ($($longestInstalledPath.Length) characters): $longestInstalledPath"
+}
+Write-Host "      longest default install path: $($longestInstalledPath.Length) characters"
+
+Write-Host "==> [6/7] zip"
 $zip = Join-Path $dist "Cetus-$Version-$Runtime-portable.zip"
 if (Test-Path $zip) {
     throw "Portable release already exists: $zip. Bump Version instead of replacing an existing release."
 }
 Compress-Archive -Path (Join-Path $appDir "*") -DestinationPath $zip -CompressionLevel Optimal
 
-Write-Host "==> [6/6] installer (Inno Setup)"
+Write-Host "==> [7/7] installer (Inno Setup)"
 $setupExe = Join-Path $dist "Cetus-Setup-$Version.exe"
 $iscc = $env:CETUS_ISCC
 if (-not $iscc -or -not (Test-Path $iscc)) {

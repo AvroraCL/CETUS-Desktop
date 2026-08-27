@@ -11,8 +11,6 @@ namespace Cetus.Configuration;
 public sealed class CetusSettings
 {
     public const int DefaultPort = 3080;
-    private const string SettingsFileName = "settings.json";
-
     private readonly string _settingsPath;
     private int _configuredPort;
 
@@ -51,18 +49,7 @@ public sealed class CetusSettings
     }
 
     public static CetusSettings LoadDefault()
-    {
-        string? settingsPathOverride = Environment.GetEnvironmentVariable("CETUS_SETTINGS_PATH");
-        if (!string.IsNullOrWhiteSpace(settingsPathOverride))
-        {
-            return new CetusSettings(settingsPathOverride);
-        }
-
-        string settingsPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Cetus", SettingsFileName);
-        return new CetusSettings(settingsPath);
-    }
+        => new(CetusPaths.SettingsFile);
 
     public void SetConfiguredPort(int port)
     {

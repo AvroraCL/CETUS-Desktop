@@ -1,139 +1,102 @@
 using System.ComponentModel;
-using System.Diagnostics;
-using System.Drawing;
-using System.IO;
-using System.Runtime.InteropServices;
-using System.Text.Json;
 using System.Windows;
-using System.Windows.Forms;
-using System.Windows.Interop;
 using System.Windows.Media;
-using Microsoft.Win32;
+using Cetus.Browser;
 using Cetus.Configuration;
-using Cetus.Hosting;
-using Microsoft.Web.WebView2.Core;
-using WpfMessageBox = System.Windows.MessageBox;
+using Cetus.Platform;
+using Cetus.Runtime;
+using Microsoft.Win32;
 
 namespace Cetus;
 
 /// <summary>
-/// Main window: owns the DSH host lifecycle, the WebView2 surface, and the tray icon.
-/// Closing the window hides to tray; the tray "退出" kills the host and exits.
+/// Thin WPF view. Runtime coordination, WebView2 policy and native Windows
+/// integration live in their respective modules.
 /// </summary>
 public partial class MainWindow : Window
 {
-    // The per-install persisted setting is used unless CETUS_PORT supplies a
-    // process-only override for automation or isolated test runs.
-    private string DshUrl => $"http://127.0.0.1:{_settings.EffectivePort}/";
-
-    private const int MaxAutomaticRestartAttempts = 3;
-    private static readonly TimeSpan StableRuntimeWindow = TimeSpan.FromMinutes(1);
-
     private readonly CetusSettings _settings;
-    private DshHost? _host;
-    private NotifyIcon? _tray;
-    private HwndSource? _windowSource;
-    private uint _taskbarCreatedMessage;
-    private ToolStripMenuItem? _retryDshItem;
-    private bool _isStarting;
+    private readonly BrowserSession _browserSession;
+    private readonly DesktopRuntime _runtime;
+
+    private TrayIconController? _tray;
+    private WindowComposition? _windowComposition;
     private bool _isExiting;
-    private bool _navigationPolicyAttached;
-    private bool _themeBridgeAttached;
-    private int _automaticRestartAttempts;
-    private DateTime _lastDshReadyAt;
-    private CancellationTokenSource? _startupCancellation;
-    private CancellationTokenSource? _recoveryCancellation;
 
     public MainWindow()
     {
         _settings = CetusSettings.LoadDefault();
         InitializeComponent();
+
+        _browserSession = new BrowserSession(Browser, ApplyWindowTheme);
+        _runtime = new DesktopRuntime(_settings, _browserSession, Dispatcher);
+        _runtime.StateChanged += OnRuntimeStateChanged;
+
         if (DevModeFlag.IsActive)
         {
             Title = "Cetus · 鲸鱼座 · DEV";
             TitleText.Text = "CETUS DEV";
-            // Keep the isolated dev window out of the release window's
-            // center-screen position, which otherwise hides real alpha behind
-            // an identical dark title strip.
             WindowStartupLocation = WindowStartupLocation.Manual;
             Left = 40;
             Top = 40;
         }
+
         ApplyWindowTheme(IsSystemDarkMode());
     }
-
-    private const uint DwmBbEnable = 0x00000001;
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct DwmBlurBehind
-    {
-        public uint Flags;
-        [MarshalAs(UnmanagedType.Bool)]
-        public bool Enable;
-        public IntPtr BlurRegion;
-        [MarshalAs(UnmanagedType.Bool)]
-        public bool TransitionOnMaximized;
-    }
-
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    private static extern uint RegisterWindowMessage(string message);
-
-    [DllImport("dwmapi.dll")]
-    private static extern int DwmEnableBlurBehindWindow(
-        IntPtr hwnd, ref DwmBlurBehind blurBehind);
 
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
-        _taskbarCreatedMessage = RegisterWindowMessage("TaskbarCreated");
-        _windowSource = PresentationSource.FromVisual(this) as HwndSource;
-        _windowSource?.AddHook(WindowMessageHook);
-        EnableNativeTitleBlur(_windowSource?.Handle ?? IntPtr.Zero);
-    }
-
-    /// <summary>
-    /// Requests the platform's blur-behind compositor for the transparent
-    /// window. The opaque WebView2 client plane hides it everywhere except
-    /// the title band; no generated gradient or image is involved.
-    /// </summary>
-    private static void EnableNativeTitleBlur(IntPtr hwnd)
-    {
-        if (hwnd == IntPtr.Zero)
-        {
-            return;
-        }
-
-        try
-        {
-            var blur = new DwmBlurBehind
+        _windowComposition = WindowComposition.Attach(
+            this,
+            () =>
             {
-                Flags = DwmBbEnable,
-                Enable = true,
-                BlurRegion = IntPtr.Zero,
-                TransitionOnMaximized = false,
-            };
-            _ = DwmEnableBlurBehindWindow(hwnd, ref blur);
-        }
-        catch (EntryPointNotFoundException)
-        {
-            // The live 70% WPF alpha remains correct on older systems.
-        }
-    }
-
-    private IntPtr WindowMessageHook(
-        IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
-    {
-        if (!_isExiting && (uint)message == _taskbarCreatedMessage)
-        {
-            RestoreTrayIcon();
-        }
-        return IntPtr.Zero;
+                if (!_isExiting)
+                {
+                    _tray?.RestoreAfterExplorerRestart();
+                }
+            });
+        _windowComposition.SetDarkMode(IsSystemDarkMode());
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         SetupTray();
-        await StartAsync();
+        DesktopRuntimeResult result = await _runtime.StartAsync();
+        ShowRuntimeError(result, "Cetus · 启动失败");
+    }
+
+    private void OnRuntimeStateChanged(object? sender, DesktopRuntimeStateChangedEventArgs e)
+    {
+        DesktopRuntimeState state = e.State;
+        _tray?.SetRetryEnabled(state.CanRetry);
+
+        if (state.Phase == DesktopRuntimePhase.Ready)
+        {
+            StatusText.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        StatusText.Visibility = Visibility.Visible;
+        if (!string.IsNullOrEmpty(state.Message))
+        {
+            StatusText.Text = state.Message;
+        }
+    }
+
+    private void SetupTray()
+    {
+        if (_tray is not null)
+        {
+            return;
+        }
+
+        _tray = new TrayIconController(new TrayCommands(
+            ShowWindow,
+            RetryDshAsync,
+            ConfigurePortAsync,
+            ExitApplication));
+        _tray.SetRetryEnabled(_runtime.State.CanRetry);
     }
 
     private void OnMinimizeClicked(object sender, RoutedEventArgs e) =>
@@ -147,179 +110,80 @@ public partial class MainWindow : Window
 
     private void OnCloseToTrayClicked(object sender, RoutedEventArgs e) => Close();
 
-    private async Task<bool> StartAsync(bool showError = true)
+    private void ShowWindow()
     {
-        if (_isStarting || _isExiting)
-        {
-            return false;
-        }
-
-        _isStarting = true;
-        if (_retryDshItem is not null)
-        {
-            _retryDshItem.Enabled = false;
-        }
-
-        var cancellation = new CancellationTokenSource();
-        _startupCancellation = cancellation;
-        try
-        {
-            StatusText.Text = "正在启动 DSH 主机…";
-            // Resolve DSH here so missing runtime/configuration errors reach the
-            // normal startup error UI instead of terminating the application.
-            DshHost host = _host ??= CreateDshHost();
-            await host.StartAsync(cancellation.Token);
-
-            StatusText.Text = "正在加载界面…";
-            // Explicit user data folder: WebView2's default (next to the exe)
-            // would pollute the install directory and survive uninstall.
-            string userDataFolder = Environment.GetEnvironmentVariable("CETUS_WEBVIEW2_USER_DATA")
-                ?? Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "Cetus", "WebView2");
-            var environment = await CoreWebView2Environment.CreateAsync(
-                browserExecutableFolder: null, userDataFolder: userDataFolder);
-            await Browser.EnsureCoreWebView2Async(environment);
-            cancellation.Token.ThrowIfCancellationRequested();
-            Browser.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
-            Browser.CoreWebView2.Settings.IsStatusBarEnabled = false;
-            AttachNavigationPolicy();
-            await AttachThemeBridgeAsync();
-            Browser.CoreWebView2.Navigate(DshUrl);
-
-            Browser.Visibility = Visibility.Visible;
-            StatusText.Visibility = Visibility.Collapsed;
-            _lastDshReadyAt = DateTime.UtcNow;
-            return true;
-        }
-        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
-        {
-            await StopHostAsync();
-            StatusText.Text = _isExiting ? "正在退出…" : "启动已取消";
-            return false;
-        }
-        catch (Exception error)
-        {
-            // If WebView2 initialization fails after Cetus started DSH, release
-            // that owned sidecar rather than leaving it behind in the background.
-            await StopHostAsync();
-            StatusText.Text = "启动失败";
-            if (showError)
-            {
-                _ = WpfMessageBox.Show(
-                    this,
-                    error.Message,
-                    "Cetus · 启动失败",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
-            }
-            return false;
-        }
-        finally
-        {
-            if (ReferenceEquals(_startupCancellation, cancellation))
-            {
-                _startupCancellation = null;
-            }
-            cancellation.Dispose();
-            _isStarting = false;
-            if (_retryDshItem is not null)
-            {
-                _retryDshItem.Enabled = true;
-            }
-        }
+        Show();
+        ShowInTaskbar = true;
+        WindowState = WindowState.Normal;
+        Activate();
     }
 
-    private async Task StopHostAsync()
+    private async Task RetryDshAsync()
     {
-        if (_host is { } host)
-        {
-            await host.StopAsync();
-        }
-    }
-
-    private void CancelStartup() => _startupCancellation?.Cancel();
-
-    private void CancelAutomaticRecovery()
-    {
-        CancellationTokenSource? cancellation = _recoveryCancellation;
-        _recoveryCancellation = null;
-        cancellation?.Cancel();
-    }
-
-    private static readonly string ThemeBridgeScript = """
-        (() => {
-          const source = 'cetus-window';
-          const report = () => {
-            const root = document.documentElement;
-            if (!root || !window.chrome || !window.chrome.webview) return;
-            const classes = [
-              root.className,
-              root.getAttribute('data-theme'),
-              document.body && document.body.className,
-              document.body && document.body.getAttribute('data-theme')
-            ].filter(Boolean).join(' ').toLowerCase();
-            const scheme = getComputedStyle(root).colorScheme.toLowerCase();
-            const dark = /(^|[^a-z])(dark|night)(?=$|[^a-z])/.test(classes)
-              || (!/(^|[^a-z])(light|day)(?=$|[^a-z])/.test(classes)
-                  && (scheme.includes('dark') || window.matchMedia('(prefers-color-scheme: dark)').matches));
-            window.chrome.webview.postMessage({ source, type: 'theme', mode: dark ? 'dark' : 'light' });
-          };
-          const install = () => {
-            const root = document.documentElement;
-            if (!root) return;
-            const observer = new MutationObserver(report);
-            observer.observe(root, { attributes: true, attributeFilter: ['class', 'data-theme', 'style'] });
-            if (document.body) {
-              observer.observe(document.body, { attributes: true, attributeFilter: ['class', 'data-theme', 'style'] });
-            }
-            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', report);
-            report();
-          };
-          if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', install, { once: true });
-          } else {
-            install();
-          }
-        })();
-        """;
-
-    private async Task AttachThemeBridgeAsync()
-    {
-        if (_themeBridgeAttached)
+        if (_isExiting)
         {
             return;
         }
 
-        Browser.CoreWebView2.Settings.IsWebMessageEnabled = true;
-        Browser.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
-        await Browser.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ThemeBridgeScript);
-        _themeBridgeAttached = true;
+        ShowWindow();
+        DesktopRuntimeResult result = await _runtime.RetryAsync();
+        ShowRuntimeError(result, "Cetus · 启动失败");
     }
 
-    private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+    private async Task ConfigurePortAsync()
     {
-        try
+        if (_runtime.IsBusy || _isExiting)
         {
-            using JsonDocument message = JsonDocument.Parse(e.WebMessageAsJson);
-            JsonElement root = message.RootElement;
-            if (!root.TryGetProperty("source", out JsonElement source)
-                || !root.TryGetProperty("type", out JsonElement type))
-            {
-                return;
-            }
+            return;
+        }
 
-            if (source.GetString() == "cetus-window"
-                && type.GetString() == "theme"
-                && root.TryGetProperty("mode", out JsonElement mode))
-            {
-                ApplyWindowTheme(mode.GetString() == "dark");
-            }
-        }
-        catch (JsonException)
+        ShowWindow();
+        var dialog = new PortSettingsDialog(
+            _settings.ConfiguredPort,
+            _settings.EffectivePort,
+            _settings.IsPortOverridden)
         {
-            // Ignore messages not emitted by Cetus's document-created bridge.
+            Owner = this,
+        };
+        if (dialog.ShowDialog() != true || dialog.SelectedPort is not int port)
+        {
+            return;
         }
+
+        PortChangeResult result = await _runtime.ChangePortAsync(port);
+        if (!result.Saved)
+        {
+            ShowRuntimeError(result.ReconnectResult, "Cetus · 无法保存端口设置");
+            return;
+        }
+
+        if (result.IsEnvironmentOverridden)
+        {
+            _ = MessageBox.Show(
+                this,
+                "端口设置已保存。当前进程仍受 CETUS_PORT 环境变量覆盖；移除该变量后，保存值将在下次启动时生效。",
+                "Cetus · 端口设置",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        ShowRuntimeError(result.ReconnectResult, "Cetus · 重连失败");
+    }
+
+    private void ShowRuntimeError(DesktopRuntimeResult result, string title)
+    {
+        if (result.Error is not { } error)
+        {
+            return;
+        }
+
+        _ = MessageBox.Show(
+            this,
+            error.Message,
+            title,
+            MessageBoxButton.OK,
+            MessageBoxImage.Error);
     }
 
     private static bool IsSystemDarkMode()
@@ -328,7 +192,8 @@ public partial class MainWindow : Window
         {
             object? value = Registry.GetValue(
                 @"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
-                "AppsUseLightTheme", 1);
+                "AppsUseLightTheme",
+                1);
             return value is int mode && mode == 0;
         }
         catch
@@ -339,331 +204,15 @@ public partial class MainWindow : Window
 
     private void ApplyWindowTheme(bool isDark)
     {
-        System.Windows.Media.Brush background = CreateBrush(isDark ? "#151517" : "#F8FAFC");
-        System.Windows.Media.Brush statusForeground = CreateBrush(isDark ? "#AAB7CC" : "#52627A");
-
-        WindowFrame.Background = background;
-        StatusText.Foreground = statusForeground;
-        // The native DWM-backed caption remains independent from Harness theme
-        // colors: it is always #151517 at live 70% alpha.
+        _windowComposition?.SetDarkMode(isDark);
+        WindowFrame.Background = CreateBrush(isDark ? "#151517" : "#F8FAFC");
+        StatusText.Foreground = CreateBrush(isDark ? "#AAB7CC" : "#52627A");
     }
 
     private static System.Windows.Media.Brush CreateBrush(string color) =>
-        new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(color));
+        new SolidColorBrush(
+            (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(color));
 
-    /// <summary>
-    /// Keep the embedded browser on Cetus's loopback DSH origin. Top-level
-    /// external links and every popup request are delegated to the system browser;
-    /// external child frames are blocked rather than opened invisibly.
-    /// </summary>
-    private void AttachNavigationPolicy()
-    {
-        if (_navigationPolicyAttached)
-        {
-            return;
-        }
-
-        Browser.CoreWebView2.NavigationStarting += OnTopLevelNavigationStarting;
-        Browser.CoreWebView2.FrameNavigationStarting += OnFrameNavigationStarting;
-        Browser.CoreWebView2.NewWindowRequested += OnNewWindowRequested;
-        _navigationPolicyAttached = true;
-    }
-
-    private void OnTopLevelNavigationStarting(
-        object? sender, CoreWebView2NavigationStartingEventArgs e)
-    {
-        if (IsDshUri(e.Uri))
-        {
-            return;
-        }
-
-        e.Cancel = true;
-        OpenInSystemBrowser(e.Uri);
-    }
-
-    private void OnFrameNavigationStarting(
-        object? sender, CoreWebView2NavigationStartingEventArgs e)
-    {
-        if (!IsDshUri(e.Uri))
-        {
-            e.Cancel = true;
-        }
-    }
-
-    private static void OnNewWindowRequested(
-        object? sender, CoreWebView2NewWindowRequestedEventArgs e)
-    {
-        e.Handled = true;
-        OpenInSystemBrowser(e.Uri);
-    }
-
-    private bool IsDshUri(string uriText)
-    {
-        if (!Uri.TryCreate(uriText, UriKind.Absolute, out Uri? uri))
-        {
-            return false;
-        }
-
-        var expected = new Uri(DshUrl);
-        return string.Equals(uri.Scheme, expected.Scheme, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(uri.Host, expected.Host, StringComparison.OrdinalIgnoreCase)
-            && uri.Port == expected.Port
-            && string.IsNullOrEmpty(uri.UserInfo);
-    }
-
-    private static void OpenInSystemBrowser(string uriText)
-    {
-        if (!Uri.TryCreate(uriText, UriKind.Absolute, out Uri? uri)
-            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
-        {
-            return;
-        }
-
-        try
-        {
-            Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
-        }
-        catch
-        {
-            // External launch is best effort; the in-app navigation remains blocked.
-        }
-    }
-
-    private DshHost CreateDshHost()
-    {
-        var host = new DshHost(DshLocator.Resolve(), DshUrl, _settings.DshHomeOverride);
-        host.RuntimeFailure += OnDshHostRuntimeFailure;
-        return host;
-    }
-
-    private void OnDshHostRuntimeFailure(object? sender, DshHostFailureEventArgs e)
-    {
-        if (_isExiting || !ReferenceEquals(sender, _host) || Dispatcher.HasShutdownStarted)
-        {
-            return;
-        }
-
-        _ = Dispatcher.InvokeAsync(() => BeginAutomaticRecovery(e));
-    }
-
-    private void BeginAutomaticRecovery(DshHostFailureEventArgs failure)
-    {
-        if (_isExiting || _isStarting)
-        {
-            return;
-        }
-
-        CancelAutomaticRecovery();
-        var cancellation = new CancellationTokenSource();
-        _recoveryCancellation = cancellation;
-        _ = RecoverFromRuntimeFailureAsync(failure, cancellation);
-    }
-
-    private async Task RecoverFromRuntimeFailureAsync(
-        DshHostFailureEventArgs failure, CancellationTokenSource cancellation)
-    {
-        try
-        {
-            if (DateTime.UtcNow - _lastDshReadyAt >= StableRuntimeWindow)
-            {
-                _automaticRestartAttempts = 0;
-            }
-
-            while (_automaticRestartAttempts < MaxAutomaticRestartAttempts)
-            {
-                int attempt = ++_automaticRestartAttempts;
-                int delaySeconds = attempt * 2;
-                Browser.Visibility = Visibility.Collapsed;
-                StatusText.Visibility = Visibility.Visible;
-                string failureDescription = failure.Kind == DshHostFailureKind.ProcessExited
-                    ? $"DSH 主机意外退出（代码 {failure.ExitCode?.ToString() ?? "未知"}）"
-                    : "DSH 服务连续健康检查失败";
-                StatusText.Text =
-                    $"{failureDescription}；将在 {delaySeconds} 秒后尝试恢复（{attempt}/{MaxAutomaticRestartAttempts}）…";
-
-                await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellation.Token);
-                if (_isExiting || cancellation.IsCancellationRequested)
-                {
-                    return;
-                }
-
-                if (await RetryDshAsync(isAutomatic: true))
-                {
-                    return;
-                }
-            }
-
-            if (!_isExiting && !cancellation.IsCancellationRequested)
-            {
-                StatusText.Text =
-                    "DSH 多次启动失败，已停止自动恢复。请在托盘菜单中选择“重试连接 DSH”。";
-            }
-        }
-        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
-        {
-            // A manual retry or application exit cancelled this recovery chain.
-        }
-        finally
-        {
-            if (ReferenceEquals(_recoveryCancellation, cancellation))
-            {
-                _recoveryCancellation = null;
-            }
-            cancellation.Dispose();
-        }
-    }
-
-    private static System.Drawing.Icon ResolveTrayIcon()
-    {
-        string? executablePath = Environment.ProcessPath;
-        if (!string.IsNullOrWhiteSpace(executablePath))
-        {
-            try
-            {
-                System.Drawing.Icon? icon = System.Drawing.Icon.ExtractAssociatedIcon(executablePath);
-                if (icon is not null)
-                {
-                    return icon;
-                }
-            }
-            catch
-            {
-                // Fall back to the standard application icon below.
-            }
-        }
-
-        return SystemIcons.Application;
-    }
-
-    private void RestoreTrayIcon()
-    {
-        if (_tray is not { } tray)
-        {
-            return;
-        }
-
-        // Explorer loses notification-area registrations when it restarts.
-        // Toggling Visible re-registers the existing NotifyIcon instance.
-        tray.Visible = false;
-        tray.Visible = true;
-    }
-
-    private void SetupTray()
-    {
-        // Use the brand icon embedded in the exe (ApplicationIcon) for the tray.
-        _tray = new NotifyIcon
-        {
-            Icon = ResolveTrayIcon(),
-            Text = "Cetus · 鲸鱼座",
-            Visible = true,
-        };
-        var menu = new ContextMenuStrip();
-        menu.Items.Add("显示窗口", null, (_, _) => ShowWindow());
-        _retryDshItem = new ToolStripMenuItem("重试连接 DSH");
-        _retryDshItem.Click += async (_, _) => await RetryDshAsync();
-        menu.Items.Add(_retryDshItem);
-        var configurePortItem = new ToolStripMenuItem("设置 DSH 端口…");
-        configurePortItem.Click += async (_, _) => await ConfigurePortAsync();
-        menu.Items.Add(configurePortItem);
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("退出", null, (_, _) => ExitApplication());
-        _tray.ContextMenuStrip = menu;
-        _tray.DoubleClick += (_, _) => ShowWindow();
-    }
-
-    private void ShowWindow()
-    {
-        Show();
-        ShowInTaskbar = true;
-        WindowState = WindowState.Normal;
-        Activate();
-    }
-
-    /// <summary>
-    /// Retry the DSH connection. An owned sidecar is stopped first and then
-    /// started again; an externally managed healthy DSH remains untouched and
-    /// is simply reconnected.
-    /// </summary>
-    private async Task<bool> RetryDshAsync(bool isAutomatic = false, bool recreateHost = false)
-    {
-        if (_isExiting)
-        {
-            return false;
-        }
-        if (_isStarting)
-        {
-            if (!isAutomatic)
-            {
-                CancelStartup();
-            }
-            return false;
-        }
-
-        if (!isAutomatic)
-        {
-            _automaticRestartAttempts = 0;
-            CancelAutomaticRecovery();
-            ShowWindow();
-        }
-
-        Browser.Visibility = Visibility.Collapsed;
-        StatusText.Visibility = Visibility.Visible;
-        await StopHostAsync();
-        if (recreateHost)
-        {
-            _host = null;
-        }
-        return await StartAsync(showError: !isAutomatic);
-    }
-
-    private async Task ConfigurePortAsync()
-    {
-        if (_isStarting || _isExiting)
-        {
-            return;
-        }
-
-        ShowWindow();
-        var dialog = new PortSettingsDialog(
-            _settings.ConfiguredPort, _settings.EffectivePort, _settings.IsPortOverridden)
-        {
-            Owner = this,
-        };
-        if (dialog.ShowDialog() != true || dialog.SelectedPort is not int port)
-        {
-            return;
-        }
-
-        try
-        {
-            _settings.SetConfiguredPort(port);
-        }
-        catch (Exception error)
-        {
-            _ = WpfMessageBox.Show(
-                this,
-                error.Message,
-                "Cetus · 无法保存端口设置",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
-            return;
-        }
-
-        if (_settings.IsPortOverridden)
-        {
-            _ = WpfMessageBox.Show(
-                this,
-                "端口设置已保存。当前进程仍受 CETUS_PORT 环境变量覆盖；移除该变量后，保存值将在下次启动时生效。",
-                "Cetus · 端口设置",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-            return;
-        }
-
-        await RetryDshAsync(recreateHost: true);
-    }
-
-    /// <summary>Close-to-tray unless an explicit exit has been requested.</summary>
     protected override void OnClosing(CancelEventArgs e)
     {
         if (!_isExiting)
@@ -675,8 +224,9 @@ public partial class MainWindow : Window
         base.OnClosing(e);
     }
 
-    /// <summary>Real exit (tray → 退出): cancel work and stop the owned host asynchronously.</summary>
-    private async void ExitApplication()
+    private void ExitApplication() => _ = ExitApplicationAsync();
+
+    private async Task ExitApplicationAsync()
     {
         if (_isExiting)
         {
@@ -684,25 +234,28 @@ public partial class MainWindow : Window
         }
 
         _isExiting = true;
-        CancelStartup();
-        CancelAutomaticRecovery();
         _tray?.Dispose();
-        await StopHostAsync();
+        _tray = null;
+        await _runtime.StopAsync();
+        _browserSession.Dispose();
         System.Windows.Application.Current.Shutdown();
     }
 
-    /// <summary>Last-resort cleanup when the process dies through other paths.</summary>
     protected override void OnClosed(EventArgs e)
     {
         _isExiting = true;
-        CancelStartup();
-        CancelAutomaticRecovery();
-        if (_windowSource is not null)
-        {
-            _windowSource.RemoveHook(WindowMessageHook);
-            _windowSource = null;
-        }
-        _ = StopHostAsync();
+        _runtime.StateChanged -= OnRuntimeStateChanged;
+        _tray?.Dispose();
+        _tray = null;
+        _windowComposition?.Dispose();
+        _windowComposition = null;
+        _ = StopAfterUnexpectedCloseAsync();
         base.OnClosed(e);
+    }
+
+    private async Task StopAfterUnexpectedCloseAsync()
+    {
+        await _runtime.StopAsync();
+        _browserSession.Dispose();
     }
 }

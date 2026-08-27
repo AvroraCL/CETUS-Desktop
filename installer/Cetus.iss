@@ -1,15 +1,15 @@
 ; Cetus installer script — Inno Setup 6 (NET 10 build)
-; Compile: ISCC.exe Cetus.iss /DVersion=0.1.5 /DFileVersion=0.0.1.5
+; Compile: ISCC.exe Cetus.iss /DVersion=0.1.8 /DFileVersion=0.0.1.8
 ; Save as UTF-8 with BOM (Inno requirement for non-ASCII text).
 
 #ifndef Version
-  #define Version "0.1.5"
+  #define Version "0.1.8"
 #endif
 #ifndef FileVersion
-  #define FileVersion "0.0.1.5"
+  #define FileVersion "0.0.1.8"
 #endif
 #ifndef AppSourceDir
-  #define AppSourceDir "..\dist\app"
+  #define AppSourceDir "..\dist\app-" + Version
 #endif
 
 [Setup]
@@ -58,30 +58,64 @@ Filename: "{app}\Cetus.exe"; Description: "启动 Cetus 鲸鱼座"; Flags: nowai
 [UninstallDelete]
 ; Legacy WebView2 default profile location (pre-0.1.0 installs wrote it next to the exe).
 Type: filesandordirs; Name: "{app}\Cetus.exe.WebView2"
+; Current per-user state lives below {app} because the application itself is
+; installed in %LOCALAPPDATA%\Cetus. Remove it on a full uninstall.
+Type: filesandordirs; Name: "{app}\WebView2"
+Type: filesandordirs; Name: "{app}\logs"
+Type: files; Name: "{app}\settings.json"
 
 [Code]
-// Ask to close a running Cetus (and its orphaned node sidecar) before install.
-function IsCetusRunning(): Boolean;
+// Ask to close only the Cetus installed in {app}, plus its own node sidecar.
+// Matching on the executable path avoids terminating a portable copy or a
+// separate Cetus installation that happens to use the same process name.
+function QuotePowerShellString(Value: String): String;
 begin
-  Result := FindWindowByWindowName('Cetus · 鲸鱼座') <> 0;
+  StringChangeEx(Value, '''', '''''', True);
+  Result := '''' + Value + '''';
 end;
 
-procedure KillCetusProcesses();
+function MatchingProcessQuery(const TargetPath: String): String;
+begin
+  Result := 'Get-CimInstance Win32_Process | Where-Object {' +
+    '$_.ExecutablePath -and [string]::Equals($_.ExecutablePath, ' +
+    QuotePowerShellString(TargetPath) +
+    ', [System.StringComparison]::OrdinalIgnoreCase)}';
+end;
+
+function IsProcessRunningAtPath(const TargetPath: String): Boolean;
 var
   ResultCode: Integer;
   Params: String;
-  NodePath: String;
 begin
-  // The shell itself
-  Exec('taskkill.exe', '/IM Cetus.exe /F', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  // Any orphaned sidecar node.exe left behind by a force-killed shell. Only
-  // node processes whose executable lives inside this Cetus installation are
-  // matched, so unrelated node.exe instances are never touched.
-  NodePath := ExpandConstant('{app}\runtime\node.exe');
-  Params := '-NoProfile -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process | ' +
-    'Where-Object {$_.ExecutablePath -eq ''' + NodePath + '''} | ' +
-    'ForEach-Object {Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue}"';
+  Params := '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "' +
+    '$matches = @(' + MatchingProcessQuery(TargetPath) + '); ' +
+    'if ($matches.Count -gt 0) { exit 0 } else { exit 1 }"';
+  Result := Exec('powershell.exe', Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and
+    (ResultCode = 0);
+end;
+
+function IsCetusRunning(): Boolean;
+begin
+  Result := IsProcessRunningAtPath(ExpandConstant('{app}\Cetus.exe'));
+end;
+
+procedure StopProcessesAtPath(const TargetPath: String);
+var
+  ResultCode: Integer;
+  Params: String;
+begin
+  Params := '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "' +
+    MatchingProcessQuery(TargetPath) + ' | ' +
+    'ForEach-Object {Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue}"';
   Exec('powershell.exe', Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+procedure KillCetusProcesses();
+begin
+  StopProcessesAtPath(ExpandConstant('{app}\Cetus.exe'));
+  // Any orphaned sidecar left behind by a force-killed shell is matched by its
+  // executable path too, so unrelated Node.js processes are never touched.
+  StopProcessesAtPath(ExpandConstant('{app}\runtime\node.exe'));
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;

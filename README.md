@@ -21,7 +21,7 @@ CETUS 使用 .NET、WPF 与 WebView2，将 DeepSeek Harness 的官方 Web UI、A
 
 CETUS 目前处于早期开发阶段，**M0 桌面骨架与 M2 自包含打包已经完成并通过冒烟测试**。
 
-当前版本已经可以正常启动、加载和退出 DeepSeek Harness，但崩溃自动恢复、代码签名、自动更新、正式图标等能力仍在开发中。现阶段更适合愿意参与测试和反馈的用户，不建议将它视为完全稳定的正式产品。
+当前版本已经可以正常启动、加载、监控和退出 DeepSeek Harness。DSH 进程异常退出或连续健康检查失败时，CETUS 会执行有限次数的自动恢复；代码签名、自动更新与安全模式仍在开发中。现阶段更适合愿意参与测试和反馈的用户，不建议将它视为完全稳定的正式产品。
 
 ### 系统要求
 
@@ -34,8 +34,8 @@ CETUS 目前处于早期开发阶段，**M0 桌面骨架与 M2 自包含打包�
 
 安装包与便携版将在 [Releases](https://github.com/AvroraCL/CETUS-Desktop/releases) 中提供：
 
-- `Cetus-Setup-0.1.5.exe`：中文安装向导，按当前用户安装，无需管理员权限
-- `Cetus-0.1.5-win-x64-portable.zip`：解压后直接运行
+- `Cetus-Setup-0.1.8.exe`：中文安装向导，按当前用户安装，无需管理员权限
+- `Cetus-0.1.8-win-x64-portable.zip`：解压后直接运行
 
 启动后，CETUS 会自动完成以下流程：
 
@@ -50,12 +50,12 @@ CETUS 目前处于早期开发阶段，**M0 桌面骨架与 M2 自包含打包�
 
 - 当前版本尚未进行代码签名，Windows 可能显示安全提醒。
 - 暂无自动更新通道，新版本需要手动下载。
-- 崩溃自动重启与安全模式仍在开发中。
+- 暂无安全模式；DSH 自动恢复耗尽后需要从托盘手动重试。
 - 界面与 Agent 能力主要来自 DeepSeek Harness 上游，部分问题可能随上游版本变化。
 
-### 设计与计划
+### 架构约束
 
-更完整的设计思路、技术调研与开放问题见 [`PLAN.md`](PLAN.md)。
+桌面窗口只渲染状态并转发用户操作；DSH 生命周期、WebView2 会话策略、Windows 原生集成与配置持久化由各自模块拥有。WPF 仍是原生窗口宿主，CETUS 不复制 DeepSeek Harness 的产品界面。
 
 ---
 
@@ -96,6 +96,12 @@ npm install --global @deepseek-ai/dsh
 dotnet run --project src/Cetus.Desktop
 ```
 
+构建全部项目：
+
+```powershell
+dotnet build Cetus.slnx
+```
+
 也可以直接运行 Debug 构建产物：
 
 ```text
@@ -115,13 +121,21 @@ src\Cetus.Desktop\bin\Debug\net10.0-windows\Cetus.exe
 ### 目录结构
 
 ```text
-src/Cetus.Desktop/
-├── App.xaml(.cs)           # 单实例互斥（Mutex）
-├── MainWindow.xaml(.cs)    # 窗口、WebView2 用户数据目录与托盘
-└── Hosting/
-    ├── DshLocator.cs       # Runtime 定位：内嵌 → 环境变量 → PATH → npm 全局 → dsh shim
-    └── DshHost.cs          # 启动、健康检查、端口观察、退出回收与 sidecar 日志
+src/
+├── Cetus.Runtime/                  # 无 WPF 依赖的运行时程序集
+│   ├── Application/                # 单实例进程身份
+│   ├── Configuration/              # 用户设置与环境覆盖
+│   └── Hosting/                    # DSH 定位、探测、进程树、日志与健康监控
+└── Cetus.Desktop/                  # WPF 适配器程序集
+    ├── Browser/                    # WebView2 初始化、安全策略与主题桥
+    ├── Platform/                   # HWND/DWM 与系统托盘
+    ├── Runtime/                    # 启动、恢复、改端口与退出状态机
+    └── MainWindow.xaml(.cs)        # 薄视图：状态渲染与用户操作
+
+tests/Cetus.Desktop.Tests/          # Runtime、状态机与桌面策略回归测试
 ```
+
+依赖方向固定为 `Cetus.Desktop → Cetus.Runtime`。`Cetus.Runtime` 不引用 WPF、WebView2 或 WinForms；生产适配器和内存测试适配器通过内部 seam 接入状态机。
 
 ### 构建与打包
 
@@ -133,9 +147,9 @@ scripts\publish.ps1
 
 脚本需要 .NET 10 SDK、npm 与网络连接。构建产物位于 `dist\`：
 
-- `app\`：自包含运行目录，目标电脑无需安装 .NET 或 Node.js
-- `Cetus-0.1.5-win-x64-portable.zip`：便携版
-- `Cetus-Setup-0.1.5.exe`：Inno Setup 安装程序
+- `app-0.1.8\`：自包含运行目录，目标电脑无需安装 .NET 或 Node.js
+- `Cetus-0.1.8-win-x64-portable.zip`：便携版
+- `Cetus-Setup-0.1.8.exe`：Inno Setup 安装程序
 
 当前 Runtime 固定版本：
 
@@ -144,11 +158,20 @@ scripts\publish.ps1
 
 具体版本记录在 `runtime\VERSIONS.txt`。安装程序默认安装到 `%LOCALAPPDATA%\Cetus`，WebView2 数据位于 `%LOCALAPPDATA%\Cetus\WebView2`；卸载时会一并清理。安装前会自动关闭正在运行的 CETUS 及其残留 Node 进程。
 
+窗口使用真实的非分层 HWND：Windows 11 22H2 及以上启用系统 Desktop Acrylic，Windows 10 使用 DWM blur-behind。标题栏保持直角，并避开会让窗口拖动退回软件合成路径的透明分层窗口方案。
+
+发布后可分别验证便携包运行时和安装程序：
+
+```powershell
+scripts\package-smoke.ps1 -ApplicationPath dist\app-0.1.8\Cetus.exe
+scripts\installer-smoke.ps1 -InstallerPath dist\Cetus-Setup-0.1.8.exe -ExpectedVersion 0.1.8
+```
+
 版本信息：
 
-- 文件版本：`0.0.1.5`
+- 文件版本：`0.0.1.8`
 - 产品名称：`CETUS鲸鱼座`
-- 产品版本：`0.1.5`
+- 产品版本：`0.1.8`
 - 版权：`AvroraCL`
 
 ### 验证场景
@@ -168,9 +191,10 @@ scripts\publish.ps1
 
 - [x] M0：WPF + WebView2 + DSH 进程生命周期，构建与冒烟测试通过
 - [x] M2：自包含发布 + 内嵌固定版本 Node/DSH + 便携 zip + Inno 安装程序
-- [ ] M1：崩溃自动重启、皮肤引导安装、Job Object 加固
+- [x] M1 核心：崩溃自动恢复、健康监控与 Job Object 进程树回收
+- [ ] M1 余项：安全模式与皮肤引导安装
 - [ ] M2 余项：代码签名、更新通道、图标资源
 
 ### 参与开发
 
-欢迎通过 Issue 提交问题、建议与复现步骤。准备贡献代码前，建议先阅读 [`PLAN.md`](PLAN.md)，确认改动与 CETUS 当前的桌面壳定位一致。
+欢迎通过 Issue 提交问题、建议与复现步骤。改动必须保持“只做壳，不重做产品”的定位，并维持 `Cetus.Desktop → Cetus.Runtime` 的单向依赖。

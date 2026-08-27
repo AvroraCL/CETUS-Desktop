@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>Cetus</RootNamespace>
+    <AssemblyName>Cetus.Runtime</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Cetus" />
+    <InternalsVisibleTo Include="Cetus.Desktop.Tests" />
+  </ItemGroup>
+
+</Project>

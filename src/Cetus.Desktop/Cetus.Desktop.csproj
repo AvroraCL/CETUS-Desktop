@@ -3,15 +3,13 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>Cetus</AssemblyName>
     <RootNamespace>Cetus</RootNamespace>
     <ApplicationIcon>Assets\cetus.ico</ApplicationIcon>
-    <Version>0.1.7</Version>
-    <FileVersion>0.0.1.7</FileVersion>
+    <Version>0.1.8</Version>
+    <FileVersion>0.0.1.8</FileVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Product>CETUS鲸鱼座</Product>
     <Copyright>AvroraCL</Copyright>
@@ -19,9 +17,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="MahApps.Metro" Version="2.4.10" />
-    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
-    <PackageReference Include="SharpVectors.Wpf" Version="1.8.5" />
+    <PackageReference Include="Microsoft.Web.WebView2" />
+    <PackageReference Include="SharpVectors.Wpf" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Cetus.Runtime\Cetus.Runtime.csproj" />
   </ItemGroup>
 
   <ItemGroup>

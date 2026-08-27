@@ -51,8 +51,8 @@ fi
 
 mkdir -p "$dev_root/dsh-home" "$dev_root/webview2" "$dev_root/logs"
 
-# Use the same version-pinned runtime the packaging pipeline ships. The global
-# npm dsh may not accept the flags Cetus passes (for example --no-open).
+# Use the same version-pinned runtime the packaging pipeline ships so local
+# checks exercise the exact CLI and dependency graph included in releases.
 runtime_node="$repo_root/dist/runtime/node.exe"
 runtime_entry="$repo_root/dist/runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js"
 if [[ ! -f "$runtime_node" || ! -f "$runtime_entry" ]]; then
@@ -113,11 +113,10 @@ printf '  logs       : %s\n' "$CETUS_LOG_DIR"
 
 run_powershell <<'POWERSHELL'
 $ErrorActionPreference = 'Stop'
-$dotnet = Join-Path $env:USERPROFILE '.dotnet\dotnet.exe'
-if (-not (Test-Path $dotnet)) { $dotnet = Join-Path $env:LOCALAPPDATA 'Microsoft\dotnet\dotnet.exe' }
-if (-not (Test-Path $dotnet)) { $dotnet = 'dotnet' }
+. "$env:CETUS_DEV_ROOT\scripts\common.ps1"
+$dotnet = Resolve-CetusDotNet
 
-& $dotnet test "$env:CETUS_DEV_ROOT\tests\Cetus.Desktop.Tests\Cetus.Desktop.Tests.csproj" -c Debug -v minimal
+& $dotnet test "$env:CETUS_DEV_ROOT\Cetus.slnx" -c Debug -v minimal
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 POWERSHELL
 
@@ -134,9 +133,8 @@ if (Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyCon
   exit 1
 }
 
-$dotnet = Join-Path $env:USERPROFILE '.dotnet\dotnet.exe'
-if (-not (Test-Path $dotnet)) { $dotnet = Join-Path $env:LOCALAPPDATA 'Microsoft\dotnet\dotnet.exe' }
-if (-not (Test-Path $dotnet)) { $dotnet = 'dotnet' }
+. "$env:CETUS_DEV_ROOT\scripts\common.ps1"
+$dotnet = Resolve-CetusDotNet
 
 & $dotnet run --no-build --project "$env:CETUS_DEV_ROOT\src\Cetus.Desktop\Cetus.Desktop.csproj" -c Debug
 exit $LASTEXITCODE
