@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -150,7 +151,184 @@ public sealed class DshHostTests
         await WaitForPortReleaseAsync(port);
     }
 
+    [Fact]
+    public async Task StartAsync_WritesOwnedSidecarLogToOverrideDirectory()
+    {
+        int port = GetFreeLoopbackPort();
+        using var directory = new TemporaryTestDirectory();
+        using var fixture = new NodeServerFixture(healthy: true);
+        string? originalLogDirectory = Environment.GetEnvironmentVariable("CETUS_LOG_DIR");
+        Environment.SetEnvironmentVariable("CETUS_LOG_DIR", directory.Path);
+        var host = new DshHost(
+            new DshCommand(FindNodeExecutable(), fixture.EntryScript, UseShim: false),
+            LocalUrl(port));
+        try
+        {
+            await host.StartAsync();
+
+            Assert.NotNull(host.LogPath);
+            Assert.StartsWith(directory.Path, host.LogPath!, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            await host.StopAsync();
+            Environment.SetEnvironmentVariable("CETUS_LOG_DIR", originalLogDirectory);
+        }
+    }
+
+    [Fact]
+    public async Task RuntimeMonitor_ReportsOneFailureWhenReusedServiceBecomesUnhealthy()
+    {
+        int port = GetFreeLoopbackPort();
+        using var server = new RootHttpServer(port);
+        var host = new DshHost(
+            new DshCommand("missing-node.exe", "missing-entry.js", UseShim: false),
+            LocalUrl(port));
+        var failure = new TaskCompletionSource<DshHostFailureEventArgs>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        int eventCount = 0;
+        host.RuntimeFailure += (_, args) =>
+        {
+            Interlocked.Increment(ref eventCount);
+            failure.TrySetResult(args);
+        };
+
+        try
+        {
+            await host.StartAsync();
+            server.SetUnhealthy();
+
+            DshHostFailureEventArgs result = await failure.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            await Task.Delay(500);
+
+            Assert.Equal(DshHostFailureKind.HealthCheckFailed, result.Kind);
+            Assert.Null(result.ExitCode);
+            Assert.Equal(1, Volatile.Read(ref eventCount));
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task RuntimeMonitor_ReportsFailureWhenReusedServiceStops()
+    {
+        int port = GetFreeLoopbackPort();
+        using var server = new RootHttpServer(port);
+        var host = new DshHost(
+            new DshCommand("missing-node.exe", "missing-entry.js", UseShim: false),
+            LocalUrl(port));
+        var failure = new TaskCompletionSource<DshHostFailureEventArgs>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        host.RuntimeFailure += (_, args) => failure.TrySetResult(args);
+
+        try
+        {
+            await host.StartAsync();
+            server.Stop();
+
+            DshHostFailureEventArgs result = await failure.Task.WaitAsync(TimeSpan.FromSeconds(20));
+
+            Assert.Equal(DshHostFailureKind.HealthCheckFailed, result.Kind);
+            Assert.Null(result.ExitCode);
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task SidecarJob_CloseTerminatesAssignedProcessTree()
+    {
+        using var directory = new TemporaryTestDirectory();
+        string triggerPath = Path.Combine(directory.Path, "spawn-child");
+        string childPidPath = Path.Combine(directory.Path, "child.pid");
+        string scriptPath = Path.Combine(directory.Path, "job-tree.js");
+        File.WriteAllText(scriptPath, $$"""
+            const fs = require('fs');
+            const { spawn } = require('child_process');
+            const trigger = {{JsonSerializer.Serialize(triggerPath)}};
+            const pidFile = {{JsonSerializer.Serialize(childPidPath)}};
+            const poll = setInterval(() => {
+              if (!fs.existsSync(trigger)) return;
+              clearInterval(poll);
+              const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+                stdio: 'ignore',
+                windowsHide: true
+              });
+              fs.writeFileSync(pidFile, String(child.pid));
+            }, 25);
+            setInterval(() => {}, 1000);
+            """);
+
+        using var parent = Process.Start(new ProcessStartInfo
+        {
+            FileName = FindNodeExecutable(),
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            ArgumentList = { scriptPath },
+        }) ?? throw new InvalidOperationException("Unable to start Job Object test parent process.");
+
+        using SidecarJob job = SidecarJob.Create();
+        job.Assign(parent);
+        File.WriteAllText(triggerPath, string.Empty);
+        int childPid = await WaitForPidFileAsync(childPidPath);
+        Assert.True(IsProcessRunning(childPid));
+
+        job.Dispose();
+
+        await WaitForProcessExitAsync(parent.Id);
+        await WaitForProcessExitAsync(childPid);
+    }
+
+
     private static string LocalUrl(int port) => $"http://127.0.0.1:{port}/";
+
+    private static async Task<int> WaitForPidFileAsync(string path)
+    {
+        DateTime deadline = DateTime.UtcNow.AddSeconds(5);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (File.Exists(path)
+                && int.TryParse(await File.ReadAllTextAsync(path), out int pid))
+            {
+                return pid;
+            }
+            await Task.Delay(50);
+        }
+
+        throw new TimeoutException("Child PID file was not created.");
+    }
+
+    private static bool IsProcessRunning(int pid)
+    {
+        try
+        {
+            using Process process = Process.GetProcessById(pid);
+            return !process.HasExited;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    private static async Task WaitForProcessExitAsync(int pid)
+    {
+        DateTime deadline = DateTime.UtcNow.AddSeconds(5);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (!IsProcessRunning(pid))
+            {
+                return;
+            }
+            await Task.Delay(50);
+        }
+
+        throw new TimeoutException($"Process {pid} did not exit when its Job Object closed.");
+    }
 
     private static int GetFreeLoopbackPort()
     {
@@ -262,12 +440,38 @@ public sealed class DshHostTests
         }
     }
 
+    private sealed class TemporaryTestDirectory : IDisposable
+    {
+        public TemporaryTestDirectory()
+        {
+            Path = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(), "CetusTests", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Path);
+        }
+
+        public string Path { get; }
+
+        public void Dispose()
+        {
+            try
+            {
+                Directory.Delete(Path, recursive: true);
+            }
+            catch
+            {
+                // Leave failed-test artifacts for diagnosis.
+            }
+        }
+    }
+
     private sealed class RootHttpServer : IDisposable
     {
         private readonly HttpListener _listener = new();
         private readonly CancellationTokenSource _cancellation = new();
         private readonly Task _serveTask;
         private int _requestCount;
+        private int _stopped;
+        private volatile bool _healthy = true;
 
         public RootHttpServer(int port)
         {
@@ -278,6 +482,8 @@ public sealed class DshHostTests
 
         public int RequestCount => Volatile.Read(ref _requestCount);
 
+        public void SetUnhealthy() => _healthy = false;
+
         private async Task ServeAsync()
         {
             while (!_cancellation.IsCancellationRequested)
@@ -286,6 +492,14 @@ public sealed class DshHostTests
                 {
                     HttpListenerContext context = await _listener.GetContextAsync();
                     Interlocked.Increment(ref _requestCount);
+                    if (!_healthy)
+                    {
+                        context.Response.StatusCode = (int)HttpStatusCode.ServiceUnavailable;
+                        context.Response.ContentLength64 = 0;
+                        context.Response.Close();
+                        continue;
+                    }
+
                     byte[] body = Encoding.UTF8.GetBytes("<html><div id=\"root\"></div></html>");
                     context.Response.StatusCode = (int)HttpStatusCode.OK;
                     context.Response.ContentType = "text/html; charset=utf-8";
@@ -304,8 +518,13 @@ public sealed class DshHostTests
             }
         }
 
-        public void Dispose()
+        public void Stop()
         {
+            if (Interlocked.Exchange(ref _stopped, 1) != 0)
+            {
+                return;
+            }
+
             _cancellation.Cancel();
             _listener.Close();
             try
@@ -320,6 +539,11 @@ public sealed class DshHostTests
             {
                 // Closing HttpListener ends the accept loop.
             }
+        }
+
+        public void Dispose()
+        {
+            Stop();
             _cancellation.Dispose();
         }
     }

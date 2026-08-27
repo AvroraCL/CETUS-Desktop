@@ -69,15 +69,19 @@ end;
 procedure KillCetusProcesses();
 var
   ResultCode: Integer;
+  Params: String;
+  NodePath: String;
 begin
   // The shell itself
   Exec('taskkill.exe', '/IM Cetus.exe /F', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  // Any orphaned sidecar node.exe left behind by a force-killed shell.
-  // The command line always contains runtime\node.exe for Cetus sidecars,
-  // so this never touches unrelated node processes.
-  Exec('powershell.exe',
-    '-NoProfile -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process | Where-Object {$_.CommandLine -like ''*runtime\node.exe*''} | ForEach-Object {Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue}"',
-    '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  // Any orphaned sidecar node.exe left behind by a force-killed shell. Only
+  // node processes whose executable lives inside this Cetus installation are
+  // matched, so unrelated node.exe instances are never touched.
+  NodePath := ExpandConstant('{app}\runtime\node.exe');
+  Params := '-NoProfile -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process | ' +
+    'Where-Object {$_.ExecutablePath -eq ''' + NodePath + '''} | ' +
+    'ForEach-Object {Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue}"';
+  Exec('powershell.exe', Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;

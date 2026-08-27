@@ -51,6 +51,28 @@ public sealed class CetusSettingsTests
         }
     }
 
+    [Fact]
+    public void LoadDefault_UsesExplicitSettingsPathOverride()
+    {
+        using var directory = new TemporaryDirectory();
+        string settingsPath = Path.Combine(directory.Path, "isolated-settings.json");
+        string? originalPath = Environment.GetEnvironmentVariable("CETUS_SETTINGS_PATH");
+        try
+        {
+            Environment.SetEnvironmentVariable("CETUS_SETTINGS_PATH", settingsPath);
+
+            CetusSettings settings = CetusSettings.LoadDefault();
+            settings.SetConfiguredPort(4312);
+
+            Assert.Equal(4312, settings.ConfiguredPort);
+            Assert.True(File.Exists(settingsPath));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("CETUS_SETTINGS_PATH", originalPath);
+        }
+    }
+
     [Theory]
     [InlineData("0")]
     [InlineData("65536")]
@@ -59,6 +81,16 @@ public sealed class CetusSettingsTests
     {
         Assert.False(CetusSettings.TryParsePort(value, out _));
     }
+
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("", false)]
+    [InlineData("   ", false)]
+    [InlineData("0", false)]
+    [InlineData("1", true)]
+    [InlineData("true", true)]
+    public void DevModeFlag_ParsesOptInValues(string? value, bool expected) =>
+        Assert.Equal(expected, DevModeFlag.IsEnabled(value));
 
     private sealed class TemporaryDirectory : IDisposable
     {

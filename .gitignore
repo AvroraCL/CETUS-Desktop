@@ -13,6 +13,9 @@ tools/
 # --- local docs / non-committable files ---
 docs/
 
+# --- isolated development checks ---
+.dev-check/
+
 # --- test scratch dirs ---
 .test-home/
 .test-install/

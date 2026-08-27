@@ -48,11 +48,39 @@ public partial class MainWindow : Window
     {
         _settings = CetusSettings.LoadDefault();
         InitializeComponent();
+        if (DevModeFlag.IsActive)
+        {
+            Title = "Cetus · 鲸鱼座 · DEV";
+            TitleText.Text = "CETUS DEV";
+            // Keep the isolated dev window out of the release window's
+            // center-screen position, which otherwise hides real alpha behind
+            // an identical dark title strip.
+            WindowStartupLocation = WindowStartupLocation.Manual;
+            Left = 40;
+            Top = 40;
+        }
         ApplyWindowTheme(IsSystemDarkMode());
+    }
+
+    private const uint DwmBbEnable = 0x00000001;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct DwmBlurBehind
+    {
+        public uint Flags;
+        [MarshalAs(UnmanagedType.Bool)]
+        public bool Enable;
+        public IntPtr BlurRegion;
+        [MarshalAs(UnmanagedType.Bool)]
+        public bool TransitionOnMaximized;
     }
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern uint RegisterWindowMessage(string message);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmEnableBlurBehindWindow(
+        IntPtr hwnd, ref DwmBlurBehind blurBehind);
 
     protected override void OnSourceInitialized(EventArgs e)
     {
@@ -60,6 +88,36 @@ public partial class MainWindow : Window
         _taskbarCreatedMessage = RegisterWindowMessage("TaskbarCreated");
         _windowSource = PresentationSource.FromVisual(this) as HwndSource;
         _windowSource?.AddHook(WindowMessageHook);
+        EnableNativeTitleBlur(_windowSource?.Handle ?? IntPtr.Zero);
+    }
+
+    /// <summary>
+    /// Requests the platform's blur-behind compositor for the transparent
+    /// window. The opaque WebView2 client plane hides it everywhere except
+    /// the title band; no generated gradient or image is involved.
+    /// </summary>
+    private static void EnableNativeTitleBlur(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero)
+        {
+            return;
+        }
+
+        try
+        {
+            var blur = new DwmBlurBehind
+            {
+                Flags = DwmBbEnable,
+                Enable = true,
+                BlurRegion = IntPtr.Zero,
+                TransitionOnMaximized = false,
+            };
+            _ = DwmEnableBlurBehindWindow(hwnd, ref blur);
+        }
+        catch (EntryPointNotFoundException)
+        {
+            // The live 70% WPF alpha remains correct on older systems.
+        }
     }
 
     private IntPtr WindowMessageHook(
@@ -77,6 +135,17 @@ public partial class MainWindow : Window
         SetupTray();
         await StartAsync();
     }
+
+    private void OnMinimizeClicked(object sender, RoutedEventArgs e) =>
+        SystemCommands.MinimizeWindow(this);
+
+    private void OnMaximizeClicked(object sender, RoutedEventArgs e) =>
+        SystemCommands.MaximizeWindow(this);
+
+    private void OnRestoreClicked(object sender, RoutedEventArgs e) =>
+        SystemCommands.RestoreWindow(this);
+
+    private void OnCloseToTrayClicked(object sender, RoutedEventArgs e) => Close();
 
     private async Task<bool> StartAsync(bool showError = true)
     {
@@ -104,9 +173,10 @@ public partial class MainWindow : Window
             StatusText.Text = "正在加载界面…";
             // Explicit user data folder: WebView2's default (next to the exe)
             // would pollute the install directory and survive uninstall.
-            string userDataFolder = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "Cetus", "WebView2");
+            string userDataFolder = Environment.GetEnvironmentVariable("CETUS_WEBVIEW2_USER_DATA")
+                ?? Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "Cetus", "WebView2");
             var environment = await CoreWebView2Environment.CreateAsync(
                 browserExecutableFolder: null, userDataFolder: userDataFolder);
             await Browser.EnsureCoreWebView2Async(environment);
@@ -234,15 +304,17 @@ public partial class MainWindow : Window
             using JsonDocument message = JsonDocument.Parse(e.WebMessageAsJson);
             JsonElement root = message.RootElement;
             if (!root.TryGetProperty("source", out JsonElement source)
-                || source.GetString() != "cetus-window"
-                || !root.TryGetProperty("type", out JsonElement type)
-                || type.GetString() != "theme"
-                || !root.TryGetProperty("mode", out JsonElement mode))
+                || !root.TryGetProperty("type", out JsonElement type))
             {
                 return;
             }
 
-            ApplyWindowTheme(mode.GetString() == "dark");
+            if (source.GetString() == "cetus-window"
+                && type.GetString() == "theme"
+                && root.TryGetProperty("mode", out JsonElement mode))
+            {
+                ApplyWindowTheme(mode.GetString() == "dark");
+            }
         }
         catch (JsonException)
         {
@@ -272,8 +344,8 @@ public partial class MainWindow : Window
 
         WindowFrame.Background = background;
         StatusText.Foreground = statusForeground;
-        // The title bar intentionally stays dark-and-translucent in both themes
-        // so the white SVG logo and caption glyphs remain legible.
+        // The native DWM-backed caption remains independent from Harness theme
+        // colors: it is always #151517 at live 70% alpha.
     }
 
     private static System.Windows.Media.Brush CreateBrush(string color) =>
@@ -360,11 +432,11 @@ public partial class MainWindow : Window
     private DshHost CreateDshHost()
     {
         var host = new DshHost(DshLocator.Resolve(), DshUrl, _settings.DshHomeOverride);
-        host.UnexpectedExit += OnDshHostUnexpectedExit;
+        host.RuntimeFailure += OnDshHostRuntimeFailure;
         return host;
     }
 
-    private void OnDshHostUnexpectedExit(object? sender, DshHostExitedEventArgs e)
+    private void OnDshHostRuntimeFailure(object? sender, DshHostFailureEventArgs e)
     {
         if (_isExiting || !ReferenceEquals(sender, _host) || Dispatcher.HasShutdownStarted)
         {
@@ -374,7 +446,7 @@ public partial class MainWindow : Window
         _ = Dispatcher.InvokeAsync(() => BeginAutomaticRecovery(e));
     }
 
-    private void BeginAutomaticRecovery(DshHostExitedEventArgs exit)
+    private void BeginAutomaticRecovery(DshHostFailureEventArgs failure)
     {
         if (_isExiting || _isStarting)
         {
@@ -384,11 +456,11 @@ public partial class MainWindow : Window
         CancelAutomaticRecovery();
         var cancellation = new CancellationTokenSource();
         _recoveryCancellation = cancellation;
-        _ = RecoverFromUnexpectedExitAsync(exit, cancellation);
+        _ = RecoverFromRuntimeFailureAsync(failure, cancellation);
     }
 
-    private async Task RecoverFromUnexpectedExitAsync(
-        DshHostExitedEventArgs exit, CancellationTokenSource cancellation)
+    private async Task RecoverFromRuntimeFailureAsync(
+        DshHostFailureEventArgs failure, CancellationTokenSource cancellation)
     {
         try
         {
@@ -403,8 +475,11 @@ public partial class MainWindow : Window
                 int delaySeconds = attempt * 2;
                 Browser.Visibility = Visibility.Collapsed;
                 StatusText.Visibility = Visibility.Visible;
+                string failureDescription = failure.Kind == DshHostFailureKind.ProcessExited
+                    ? $"DSH 主机意外退出（代码 {failure.ExitCode?.ToString() ?? "未知"}）"
+                    : "DSH 服务连续健康检查失败";
                 StatusText.Text =
-                    $"DSH 主机意外退出（代码 {exit.ExitCode}）；将在 {delaySeconds} 秒后尝试恢复（{attempt}/{MaxAutomaticRestartAttempts}）…";
+                    $"{failureDescription}；将在 {delaySeconds} 秒后尝试恢复（{attempt}/{MaxAutomaticRestartAttempts}）…";
 
                 await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellation.Token);
                 if (_isExiting || cancellation.IsCancellationRequested)

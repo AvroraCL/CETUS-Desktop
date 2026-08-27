@@ -12,12 +12,15 @@
         WindowStyle="None"
         ResizeMode="CanResize"
         Background="Transparent"
+        AllowsTransparency="True"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
         Icon="pack://application:,,,/Assets/cetus.ico"
         Loaded="OnLoaded">
 
     <WindowChrome.WindowChrome>
+        <!-- The title band and WebView2 have separate rows, avoiding HWND
+             airspace overlap while the transparent WPF window owns the corners. -->
         <shell:WindowChrome CaptionHeight="40"
                            ResizeBorderThickness="6"
                            CornerRadius="16"
@@ -26,7 +29,6 @@
     </WindowChrome.WindowChrome>
 
     <Window.Resources>
-        <!-- MahApps supplies the base button template, focus behavior and transitions. -->
         <Style x:Key="CaptionButton"
                TargetType="Button"
                BasedOn="{StaticResource {x:Type Button}}">
@@ -35,7 +37,12 @@
             <Setter Property="Padding" Value="0" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Foreground" Value="#FFFFFF" />
+            <Setter Property="Foreground">
+                <Setter.Value>
+                    <!-- True 70% white alpha; never a pre-composed RGB value. -->
+                    <SolidColorBrush Color="#FFFFFF" Opacity="0.70" />
+                </Setter.Value>
+            </Setter>
             <Setter Property="mah:ControlsHelper.CornerRadius" Value="0" />
         </Style>
 
@@ -63,84 +70,122 @@
         </Style>
     </Window.Resources>
 
-    <Border x:Name="WindowFrame"
-            Background="#F8FAFC"
-            CornerRadius="16"
-            ClipToBounds="True">
-        <Grid>
-            <!-- Content fills the entire window (scrolls under the translucent title bar). -->
+    <!-- This transparent root clips WPF content to the real 16px window shape.
+         Browser is kept clear of lower-corner pixels in its own row. -->
+    <Border CornerRadius="16" Background="Transparent" ClipToBounds="True">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="40" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- The physical top window band: live #151517 at 70% alpha over
+             whatever lies behind the transparent window, not a mixed color. -->
+        <Border x:Name="TitleBar" Grid.Row="0">
+            <Border.Background>
+                <SolidColorBrush Color="#151517" Opacity="0.70" />
+            </Border.Background>
+            <DockPanel LastChildFill="True">
+                <StackPanel DockPanel.Dock="Right"
+                            Orientation="Horizontal"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                    <Button x:Name="MinimizeButton"
+                            Style="{StaticResource CaptionButton}"
+                            ToolTip="最小化"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                            Click="OnMinimizeClicked">
+                        <Viewbox Width="12" Height="12" Stretch="Uniform">
+                            <Path Data="M 1,6 H 11"
+                                  Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Button}}}"
+                                  StrokeThickness="1.25"
+                                  StrokeStartLineCap="Square"
+                                  StrokeEndLineCap="Square" />
+                        </Viewbox>
+                    </Button>
+                    <Button x:Name="MaximizeButton"
+                            Style="{StaticResource MaximizeCaptionButton}"
+                            ToolTip="最大化"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                            Click="OnMaximizeClicked">
+                        <Viewbox Width="12" Height="12" Stretch="Uniform">
+                            <Rectangle Width="10" Height="10"
+                                       Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Button}}}"
+                                       StrokeThickness="1.25" />
+                        </Viewbox>
+                    </Button>
+                    <Button x:Name="RestoreButton"
+                            Style="{StaticResource RestoreCaptionButton}"
+                            ToolTip="还原"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                            Click="OnRestoreClicked">
+                        <Viewbox Width="12" Height="12" Stretch="Uniform">
+                            <Canvas Width="12" Height="12">
+                                <Rectangle Canvas.Left="3" Canvas.Top="0"
+                                           Width="8" Height="8"
+                                           Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Button}}}"
+                                           StrokeThickness="1.25" />
+                                <Rectangle Canvas.Left="0.5" Canvas.Top="3.5"
+                                           Width="8" Height="8"
+                                           Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Button}}}"
+                                           StrokeThickness="1.25" />
+                            </Canvas>
+                        </Viewbox>
+                    </Button>
+                    <Button x:Name="CloseButton"
+                            Style="{StaticResource CaptionButton}"
+                            ToolTip="关闭到托盘"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                            Click="OnCloseToTrayClicked">
+                        <Viewbox Width="12" Height="12" Stretch="Uniform">
+                            <Path Data="M 1,1 L 11,11 M 11,1 L 1,11"
+                                  Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Button}}}"
+                                  StrokeThickness="1.25"
+                                  StrokeStartLineCap="Square"
+                                  StrokeEndLineCap="Square" />
+                        </Viewbox>
+                    </Button>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
+                    <svgc:SvgViewbox x:Name="BrandLogo"
+                                     Source="pack://application:,,,/Assets/heclm-logo.svg"
+                                     Width="18" Height="18"
+                                     Stretch="Uniform"
+                                     Opacity="0.70"
+                                     Margin="0,0,8,0" />
+                    <TextBlock x:Name="TitleText"
+                               Text="Cetus · 鲸鱼座"
+                               FontFamily="Segoe UI, PingFang SC, Hiragino Sans GB, Microsoft YaHei, Helvetica Neue, Helvetica, Arial"
+                               FontSize="14"
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Center">
+                        <TextBlock.Foreground>
+                            <SolidColorBrush Color="#FFFFFF" Opacity="0.70" />
+                        </TextBlock.Foreground>
+                    </TextBlock>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- Fully opaque client plane begins below the transparent title band. -->
+        <Border x:Name="WindowFrame"
+                Grid.Row="1"
+                Background="#F8FAFC"
+                CornerRadius="0,0,16,16"
+                ClipToBounds="True">
             <Grid>
-                <!-- Status line shown while the DSH host is starting. -->
                 <TextBlock x:Name="StatusText"
                            HorizontalAlignment="Center" VerticalAlignment="Center"
                            FontSize="16" Foreground="#667"
                            Text="正在启动 DSH 主机…" />
-
-                <!-- The harness GUI, revealed once the host is healthy. -->
+                <!-- Keep the child HWND clear of rounded bottom-corner
+                     pixels; the transparent WPF root owns window rounding. -->
                 <wv2:WebView2 x:Name="Browser"
+
                               Visibility="Collapsed"
                               DefaultBackgroundColor="White" />
             </Grid>
-
-            <!--
-                70%-translucent title bar overlay. The dark background keeps the
-                white SVG logo and caption glyphs legible in both light and dark
-                themes; the web content shows through underneath.
-            -->
-            <Border x:Name="TitleBar"
-                    Height="40"
-                    VerticalAlignment="Top"
-                    Background="#B3222A35">
-                <DockPanel LastChildFill="True">
-                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                        <Button x:Name="MinimizeButton"
-                                Style="{StaticResource CaptionButton}"
-                                ToolTip="最小化"
-                                shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                                Command="{x:Static SystemCommands.MinimizeWindowCommand}"
-                                CommandParameter="{Binding RelativeSource={RelativeSource AncestorType={x:Type Window}}}">
-                            <TextBlock Text="&#xE921;" FontFamily="Segoe Fluent Icons" FontSize="12" />
-                        </Button>
-                        <Button x:Name="MaximizeButton"
-                                Style="{StaticResource MaximizeCaptionButton}"
-                                ToolTip="最大化"
-                                shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                                Command="{x:Static SystemCommands.MaximizeWindowCommand}"
-                                CommandParameter="{Binding RelativeSource={RelativeSource AncestorType={x:Type Window}}}">
-                            <TextBlock Text="&#xE922;" FontFamily="Segoe Fluent Icons" FontSize="12" />
-                        </Button>
-                        <Button x:Name="RestoreButton"
-                                Style="{StaticResource RestoreCaptionButton}"
-                                ToolTip="还原"
-                                shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                                Command="{x:Static SystemCommands.RestoreWindowCommand}"
-                                CommandParameter="{Binding RelativeSource={RelativeSource AncestorType={x:Type Window}}}">
-                            <TextBlock Text="&#xE923;" FontFamily="Segoe Fluent Icons" FontSize="12" />
-                        </Button>
-                        <Button x:Name="CloseButton"
-                                Style="{StaticResource CaptionButton}"
-                                ToolTip="关闭到托盘"
-                                shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                                Command="{x:Static SystemCommands.CloseWindowCommand}"
-                                CommandParameter="{Binding RelativeSource={RelativeSource AncestorType={x:Type Window}}}">
-                            <TextBlock Text="&#xE8BB;" FontFamily="Segoe Fluent Icons" FontSize="12" />
-                        </Button>
-                    </StackPanel>
-
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
-                        <svgc:SvgViewbox Source="pack://application:,,,/Assets/logo.svg"
-                                         Width="18" Height="18"
-                                         Stretch="Uniform"
-                                         Margin="0,0,8,0" />
-                        <TextBlock x:Name="TitleText"
-                                   Text="Cetus · 鲸鱼座"
-                                   Foreground="#FFFFFF"
-                                   FontSize="14"
-                                   FontWeight="SemiBold"
-                                   VerticalAlignment="Center" />
-                    </StackPanel>
-                </DockPanel>
-            </Border>
-        </Grid>
+        </Border>
+    </Grid>
     </Border>
 </Window>

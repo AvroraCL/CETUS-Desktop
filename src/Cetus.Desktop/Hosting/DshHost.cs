@@ -19,6 +19,8 @@ public sealed class DshHost
     private const int PortOccupiedGraceSeconds = 15;
     private const int ReadyWaitSeconds = 60;
     private const int PollIntervalMs = 500;
+    private static readonly TimeSpan HealthMonitorInterval = TimeSpan.FromSeconds(2);
+    private const int HealthFailureThreshold = 3;
 
     private readonly DshCommand _command;
     private readonly string _url;
@@ -26,13 +28,17 @@ public sealed class DshHost
     private readonly HttpClient _client;
     private readonly object _lifecycleGate = new();
     private Process? _process;
+    private SidecarJob? _sidecarJob;
     private FileStream? _logStream;
     private string? _logPath;
+    private CancellationTokenSource? _monitorCancellation;
+    private Task? _monitorTask;
     private bool _isReady;
     private bool _isStopping;
+    private bool _failureReported;
 
-    /// <summary>Raised when a healthy DSH sidecar started by this instance exits unexpectedly.</summary>
-    public event EventHandler<DshHostExitedEventArgs>? UnexpectedExit;
+    /// <summary>Raised when a healthy DSH sidecar exits or any monitored DSH service becomes unavailable.</summary>
+    public event EventHandler<DshHostFailureEventArgs>? RuntimeFailure;
 
     public DshHost(DshCommand command, string url, string? dshHomeOverride = null)
     {
@@ -49,6 +55,7 @@ public sealed class DshHost
     {
         if (await IsHealthyAsync(ct))
         {
+            MarkReadyAndStartMonitoring();
             return; // A healthy DSH is already running; reuse it.
         }
 
@@ -62,6 +69,7 @@ public sealed class DshHost
                 ct.ThrowIfCancellationRequested();
                 if (await IsHealthyAsync(ct))
                 {
+                    MarkReadyAndStartMonitoring();
                     return;
                 }
                 await Task.Delay(PollIntervalMs, ct);
@@ -74,6 +82,7 @@ public sealed class DshHost
         {
             _isStopping = false;
             _isReady = false;
+            _failureReported = false;
         }
         Process startedProcess = StartHostProcess();
         lock (_lifecycleGate)
@@ -89,10 +98,7 @@ public sealed class DshHost
                 ct.ThrowIfCancellationRequested();
                 if (await IsHealthyAsync(ct))
                 {
-                    lock (_lifecycleGate)
-                    {
-                        _isReady = true;
-                    }
+                    MarkReadyAndStartMonitoring();
                     return;
                 }
 
@@ -131,16 +137,39 @@ public sealed class DshHost
     public async Task StopAsync()
     {
         Process? process;
+        SidecarJob? sidecarJob;
         FileStream? logStream;
+        CancellationTokenSource? monitorCancellation;
+        Task? monitorTask;
         lock (_lifecycleGate)
         {
             _isStopping = true;
             _isReady = false;
             process = _process;
             _process = null;
+            sidecarJob = _sidecarJob;
+            _sidecarJob = null;
             logStream = _logStream;
             _logStream = null;
+            monitorCancellation = _monitorCancellation;
+            _monitorCancellation = null;
+            monitorTask = _monitorTask;
+            _monitorTask = null;
         }
+
+        monitorCancellation?.Cancel();
+        if (monitorTask is not null)
+        {
+            try
+            {
+                await monitorTask;
+            }
+            catch (OperationCanceledException)
+            {
+                // Normal monitor shutdown.
+            }
+        }
+        monitorCancellation?.Dispose();
 
         if (process is not null)
         {
@@ -154,7 +183,7 @@ public sealed class DshHost
             }
             catch
             {
-                // Best-effort teardown; nothing sensible left to do.
+                // Closing the job below remains the authoritative tree cleanup.
             }
             finally
             {
@@ -163,6 +192,7 @@ public sealed class DshHost
             }
         }
 
+        sidecarJob?.Dispose();
         logStream?.Dispose();   // pumps end on EOF or ObjectDisposedException
     }
 
@@ -189,6 +219,70 @@ public sealed class DshHost
         {
             return false;
         }
+    }
+
+    private void MarkReadyAndStartMonitoring()
+    {
+        var cancellation = new CancellationTokenSource();
+        lock (_lifecycleGate)
+        {
+            _isStopping = false;
+            _isReady = true;
+            _failureReported = false;
+            _monitorCancellation?.Cancel();
+            _monitorCancellation = cancellation;
+            _monitorTask = MonitorHealthAsync(cancellation.Token);
+        }
+    }
+
+    private async Task MonitorHealthAsync(CancellationToken ct)
+    {
+        int consecutiveFailures = 0;
+        try
+        {
+            while (true)
+            {
+                await Task.Delay(HealthMonitorInterval, ct);
+                bool healthy = await IsHealthyAsync(ct);
+                if (healthy)
+                {
+                    consecutiveFailures = 0;
+                    continue;
+                }
+
+                consecutiveFailures++;
+                if (consecutiveFailures < HealthFailureThreshold)
+                {
+                    continue;
+                }
+
+                ReportRuntimeFailure(new DshHostFailureEventArgs(
+                    DshHostFailureKind.HealthCheckFailed,
+                    null,
+                    _logPath));
+                return;
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Stop/retry cancels the active monitor.
+        }
+    }
+
+    private void ReportRuntimeFailure(DshHostFailureEventArgs failure)
+    {
+        lock (_lifecycleGate)
+        {
+            if (_isStopping || !_isReady || _failureReported)
+            {
+                return;
+            }
+
+            _isReady = false;
+            _failureReported = true;
+        }
+
+        RuntimeFailure?.Invoke(this, failure);
     }
 
     private static bool IsPortInUse(int port) =>
@@ -237,14 +331,39 @@ public sealed class DshHost
         }
         RedirectToLog(psi);
 
-        Process process;
+        Process? process = null;
+        SidecarJob? sidecarJob = null;
         try
         {
+            sidecarJob = SidecarJob.Create();
             process = Process.Start(psi)
                 ?? throw new InvalidOperationException("无法启动 DSH 主机进程。");
+            sidecarJob.Assign(process);
+            lock (_lifecycleGate)
+            {
+                _sidecarJob = sidecarJob;
+            }
+            sidecarJob = null;
         }
         catch
         {
+            if (process is not null)
+            {
+                try
+                {
+                    if (!process.HasExited)
+                    {
+                        process.Kill(entireProcessTree: true);
+                        process.WaitForExit(5000);
+                    }
+                }
+                catch
+                {
+                    // Closing a successfully created job is the remaining cleanup path.
+                }
+                process.Dispose();
+            }
+            sidecarJob?.Dispose();
             _logStream?.Dispose();
             _logStream = null;
             _logPath = null;
@@ -282,16 +401,20 @@ public sealed class DshHost
         }
 
         FileStream? logStream;
+        SidecarJob? sidecarJob;
         string? logPath;
         lock (_lifecycleGate)
         {
-            if (_isStopping || !_isReady || !ReferenceEquals(process, _process))
+            if (_isStopping || !_isReady || _failureReported || !ReferenceEquals(process, _process))
             {
                 return;
             }
 
             _isReady = false;
+            _failureReported = true;
             _process = null;
+            sidecarJob = _sidecarJob;
+            _sidecarJob = null;
             logStream = _logStream;
             _logStream = null;
             logPath = _logPath;
@@ -299,18 +422,24 @@ public sealed class DshHost
 
         process.Exited -= OnProcessExited;
         process.Dispose();
+        sidecarJob?.Dispose();
         logStream?.Dispose();
 
-        UnexpectedExit?.Invoke(this, new DshHostExitedEventArgs(exitCode, logPath));
+        RuntimeFailure?.Invoke(this, new DshHostFailureEventArgs(
+            DshHostFailureKind.ProcessExited,
+            exitCode,
+            logPath));
     }
 
     /// <summary>Sidecar stdout/stderr → %LOCALAPPDATA%\Cetus\logs\dsh-*.log.</summary>
     private void RedirectToLog(ProcessStartInfo psi)
     {
-        _logPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Cetus", "logs", $"dsh-{DateTime.Now:yyyyMMdd-HHmmss}.log");
-        Directory.CreateDirectory(Path.GetDirectoryName(_logPath)!);
+        string logDirectory = Environment.GetEnvironmentVariable("CETUS_LOG_DIR")
+            ?? Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Cetus", "logs");
+        _logPath = Path.Combine(logDirectory, $"dsh-{DateTime.Now:yyyyMMdd-HHmmss}.log");
+        Directory.CreateDirectory(logDirectory);
         _logStream = new FileStream(_logPath, FileMode.Create, FileAccess.Write, FileShare.Read);
         psi.RedirectStandardOutput = true;
         psi.RedirectStandardError = true;
@@ -334,9 +463,20 @@ public sealed class DshHost
     }
 }
 
-/// <summary>Details of an unexpected exit from a Cetus-owned, healthy DSH sidecar.</summary>
-public sealed class DshHostExitedEventArgs(int exitCode, string? logPath) : EventArgs
+/// <summary>The monitored DSH runtime failure category.</summary>
+public enum DshHostFailureKind
 {
-    public int ExitCode { get; } = exitCode;
+    ProcessExited,
+    HealthCheckFailed,
+}
+
+/// <summary>Details of a monitored DSH runtime failure.</summary>
+public sealed class DshHostFailureEventArgs(
+    DshHostFailureKind kind,
+    int? exitCode,
+    string? logPath) : EventArgs
+{
+    public DshHostFailureKind Kind { get; } = kind;
+    public int? ExitCode { get; } = exitCode;
     public string? LogPath { get; } = logPath;
 }

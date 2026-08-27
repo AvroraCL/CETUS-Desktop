@@ -52,6 +52,12 @@ public sealed class CetusSettings
 
     public static CetusSettings LoadDefault()
     {
+        string? settingsPathOverride = Environment.GetEnvironmentVariable("CETUS_SETTINGS_PATH");
+        if (!string.IsNullOrWhiteSpace(settingsPathOverride))
+        {
+            return new CetusSettings(settingsPathOverride);
+        }
+
         string settingsPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "Cetus", SettingsFileName);

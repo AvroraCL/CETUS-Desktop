@@ -8,14 +8,18 @@ namespace Cetus;
 /// </summary>
 public partial class App : Application
 {
-    private const string MutexName = @"Local\Cetus.Desktop.SingleInstance";
+    private const string MutexNamePrefix = @"Local\Cetus.Desktop.SingleInstance";
 
     private Mutex? _mutex;
     private bool _ownsMutex;
 
     protected override void OnStartup(StartupEventArgs e)
     {
-        _mutex = new Mutex(initiallyOwned: true, MutexName, out _ownsMutex);
+        // CETUS_INSTANCE_ID lets isolated development checks run beside a
+        // normally installed Cetus without colliding on the single-instance guard.
+        string instanceId = Environment.GetEnvironmentVariable("CETUS_INSTANCE_ID") ?? string.Empty;
+        string suffix = string.IsNullOrWhiteSpace(instanceId) ? string.Empty : $".{instanceId.Trim()}";
+        _mutex = new Mutex(initiallyOwned: true, MutexNamePrefix + suffix, out _ownsMutex);
         if (!_ownsMutex)
         {
             MessageBox.Show(

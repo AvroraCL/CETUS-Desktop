@@ -10,8 +10,8 @@
     <AssemblyName>Cetus</AssemblyName>
     <RootNamespace>Cetus</RootNamespace>
     <ApplicationIcon>Assets\cetus.ico</ApplicationIcon>
-    <Version>0.1.5</Version>
-    <FileVersion>0.0.1.5</FileVersion>
+    <Version>0.1.7</Version>
+    <FileVersion>0.0.1.7</FileVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Product>CETUS鲸鱼座</Product>
     <Copyright>AvroraCL</Copyright>
@@ -25,6 +25,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Cetus.Desktop.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- WinForms implicit usings collide with WPF's Application; MainWindow imports them explicitly. -->
     <Using Remove="System.Windows.Forms" />
   </ItemGroup>
@@ -33,6 +37,7 @@
     <!-- The custom title bar reuses the application's packaged icon. -->
     <Resource Include="Assets\cetus.ico" />
     <Resource Include="Assets\logo.svg" />
+    <Resource Include="Assets\heclm-logo.svg" />
   </ItemGroup>
 
 </Project>
