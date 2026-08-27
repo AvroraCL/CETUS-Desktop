@@ -6,10 +6,9 @@ using System.Text.Json;
 using Cetus.Hosting;
 using Xunit;
 
-[assembly: CollectionBehavior(DisableTestParallelization = true)]
-
 namespace Cetus.Desktop.Tests;
 
+[Trait("Category", "Integration")]
 public sealed class DshHostTests
 {
     [Fact]
@@ -38,7 +37,7 @@ public sealed class DshHostTests
     public async Task StartAsync_AppliesDshHomeOverrideToOwnedSidecar()
     {
         int port = GetFreeLoopbackPort();
-        string dshHome = Path.Combine(Path.GetTempPath(), "CetusTests", Guid.NewGuid().ToString("N"));
+        string dshHome = TestWorkspace.CreateDirectory();
         using var fixture = new NodeServerFixture(healthy: true, expectedDshHome: dshHome);
         var host = new DshHost(
             new DshCommand(FindNodeExecutable(), fixture.EntryScript, UseShim: false),
@@ -288,8 +287,8 @@ public sealed class DshHostTests
 
     private static async Task<int> WaitForPidFileAsync(string path)
     {
-        DateTime deadline = DateTime.UtcNow.AddSeconds(5);
-        while (DateTime.UtcNow < deadline)
+        var stopwatch = Stopwatch.StartNew();
+        while (stopwatch.Elapsed < TimeSpan.FromSeconds(5))
         {
             if (File.Exists(path)
                 && int.TryParse(await File.ReadAllTextAsync(path), out int pid))
@@ -389,8 +388,7 @@ public sealed class DshHostTests
 
         public NodeServerFixture(bool healthy, string? expectedDshHome = null)
         {
-            DirectoryPath = Path.Combine(Path.GetTempPath(), "CetusTests", Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(DirectoryPath);
+            DirectoryPath = TestWorkspace.CreateDirectory();
             EntryScript = Path.Combine(DirectoryPath, "fake-dsh.js");
             string body = healthy ? HealthyBody : UnhealthyBody;
             string dshHomeCheck = expectedDshHome is null
@@ -429,6 +427,7 @@ public sealed class DshHostTests
 
         public void Dispose()
         {
+            if (TestWorkspace.RetainArtifacts) return;
             try
             {
                 Directory.Delete(DirectoryPath, recursive: true);
@@ -444,15 +443,14 @@ public sealed class DshHostTests
     {
         public TemporaryTestDirectory()
         {
-            Path = System.IO.Path.Combine(
-                System.IO.Path.GetTempPath(), "CetusTests", Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(Path);
+            Path = TestWorkspace.CreateDirectory();
         }
 
         public string Path { get; }
 
         public void Dispose()
         {
+            if (TestWorkspace.RetainArtifacts) return;
             try
             {
                 Directory.Delete(Path, recursive: true);

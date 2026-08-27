@@ -144,8 +144,7 @@ public sealed class DesktopRuntimeTests
         {
             _originalPort = Environment.GetEnvironmentVariable("CETUS_PORT");
             Environment.SetEnvironmentVariable("CETUS_PORT", null);
-            _directory = Path.Combine(Path.GetTempPath(), "CetusTests", Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(_directory);
+            _directory = TestWorkspace.CreateDirectory();
             Settings = new CetusSettings(Path.Combine(_directory, "settings.json"));
         }
 
@@ -169,6 +168,7 @@ public sealed class DesktopRuntimeTests
         public void Dispose()
         {
             Environment.SetEnvironmentVariable("CETUS_PORT", _originalPort);
+            if (TestWorkspace.RetainArtifacts) return;
             try
             {
                 Directory.Delete(_directory, recursive: true);

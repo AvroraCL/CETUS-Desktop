@@ -96,14 +96,14 @@ public sealed class CetusSettingsTests
     {
         public TemporaryDirectory()
         {
-            Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "CetusTests", Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(Path);
+            Path = TestWorkspace.CreateDirectory();
         }
 
         public string Path { get; }
 
         public void Dispose()
         {
+            if (TestWorkspace.RetainArtifacts) return;
             try
             {
                 Directory.Delete(Path, recursive: true);

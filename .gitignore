@@ -14,6 +14,7 @@ tools/
 docs/
 
 # --- isolated development checks ---
+.dev/
 .dev-check/
 
 # --- test scratch dirs ---

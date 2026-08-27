@@ -23,15 +23,13 @@ $root       = Split-Path -Parent $PSScriptRoot          # F:\Cetus
 $src        = Join-Path $root "src\Cetus.Desktop"
 $solution   = Join-Path $root "Cetus.slnx"
 $dist       = Join-Path $root "dist"
-$runtimeDir = Join-Path $dist "runtime"
-
-# Version pins — bump deliberately, and re-verify the app against them.
-$nodeVersion = "v24.14.0"
-$dshVersion  = "0.1.0-rc.6"
-$nodeSource  = "C:\Program Files\nodejs\node.exe"
 
 . (Join-Path $PSScriptRoot "common.ps1")
 $dotnet = Resolve-CetusDotNet
+$runtimeManifest = Get-CetusRuntimeManifest
+$runtimeLayout = Initialize-CetusRuntime
+$nodeVersion = [string]$runtimeManifest.node.version
+$dshVersion = [string]$runtimeManifest.dsh.version
 
 if ([string]::IsNullOrWhiteSpace($Version)) {
     $Version = (& $dotnet msbuild (Join-Path $src "Cetus.Desktop.csproj") `
@@ -44,45 +42,27 @@ if ($Version -notmatch '^\d+\.\d+\.\d+$') {
 $fileVersion = "0.$Version"
 $appDir = Join-Path $dist "app-$Version"
 
-Write-Host "==> [1/7] regression suite ($Configuration)"
-& $dotnet test $solution -c $Configuration -v minimal
+Write-Host "==> [1/7] locked restore + regression suite ($Configuration)"
+& $dotnet restore $solution --locked-mode -v minimal
+if ($LASTEXITCODE -ne 0) { throw "locked restore failed" }
+& $dotnet test $solution -c $Configuration --no-restore -v minimal
 if ($LASTEXITCODE -ne 0) { throw "regression suite failed" }
 
 Write-Host "==> [2/7] publish (self-contained, $Runtime, $Configuration)"
 if (Test-Path $appDir) {
     throw "Release app directory already exists: $appDir. Bump Version instead of replacing an existing release."
 }
-& $dotnet publish $src -c $Configuration -r $Runtime --self-contained true -o $appDir -v q `
+& $dotnet restore $src -r $Runtime --locked-mode -v minimal
+if ($LASTEXITCODE -ne 0) { throw "runtime-specific locked restore failed" }
+& $dotnet publish $src -c $Configuration -r $Runtime --self-contained true --no-restore -o $appDir -v q `
     "-p:Version=$Version" "-p:FileVersion=$fileVersion"
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
 
-Write-Host "==> [3/7] bundle node.exe ($nodeVersion)"
-New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
-$bundledNode = Join-Path $runtimeDir "node.exe"
-$needNode = $true
-if (Test-Path $bundledNode) {
-    $have = (Get-Item $bundledNode).VersionInfo.ProductVersion
-    if ($have -eq $nodeVersion.TrimStart('v')) { $needNode = $false }
-    else { Write-Host "      node version mismatch ($have), replacing" }
-}
-if ($needNode) {
-    if (-not (Test-Path $nodeSource)) { throw "source node.exe not found: $nodeSource" }
-    Copy-Item $nodeSource $bundledNode -Force
-}
+Write-Host "==> [3/7] verified runtime ($nodeVersion)"
+if (-not (Test-CetusRuntime)) { throw "central development runtime failed validation" }
 
-Write-Host "==> [4/7] bundle dsh ($dshVersion, --omit=dev)"
-$dshPkgJson = Join-Path $runtimeDir "dsh\node_modules\@deepseek-ai\dsh\package.json"
-$needDsh = $true
-if (Test-Path $dshPkgJson) {
-    $have = (Get-Content $dshPkgJson -Raw | ConvertFrom-Json).version
-    if ($have -eq $dshVersion) { $needDsh = $false }
-    else { Write-Host "      dsh version mismatch ($have), reinstalling" }
-}
-if ($needDsh) {
-    Remove-Item (Join-Path $runtimeDir "dsh") -Recurse -Force -ErrorAction SilentlyContinue
-    npm install --prefix (Join-Path $runtimeDir "dsh") "@deepseek-ai/dsh@$dshVersion" --omit=dev --no-audit --no-fund
-    if ($LASTEXITCODE -ne 0) { throw "npm install failed" }
-}
+Write-Host "==> [4/7] locked DSH runtime ($dshVersion)"
+$bundledNode = $runtimeLayout.NodeExe
 
 Write-Host "==> [5/7] copy runtime into app output + manifest"
 # Wipe the previous copy first: Copy-Item -Recurse onto an existing directory
@@ -90,11 +70,13 @@ Write-Host "==> [5/7] copy runtime into app output + manifest"
 Remove-Item (Join-Path $appDir "runtime") -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path (Join-Path $appDir "runtime") | Out-Null
 Copy-Item $bundledNode (Join-Path $appDir "runtime\node.exe") -Force
-Copy-Item (Join-Path $runtimeDir "dsh") (Join-Path $appDir "runtime\dsh") -Recurse -Force
+Copy-Item $runtimeLayout.DshRoot (Join-Path $appDir "runtime\dsh") -Recurse -Force
 @(
     "cetus=$Version",
     "node=$nodeVersion",
     "dsh=$dshVersion",
+    "node.sha256=$($runtimeManifest.node.executableSha256)",
+    "dsh.integrity=$($runtimeManifest.dsh.integrity)",
     "built=$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss zzz')"
 ) | Set-Content (Join-Path $appDir "runtime\VERSIONS.txt") -Encoding UTF8
 
