@@ -37,8 +37,7 @@
   <ItemGroup>
     <!-- The custom title bar reuses the application's packaged icon. -->
     <Resource Include="Assets\cetus.ico" />
-    <Resource Include="Assets\logo.svg" />
-    <Resource Include="Assets\heclm-logo.svg" />
+    <Resource Include="Assets\cetus-titlebar.png" />
   </ItemGroup>
 
 </Project>
