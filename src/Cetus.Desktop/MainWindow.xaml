@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:mah="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
+        xmlns:svgc="clr-namespace:SharpVectors.Converters;assembly=SharpVectors.Converters.Wpf"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         Title="Cetus · 鲸鱼座"
         Width="1280" Height="800"
@@ -11,13 +12,15 @@
         WindowStyle="None"
         ResizeMode="CanResize"
         Background="Transparent"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
         Icon="pack://application:,,,/Assets/cetus.ico"
         Loaded="OnLoaded">
 
     <WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="40"
                            ResizeBorderThickness="6"
-                           CornerRadius="12"
+                           CornerRadius="16"
                            GlassFrameThickness="0"
                            UseAeroCaptionButtons="False" />
     </WindowChrome.WindowChrome>
@@ -32,6 +35,7 @@
             <Setter Property="Padding" Value="0" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#FFFFFF" />
             <Setter Property="mah:ControlsHelper.CornerRadius" Value="0" />
         </Style>
 
@@ -61,73 +65,11 @@
 
     <Border x:Name="WindowFrame"
             Background="#F8FAFC"
-            CornerRadius="12"
+            CornerRadius="16"
             ClipToBounds="True">
         <Grid>
-            <Grid.RowDefinitions>
-                <RowDefinition Height="40" />
-                <RowDefinition Height="*" />
-            </Grid.RowDefinitions>
-
-            <Border x:Name="TitleBar"
-                    Grid.Row="0"
-                    Background="#F8FAFC">
-                <DockPanel LastChildFill="True">
-                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                        <Button x:Name="MinimizeButton"
-                                Style="{StaticResource CaptionButton}"
-                                Foreground="#253041"
-                                ToolTip="最小化"
-                                shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                                Command="{x:Static SystemCommands.MinimizeWindowCommand}"
-                                CommandParameter="{Binding RelativeSource={RelativeSource AncestorType={x:Type Window}}}">
-                            <TextBlock Text="&#xE921;" FontFamily="Segoe Fluent Icons" FontSize="12" />
-                        </Button>
-                        <Button x:Name="MaximizeButton"
-                                Style="{StaticResource MaximizeCaptionButton}"
-                                Foreground="#253041"
-                                ToolTip="最大化"
-                                shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                                Command="{x:Static SystemCommands.MaximizeWindowCommand}"
-                                CommandParameter="{Binding RelativeSource={RelativeSource AncestorType={x:Type Window}}}">
-                            <TextBlock Text="&#xE922;" FontFamily="Segoe Fluent Icons" FontSize="12" />
-                        </Button>
-                        <Button x:Name="RestoreButton"
-                                Style="{StaticResource RestoreCaptionButton}"
-                                Foreground="#253041"
-                                ToolTip="还原"
-                                shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                                Command="{x:Static SystemCommands.RestoreWindowCommand}"
-                                CommandParameter="{Binding RelativeSource={RelativeSource AncestorType={x:Type Window}}}">
-                            <TextBlock Text="&#xE923;" FontFamily="Segoe Fluent Icons" FontSize="12" />
-                        </Button>
-                        <Button x:Name="CloseButton"
-                                Style="{StaticResource CaptionButton}"
-                                Foreground="#253041"
-                                ToolTip="关闭到托盘"
-                                shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                                Command="{x:Static SystemCommands.CloseWindowCommand}"
-                                CommandParameter="{Binding RelativeSource={RelativeSource AncestorType={x:Type Window}}}">
-                            <TextBlock Text="&#xE8BB;" FontFamily="Segoe Fluent Icons" FontSize="12" />
-                        </Button>
-                    </StackPanel>
-
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
-                        <Image Source="pack://application:,,,/Assets/cetus.ico"
-                               Width="18" Height="18"
-                               Margin="0,0,8,0"
-                               Stretch="Uniform" />
-                        <TextBlock x:Name="TitleText"
-                                   Text="Cetus · 鲸鱼座"
-                                   Foreground="#253041"
-                                   FontSize="14"
-                                   FontWeight="SemiBold"
-                                   VerticalAlignment="Center" />
-                    </StackPanel>
-                </DockPanel>
-            </Border>
-
-            <Grid Grid.Row="1">
+            <!-- Content fills the entire window (scrolls under the translucent title bar). -->
+            <Grid>
                 <!-- Status line shown while the DSH host is starting. -->
                 <TextBlock x:Name="StatusText"
                            HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -139,6 +81,66 @@
                               Visibility="Collapsed"
                               DefaultBackgroundColor="White" />
             </Grid>
+
+            <!--
+                70%-translucent title bar overlay. The dark background keeps the
+                white SVG logo and caption glyphs legible in both light and dark
+                themes; the web content shows through underneath.
+            -->
+            <Border x:Name="TitleBar"
+                    Height="40"
+                    VerticalAlignment="Top"
+                    Background="#B3222A35">
+                <DockPanel LastChildFill="True">
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <Button x:Name="MinimizeButton"
+                                Style="{StaticResource CaptionButton}"
+                                ToolTip="最小化"
+                                shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                                Command="{x:Static SystemCommands.MinimizeWindowCommand}"
+                                CommandParameter="{Binding RelativeSource={RelativeSource AncestorType={x:Type Window}}}">
+                            <TextBlock Text="&#xE921;" FontFamily="Segoe Fluent Icons" FontSize="12" />
+                        </Button>
+                        <Button x:Name="MaximizeButton"
+                                Style="{StaticResource MaximizeCaptionButton}"
+                                ToolTip="最大化"
+                                shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                                Command="{x:Static SystemCommands.MaximizeWindowCommand}"
+                                CommandParameter="{Binding RelativeSource={RelativeSource AncestorType={x:Type Window}}}">
+                            <TextBlock Text="&#xE922;" FontFamily="Segoe Fluent Icons" FontSize="12" />
+                        </Button>
+                        <Button x:Name="RestoreButton"
+                                Style="{StaticResource RestoreCaptionButton}"
+                                ToolTip="还原"
+                                shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                                Command="{x:Static SystemCommands.RestoreWindowCommand}"
+                                CommandParameter="{Binding RelativeSource={RelativeSource AncestorType={x:Type Window}}}">
+                            <TextBlock Text="&#xE923;" FontFamily="Segoe Fluent Icons" FontSize="12" />
+                        </Button>
+                        <Button x:Name="CloseButton"
+                                Style="{StaticResource CaptionButton}"
+                                ToolTip="关闭到托盘"
+                                shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                                Command="{x:Static SystemCommands.CloseWindowCommand}"
+                                CommandParameter="{Binding RelativeSource={RelativeSource AncestorType={x:Type Window}}}">
+                            <TextBlock Text="&#xE8BB;" FontFamily="Segoe Fluent Icons" FontSize="12" />
+                        </Button>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
+                        <svgc:SvgViewbox Source="pack://application:,,,/Assets/logo.svg"
+                                         Width="18" Height="18"
+                                         Stretch="Uniform"
+                                         Margin="0,0,8,0" />
+                        <TextBlock x:Name="TitleText"
+                                   Text="Cetus · 鲸鱼座"
+                                   Foreground="#FFFFFF"
+                                   FontSize="14"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
         </Grid>
     </Border>
 </Window>

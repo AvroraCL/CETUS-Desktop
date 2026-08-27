@@ -10,6 +10,9 @@ dist/
 # --- local tooling (Inno Setup portable extract, downloads, dotnet-install) ---
 tools/
 
+# --- local docs / non-committable files ---
+docs/
+
 # --- test scratch dirs ---
 .test-home/
 .test-install/

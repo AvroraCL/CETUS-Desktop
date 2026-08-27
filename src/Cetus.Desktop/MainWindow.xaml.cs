@@ -268,17 +268,12 @@ public partial class MainWindow : Window
     private void ApplyWindowTheme(bool isDark)
     {
         System.Windows.Media.Brush background = CreateBrush(isDark ? "#151517" : "#F8FAFC");
-        System.Windows.Media.Brush foreground = CreateBrush(isDark ? "#E5E7EB" : "#253041");
         System.Windows.Media.Brush statusForeground = CreateBrush(isDark ? "#AAB7CC" : "#52627A");
 
         WindowFrame.Background = background;
-        TitleBar.Background = background;
-        TitleText.Foreground = foreground;
-        MinimizeButton.Foreground = foreground;
-        MaximizeButton.Foreground = foreground;
-        RestoreButton.Foreground = foreground;
-        CloseButton.Foreground = foreground;
         StatusText.Foreground = statusForeground;
+        // The title bar intentionally stays dark-and-translucent in both themes
+        // so the white SVG logo and caption glyphs remain legible.
     }
 
     private static System.Windows.Media.Brush CreateBrush(string color) =>
