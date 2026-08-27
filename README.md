@@ -34,8 +34,8 @@ CETUS 目前处于早期开发阶段，**M0 桌面骨架与 M2 自包含打包�
 
 安装包与便携版将在 [Releases](https://github.com/AvroraCL/CETUS-Desktop/releases) 中提供：
 
-- `Cetus-Setup-0.1.8.exe`：中文安装向导，按当前用户安装，无需管理员权限
-- `Cetus-0.1.8-win-x64-portable.zip`：解压后直接运行
+- `Cetus-Setup-0.1.9.exe`：中文安装向导，按当前用户安装，无需管理员权限
+- `Cetus-0.1.9-win-x64-portable.zip`：解压后直接运行
 
 启动后，CETUS 会自动完成以下流程：
 
@@ -79,33 +79,41 @@ CETUS 复用 DeepSeek Harness 的官方 Web UI、Agent 能力和插件生态，�
 
 ### 开发环境
 
-- Windows 10/11
-- Node.js ≥ 22.19
-- `@deepseek-ai/dsh`
-- .NET 10 SDK
+- Windows 10/11 x64
+- PowerShell 7
+- .NET 10 SDK（`global.json` 固定为 10.0.400 同补丁带）
+- WebView2 Runtime
 
-安装 DeepSeek Harness：
+无需安装系统 Node、npm 或全局 DSH。首次启动会按 `eng/runtime.json` 下载并校验固定版本 Node，再使用压缩包自带的 npm 和仓库 lockfile 构建 `.dev/runtime`；缓存完整后可离线运行。
 
-```powershell
-npm install --global @deepseek-ai/dsh
-```
-
-运行桌面项目：
+统一开发入口：
 
 ```powershell
-dotnet run --project src/Cetus.Desktop
+.\scripts\dev.ps1 doctor
+.\scripts\dev.ps1 bootstrap
+.\scripts\dev.ps1 run
 ```
 
-构建全部项目：
+常用命令：
 
 ```powershell
-dotnet build Cetus.slnx
+.\scripts\dev.ps1 run -Profile second -Port 0
+.\scripts\dev.ps1 test
+.\scripts\dev.ps1 check
+.\scripts\dev.ps1 smoke
+.\scripts\dev.ps1 reset -Profile second
 ```
 
-也可以直接运行 Debug 构建产物：
+`test` 只运行 34 项纯逻辑快速测试；`check` 执行锁定还原、格式检查、Release 构建及全部 44 项测试。`smoke` 会真实启动 Debug 桌面窗口，并验证 DEV HWND、DSH 健康页、固定 Node/DSH 参数和退出后的进程/端口回收。
 
-```text
-src\Cetus.Desktop\bin\Debug\net10.0-windows\Cetus.exe
+每个 profile 的设置、DSH_HOME、WebView2 数据、日志和 PID 都隔离在 `.dev/profiles/<name>`。默认端口为 3084；`-Port 0` 动态选择空闲端口。重启只会根据该 profile 的 PID 文件和完整可执行路径停止旧实例，不扫描安装版或其他 Node 进程。
+
+`dev.bat` 是默认 `run` 的薄包装；WSL 中的 `scripts/dev-check.sh` 默认转发到 `check`。UI 改动完成后还需执行[人工 UI 回归清单](tests/manual/ui-checklist.md)。
+
+开发缓存和 profile 默认跨运行保留。仅清理一个 profile 使用 `reset`；确认要删除整个仓库开发缓存时才使用：
+
+```powershell
+.\scripts\dev.ps1 reset -All
 ```
 
 ### 运行流程
@@ -145,33 +153,33 @@ tests/Cetus.Desktop.Tests/          # Runtime、状态机与桌面策略回归�
 scripts\publish.ps1
 ```
 
-脚本需要 .NET 10 SDK、npm 与网络连接。构建产物位于 `dist\`：
+脚本需要 PowerShell 7 与 .NET 10 SDK。它复用与开发环境相同的 Runtime 清单、校验缓存和锁定 bootstrap，不依赖系统 Node/npm。首次 bootstrap 需要网络。构建产物位于 `dist\`：
 
-- `app-0.1.8\`：自包含运行目录，目标电脑无需安装 .NET 或 Node.js
-- `Cetus-0.1.8-win-x64-portable.zip`：便携版
-- `Cetus-Setup-0.1.8.exe`：Inno Setup 安装程序
+- `app-0.1.9\`：自包含运行目录，目标电脑无需安装 .NET 或 Node.js
+- `Cetus-0.1.9-win-x64-portable.zip`：便携版
+- `Cetus-Setup-0.1.9.exe`：Inno Setup 安装程序
 
 当前 Runtime 固定版本：
 
 - Node.js `v24.14.0`
 - `@deepseek-ai/dsh@0.1.0-rc.6`（`--omit=dev`）
 
-具体版本记录在 `runtime\VERSIONS.txt`。安装程序默认安装到 `%LOCALAPPDATA%\Cetus`，WebView2 数据位于 `%LOCALAPPDATA%\Cetus\WebView2`；卸载时会一并清理。安装前会自动关闭正在运行的 CETUS 及其残留 Node 进程。
+固定版本与校验值只在 `eng/runtime.json` 维护；发布包内的具体版本记录在 `runtime\VERSIONS.txt`。安装程序默认安装到 `%LOCALAPPDATA%\Cetus`，WebView2 数据位于 `%LOCALAPPDATA%\Cetus\WebView2`；卸载时会一并清理。安装前会自动关闭正在运行的 CETUS 及其残留 Node 进程。
 
 窗口使用真实的非分层 HWND：Windows 11 22H2 及以上启用系统 Desktop Acrylic，Windows 10 使用 DWM blur-behind。标题栏保持直角，并避开会让窗口拖动退回软件合成路径的透明分层窗口方案。
 
 发布后可分别验证便携包运行时和安装程序：
 
 ```powershell
-scripts\package-smoke.ps1 -ApplicationPath dist\app-0.1.8\Cetus.exe
-scripts\installer-smoke.ps1 -InstallerPath dist\Cetus-Setup-0.1.8.exe -ExpectedVersion 0.1.8
+scripts\package-smoke.ps1 -ApplicationPath dist\app-0.1.9\Cetus.exe
+scripts\installer-smoke.ps1 -InstallerPath dist\Cetus-Setup-0.1.9.exe -ExpectedVersion 0.1.9
 ```
 
 版本信息：
 
-- 文件版本：`0.0.1.8`
+- 文件版本：`0.0.1.9`
 - 产品名称：`CETUS鲸鱼座`
-- 产品版本：`0.1.8`
+- 产品版本：`0.1.9`
 - 版权：`AvroraCL`
 
 ### 验证场景

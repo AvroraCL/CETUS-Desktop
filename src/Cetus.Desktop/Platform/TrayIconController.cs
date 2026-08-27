@@ -39,7 +39,7 @@ internal sealed class TrayIconController : IDisposable
         _tray = new NotifyIcon
         {
             Icon = _icon,
-            Text = "Cetus · 鲸鱼座",
+            Text = "CETUS鲸鱼座",
             ContextMenuStrip = _menu,
             Visible = true,
         };

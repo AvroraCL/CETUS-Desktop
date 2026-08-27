@@ -34,7 +34,7 @@ public partial class MainWindow : Window
 
         if (DevModeFlag.IsActive)
         {
-            Title = "Cetus · 鲸鱼座 · DEV";
+            Title = "CETUS鲸鱼座 · DEV";
             TitleText.Text = "CETUS DEV";
             WindowStartupLocation = WindowStartupLocation.Manual;
             Left = 40;

@@ -1,12 +1,12 @@
 ; Cetus installer script — Inno Setup 6 (NET 10 build)
-; Compile: ISCC.exe Cetus.iss /DVersion=0.1.8 /DFileVersion=0.0.1.8
+; Compile: ISCC.exe Cetus.iss /DVersion=0.1.9 /DFileVersion=0.0.1.9
 ; Save as UTF-8 with BOM (Inno requirement for non-ASCII text).
 
 #ifndef Version
-  #define Version "0.1.8"
+  #define Version "0.1.9"
 #endif
 #ifndef FileVersion
-  #define FileVersion "0.0.1.8"
+  #define FileVersion "0.0.1.9"
 #endif
 #ifndef AppSourceDir
   #define AppSourceDir "..\dist\app-" + Version
