@@ -3,18 +3,17 @@
 .SYNOPSIS
     Render the CETUS README banner (dark + light variants).
 
-    Layout: rounded app-icon card on the left, title + tagline on the right,
-    both vertically centered on a 1200x360 canvas. Colors follow the window
-    title-bar palette (#151517 dark / #F5F7FA light).
+    Layout: the original app icon on the left, title + tagline on the right,
+    vertically centered on a 1200x360 canvas. The icon pixels are never
+    recolored; the dark variant puts the icon on a white rounded tile so the
+    original dark line-art stays visible on the dark background.
 
     Output:
       docs/banner-dark.png
       docs/banner-light.png
 #>
 [CmdletBinding()]
-param(
-    [switch]$SkipCleanup
-)
+param([switch]$SkipCleanup)
 
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Drawing
@@ -27,61 +26,35 @@ $outLite = Join-Path $root "docs\banner-light.png"
 $Width  = 1200
 $Height = 360
 
-$CardSize = 248
-$CardX = 84
-$CardY = [int](($Height - $CardSize) / 2)
+$TileSize = 248
+$TileRadius = 48
+$TileX = 84
+$TileY = [int](($Height - $TileSize) / 2)
 $IconSize = 224
-$IconX = $CardX + [int](($CardSize - $IconSize) / 2)
-$IconY = $CardY + [int](($CardSize - $IconSize) / 2)
-$TitleX = $CardX + $CardSize + 56
+$IconX = $TileX + [int](($TileSize - $IconSize) / 2)
+$IconY = $TileY + [int](($TileSize - $IconSize) / 2)
+$TitleX = $TileX + $TileSize + 56
 $TextRightEdge = $Width - 60
 
-function Convert-IconColor {
-    <#
-    .SYNOPSIS
-        Prepare the icon for a banner background.
-        - Light banner: the source icon as-is (dark line-art + bright stars).
-        - Dark banner: a negative of the source (white line-art + dark stars),
-          so the shape reads on a dark background while keeping the star detail
-          instead of becoming a solid white silhouette.
-    #>
-    param(
-        [string]$Source,
-        [bool]$Invert
-    )
-    $sourceBitmap = [System.Drawing.Bitmap]::new($Source)
-    if (-not $Invert) {
-        # Returned as-is; the caller owns and disposes it.
-        return $sourceBitmap
-    }
-
-    try {
-        $out = [System.Drawing.Bitmap]::new($sourceBitmap.Width, $sourceBitmap.Height, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-        for ($y = 0; $y -lt $sourceBitmap.Height; $y++) {
-            for ($x = 0; $x -lt $sourceBitmap.Width; $x++) {
-                $pixel = $sourceBitmap.GetPixel($x, $y)
-                $out.SetPixel($x, $y, [System.Drawing.Color]::FromArgb(
-                    $pixel.A,
-                    [byte](255 - $pixel.R),
-                    [byte](255 - $pixel.G),
-                    [byte](255 - $pixel.B)))
-            }
-        }
-        return $out
-    }
-    finally {
-        $sourceBitmap.Dispose()
-    }
+function New-RoundedRectPath([double]$x, [double]$y, [double]$w, [double]$h, [double]$r) {
+    $path = [System.Drawing.Drawing2D.GraphicsPath]::new()
+    $d = $r * 2
+    $path.AddArc([float]$x, [float]$y, [float]$d, [float]$d, 180, 90)
+    $path.AddArc([float]($x + $w - $d), [float]$y, [float]$d, [float]$d, 270, 90)
+    $path.AddArc([float]($x + $w - $d), [float]($y + $h - $d), [float]$d, [float]$d, 0, 90)
+    $path.AddArc([float]$x, [float]($y + $h - $d), [float]$d, [float]$d, 90, 90)
+    $path.CloseFigure()
+    return $path
 }
 
 function Render-Banner {
-        param(
-            [string]$Background,
-            [bool]$InvertIcon,
-            [string]$TitleColor,
-            [string]$TaglineColor,
-            [string]$Output
-        )
+    param(
+        [string]$Background,
+        [bool]$IconTile,
+        [string]$TitleColor,
+        [string]$TaglineColor,
+        [string]$Output
+    )
 
     $bitmap = [System.Drawing.Bitmap]::new($Width, $Height)
     $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
@@ -90,8 +63,16 @@ function Render-Banner {
         $graphics.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::AntiAliasGridFit
         $graphics.Clear([System.Drawing.ColorTranslator]::FromHtml($Background))
 
-        # App icon (inverted on dark so the dark line-art stays visible)
-        $iconImage = Convert-IconColor -Source $icon -Invert $InvertIcon
+        # White tile under the icon in the dark variant so the original dark
+        # line-art stays visible; the icon itself is drawn unchanged.
+        if ($IconTile) {
+            $tilePath = New-RoundedRectPath $TileX $TileY $TileSize $TileSize $TileRadius
+            $tileBrush = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::White)
+            $graphics.FillPath($tileBrush, $tilePath)
+            $tileBrush.Dispose(); $tilePath.Dispose()
+        }
+
+        $iconImage = [System.Drawing.Image]::FromFile($icon)
         try {
             $graphics.DrawImage($iconImage, $IconX, $IconY, $IconSize, $IconSize)
         }
@@ -137,8 +118,8 @@ function Render-Banner {
 }
 
 Write-Host "==> rendering README banners"
-Render-Banner -Background "#151517" -InvertIcon $true `
+Render-Banner -Background "#151517" -IconTile $true `
     -TitleColor "#F5F7FA" -TaglineColor "#AAB7CC" -Output $outDark
-Render-Banner -Background "#F5F7FA" -InvertIcon $false `
+Render-Banner -Background "#F5F7FA" -IconTile $false `
     -TitleColor "#172033" -TaglineColor "#667085" -Output $outLite
 Write-Host "DONE"
