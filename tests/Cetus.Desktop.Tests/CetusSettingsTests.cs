@@ -17,6 +17,8 @@ public sealed class CetusSettingsTests
             var settings = new CetusSettings(settingsPath);
 
             Assert.Equal(CetusSettings.DefaultPort, settings.ConfiguredPort);
+            Assert.True(settings.RightSidebarOpen);
+            Assert.Equal(CetusSettings.DefaultRightSidebarWidth, settings.RightSidebarWidth);
             settings.SetConfiguredPort(4312);
 
             var reloaded = new CetusSettings(settingsPath);
@@ -27,6 +29,53 @@ public sealed class CetusSettingsTests
         {
             Environment.SetEnvironmentVariable("CETUS_PORT", originalPort);
         }
+    }
+
+    [Fact]
+    public void RightSidebarSettings_PersistWithoutOverwritingPort()
+    {
+        using var directory = new TemporaryDirectory();
+        string settingsPath = Path.Combine(directory.Path, "settings.json");
+        var settings = new CetusSettings(settingsPath);
+        settings.SetConfiguredPort(4312);
+
+        settings.SetRightSidebarOpen(false);
+        settings.SetRightSidebarWidth(417.6);
+
+        var reloaded = new CetusSettings(settingsPath);
+        Assert.Equal(4312, reloaded.ConfiguredPort);
+        Assert.False(reloaded.RightSidebarOpen);
+        Assert.Equal(418, reloaded.RightSidebarWidth);
+    }
+
+    [Fact]
+    public void Load_LegacyPortOnlyFile_UsesSidebarDefaults()
+    {
+        using var directory = new TemporaryDirectory();
+        string settingsPath = Path.Combine(directory.Path, "settings.json");
+        File.WriteAllText(settingsPath, """{ "Port": 4312 }""");
+
+        var settings = new CetusSettings(settingsPath);
+
+        Assert.Equal(4312, settings.ConfiguredPort);
+        Assert.True(settings.RightSidebarOpen);
+        Assert.Equal(360, settings.RightSidebarWidth);
+    }
+
+    [Theory]
+    [InlineData(100, 300)]
+    [InlineData(300, 300)]
+    [InlineData(419.5, 420)]
+    [InlineData(520, 520)]
+    [InlineData(900, 520)]
+    public void SetRightSidebarWidth_ClampsAndRounds(double width, int expected)
+    {
+        using var directory = new TemporaryDirectory();
+        var settings = new CetusSettings(Path.Combine(directory.Path, "settings.json"));
+
+        settings.SetRightSidebarWidth(width);
+
+        Assert.Equal(expected, settings.RightSidebarWidth);
     }
 
     [Fact]

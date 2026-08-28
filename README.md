@@ -55,7 +55,7 @@ CETUS 目前处于早期开发阶段，**M0 桌面骨架与 M2 自包含打包�
 
 ### 架构约束
 
-桌面窗口只渲染状态并转发用户操作；DSH 生命周期、WebView2 会话策略、Windows 原生集成与配置持久化由各自模块拥有。WPF 仍是原生窗口宿主，CETUS 不复制 DeepSeek Harness 的产品界面。
+桌面窗口只渲染状态并转发用户操作；DSH 生命周期、WebView2 会话策略、Windows 原生集成与配置持久化由各自模块拥有。WPF 仍是原生窗口宿主，WebView 消息桥只补充 CETUS 顶部工具栏和原生侧栏入口，不复制 DeepSeek Harness 的业务界面。
 
 ---
 
@@ -104,7 +104,7 @@ CETUS 复用 DeepSeek Harness 的官方 Web UI、Agent 能力和插件生态，�
 .\scripts\dev.ps1 reset -Profile second
 ```
 
-`test` 只运行 34 项纯逻辑快速测试；`check` 执行锁定还原、格式检查、Release 构建及全部 44 项测试。`smoke` 会真实启动 Debug 桌面窗口，并验证 DEV HWND、DSH 健康页、固定 Node/DSH 参数和退出后的进程/端口回收。
+`test` 只运行不依赖真实进程的快速测试；`check` 执行锁定还原、格式检查、Release 构建及包含 Integration 在内的全部测试。`smoke` 会真实启动 Debug 桌面窗口，并验证 DEV HWND、DSH 健康页、固定 Node/DSH 参数和退出后的进程/端口回收。
 
 每个 profile 的设置、DSH_HOME、WebView2 数据、日志和 PID 都隔离在 `.dev/profiles/<name>`。默认端口为 3084；`-Port 0` 动态选择空闲端口。重启只会根据该 profile 的 PID 文件和完整可执行路径停止旧实例，不扫描安装版或其他 Node 进程。
 
@@ -135,7 +135,7 @@ src/
 │   ├── Configuration/              # 用户设置与环境覆盖
 │   └── Hosting/                    # DSH 定位、探测、进程树、日志与健康监控
 └── Cetus.Desktop/                  # WPF 适配器程序集
-    ├── Browser/                    # WebView2 初始化、安全策略与主题桥
+    ├── Browser/                    # WebView2 初始化、安全策略、主题与窗口工具栏桥
     ├── Platform/                   # HWND/DWM 与系统托盘
     ├── Runtime/                    # 启动、恢复、改端口与退出状态机
     └── MainWindow.xaml(.cs)        # 薄视图：状态渲染与用户操作

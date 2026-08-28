@@ -113,10 +113,12 @@ try {
     $runtimeNodes = @($newNodes | Where-Object {
         $_.ExecutablePath -and
         [string]::Equals([IO.Path]::GetFullPath($_.ExecutablePath), $expectedNode, [StringComparison]::OrdinalIgnoreCase) -and
-        $_.CommandLine -and $_.CommandLine -match [regex]::Escape($expectedEntry)
+        $_.CommandLine -and
+        $_.CommandLine -match [regex]::Escape($expectedEntry) -and
+        $_.CommandLine -match '(?<!\S)--no-open(?!\S)'
     })
     if ($runtimeNodes.Count -eq 0) {
-        throw "No new Node process used the expected executable and DSH entry. Observed: $($newNodes.ExecutablePath -join ', ')"
+        throw "No new Node process used the expected executable, DSH entry, and --no-open flag. Observed: $($newNodes.ExecutablePath -join ', ')"
     }
     $ownedNodeIds = @($runtimeNodes | ForEach-Object { [int]$_.ProcessId })
     Write-Host "PASS: DEV HWND $($applicationProcess.MainWindowHandle), app PID $($applicationProcess.Id), Node PID $($ownedNodeIds -join ','), port $port"

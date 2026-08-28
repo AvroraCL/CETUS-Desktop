@@ -11,13 +11,23 @@ namespace Cetus.Configuration;
 public sealed class CetusSettings
 {
     public const int DefaultPort = 3080;
+    public const bool DefaultRightSidebarOpen = true;
+    public const int DefaultRightSidebarWidth = 360;
+    public const int MinimumRightSidebarWidth = 300;
+    public const int MaximumRightSidebarWidth = 520;
+
     private readonly string _settingsPath;
     private int _configuredPort;
+    private bool _rightSidebarOpen;
+    private int _rightSidebarWidth;
 
     public CetusSettings(string settingsPath)
     {
         _settingsPath = settingsPath;
-        _configuredPort = LoadConfiguredPort(settingsPath);
+        SettingsSnapshot snapshot = Load(settingsPath);
+        _configuredPort = snapshot.Port;
+        _rightSidebarOpen = snapshot.RightSidebarOpen;
+        _rightSidebarWidth = snapshot.RightSidebarWidth;
     }
 
     public int ConfiguredPort => _configuredPort;
@@ -33,6 +43,10 @@ public sealed class CetusSettings
 
     public bool IsPortOverridden =>
         TryParsePort(Environment.GetEnvironmentVariable("CETUS_PORT"), out _);
+
+    public bool RightSidebarOpen => _rightSidebarOpen;
+
+    public int RightSidebarWidth => _rightSidebarWidth;
 
     /// <summary>
     /// Cetus shares the inherited/default DSH_HOME by default. This optional
@@ -62,31 +76,67 @@ public sealed class CetusSettings
         Persist();
     }
 
+    public void SetRightSidebarOpen(bool isOpen)
+    {
+        _rightSidebarOpen = isOpen;
+        Persist();
+    }
+
+    public void SetRightSidebarWidth(double width)
+    {
+        _rightSidebarWidth = NormalizeRightSidebarWidth(width);
+        Persist();
+    }
+
     public static bool TryParsePort(string? value, out int port) =>
         int.TryParse(value, out port) && port is > 0 and <= 65535;
 
-    private static int LoadConfiguredPort(string settingsPath)
+    private static SettingsSnapshot Load(string settingsPath)
     {
         try
         {
             if (!File.Exists(settingsPath))
             {
-                return DefaultPort;
+                return SettingsSnapshot.Default;
             }
 
             SettingsFile? file = JsonSerializer.Deserialize<SettingsFile>(File.ReadAllText(settingsPath));
-            return file is not null && TryParsePort(file.Port?.ToString(), out int port)
-                ? port
+            if (file is null)
+            {
+                return SettingsSnapshot.Default;
+            }
+
+            int port = TryParsePort(file.Port?.ToString(), out int configuredPort)
+                ? configuredPort
                 : DefaultPort;
+            return new SettingsSnapshot(
+                port,
+                file.RightSidebarOpen ?? DefaultRightSidebarOpen,
+                file.RightSidebarWidth is { } width
+                    ? NormalizeRightSidebarWidth(width)
+                    : DefaultRightSidebarWidth);
         }
         catch (IOException)
         {
-            return DefaultPort;
+            return SettingsSnapshot.Default;
         }
         catch (JsonException)
         {
-            return DefaultPort;
+            return SettingsSnapshot.Default;
         }
+    }
+
+    private static int NormalizeRightSidebarWidth(double width)
+    {
+        if (double.IsNaN(width) || double.IsInfinity(width))
+        {
+            return DefaultRightSidebarWidth;
+        }
+
+        return Math.Clamp(
+            (int)Math.Round(width),
+            MinimumRightSidebarWidth,
+            MaximumRightSidebarWidth);
     }
 
     private void Persist()
@@ -99,7 +149,12 @@ public sealed class CetusSettings
 
         Directory.CreateDirectory(directory);
         string temporaryPath = _settingsPath + ".tmp";
-        string json = JsonSerializer.Serialize(new SettingsFile { Port = _configuredPort },
+        string json = JsonSerializer.Serialize(new SettingsFile
+        {
+            Port = _configuredPort,
+            RightSidebarOpen = _rightSidebarOpen,
+            RightSidebarWidth = _rightSidebarWidth,
+        },
             new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(temporaryPath, json);
         File.Move(temporaryPath, _settingsPath, overwrite: true);
@@ -108,5 +163,15 @@ public sealed class CetusSettings
     private sealed class SettingsFile
     {
         public int? Port { get; set; }
+        public bool? RightSidebarOpen { get; set; }
+        public int? RightSidebarWidth { get; set; }
+    }
+
+    private sealed record SettingsSnapshot(int Port, bool RightSidebarOpen, int RightSidebarWidth)
+    {
+        public static SettingsSnapshot Default { get; } = new(
+            DefaultPort,
+            DefaultRightSidebarOpen,
+            DefaultRightSidebarWidth);
     }
 }

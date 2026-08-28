@@ -264,12 +264,14 @@ internal sealed class DshSidecarProcess
             startInfo.ArgumentList.Add("/c");
             startInfo.ArgumentList.Add("dsh");
             startInfo.ArgumentList.Add("web");
+            startInfo.ArgumentList.Add("--no-open");
         }
         else
         {
             startInfo.FileName = command.NodeExe!;
             startInfo.ArgumentList.Add(command.EntryScript!);
             startInfo.ArgumentList.Add("web");
+            startInfo.ArgumentList.Add("--no-open");
         }
 
         if (endpoint.Port != Cetus.Configuration.CetusSettings.DefaultPort)

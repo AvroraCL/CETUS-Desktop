@@ -35,9 +35,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- The custom title bar reuses the application's packaged icon. -->
+    <!-- Package the native application icon. -->
     <Resource Include="Assets\cetus.ico" />
-    <Resource Include="Assets\cetus-titlebar.png" />
   </ItemGroup>
 
 </Project>

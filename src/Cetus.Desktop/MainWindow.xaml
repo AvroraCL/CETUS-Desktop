@@ -27,6 +27,17 @@
     </WindowChrome.WindowChrome>
 
     <Window.Resources>
+        <SolidColorBrush x:Key="TitleBarTintBrush" Color="#151517" Opacity="0.70" />
+        <SolidColorBrush x:Key="TitleForegroundBrush" Color="#E0F5F7FA" />
+        <SolidColorBrush x:Key="CaptionForegroundBrush" Color="#E0F5F7FA" />
+        <SolidColorBrush x:Key="CaptionHoverBrush" Color="#2EFFFFFF" />
+        <SolidColorBrush x:Key="CaptionPressedBrush" Color="#4AFFFFFF" />
+        <SolidColorBrush x:Key="CaptionFocusBrush" Color="#24FFFFFF" />
+        <SolidColorBrush x:Key="SidebarBorderBrush" Color="#2AFFFFFF" />
+        <SolidColorBrush x:Key="RightSidebarBackgroundBrush" Color="#1B1B1C" />
+        <SolidColorBrush x:Key="SidebarHandleBrush" Color="#24FFFFFF" />
+        <SolidColorBrush x:Key="SidebarHandleHoverBrush" Color="#3AFFFFFF" />
+
         <Style x:Key="CaptionButton"
                TargetType="Button">
             <Setter Property="Width" Value="46" />
@@ -35,11 +46,7 @@
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="IsTabStop" Value="False" />
-            <Setter Property="Foreground">
-                <Setter.Value>
-                    <SolidColorBrush Color="#F5F7FA" Opacity="0.88" />
-                </Setter.Value>
-            </Setter>
+            <Setter Property="Foreground" Value="{DynamicResource CaptionForegroundBrush}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
@@ -55,13 +62,13 @@
             </Setter>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#2EFFFFFF" />
+                    <Setter Property="Background" Value="{DynamicResource CaptionHoverBrush}" />
                 </Trigger>
                 <Trigger Property="IsPressed" Value="True">
-                    <Setter Property="Background" Value="#4AFFFFFF" />
+                    <Setter Property="Background" Value="{DynamicResource CaptionPressedBrush}" />
                 </Trigger>
                 <Trigger Property="IsKeyboardFocused" Value="True">
-                    <Setter Property="Background" Value="#24FFFFFF" />
+                    <Setter Property="Background" Value="{DynamicResource CaptionFocusBrush}" />
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -112,10 +119,9 @@
         </Grid.RowDefinitions>
 
         <!-- The native HWND owns live blur; this brush supplies only the tint. -->
-        <Border x:Name="TitleBar" Grid.Row="0">
-            <Border.Background>
-                <SolidColorBrush Color="#151517" Opacity="0.70" />
-            </Border.Background>
+        <Border x:Name="TitleBar"
+                Grid.Row="0"
+                Background="{DynamicResource TitleBarTintBrush}">
             <DockPanel LastChildFill="True">
                 <StackPanel DockPanel.Dock="Right"
                             Orientation="Horizontal"
@@ -149,18 +155,11 @@
                             ToolTip="还原"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True"
                             Click="OnRestoreClicked">
-                        <Viewbox Width="12" Height="12" Stretch="Uniform">
-                            <Canvas Width="12" Height="12">
-                                <Rectangle Canvas.Left="3" Canvas.Top="0"
-                                           Width="8" Height="8"
-                                           Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Button}}}"
-                                           StrokeThickness="1.35" />
-                                <Rectangle Canvas.Left="0.5" Canvas.Top="3.5"
-                                           Width="8" Height="8"
-                                           Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Button}}}"
-                                           StrokeThickness="1.35" />
-                            </Canvas>
-                        </Viewbox>
+                        <TextBlock Text="&#xE923;"
+                                   FontFamily="Segoe MDL2 Assets"
+                                   FontSize="10"
+                                   FontWeight="Normal"
+                                   Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Button}}}" />
                     </Button>
                     <Button x:Name="CloseButton"
                             Style="{StaticResource CloseCaptionButton}"
@@ -177,23 +176,15 @@
                     </Button>
                 </StackPanel>
 
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
-                    <Image x:Name="BrandLogo"
-                           Source="pack://application:,,,/Assets/cetus-titlebar.png"
-                           Width="18" Height="18"
-                           Stretch="Uniform"
-                           Margin="0,0,8,0" />
-                    <TextBlock x:Name="TitleText"
-                               Text="CETUS鲸鱼座"
-                               FontFamily="Segoe UI, PingFang SC, Hiragino Sans GB, Microsoft YaHei, Helvetica Neue, Helvetica, Arial"
-                               FontSize="14"
-                               FontWeight="SemiBold"
-                               VerticalAlignment="Center">
-                        <TextBlock.Foreground>
-                            <SolidColorBrush Color="#F5F7FA" Opacity="0.88" />
-                        </TextBlock.Foreground>
-                    </TextBlock>
-                </StackPanel>
+                <TextBlock x:Name="TitleText"
+                           Text="CETUS鲸鱼座"
+                           Margin="14,0,0,0"
+                           HorizontalAlignment="Left"
+                           VerticalAlignment="Center"
+                           FontFamily="Segoe UI, PingFang SC, Hiragino Sans GB, Microsoft YaHei, Helvetica Neue, Helvetica, Arial"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource TitleForegroundBrush}" />
             </DockPanel>
         </Border>
 
@@ -204,13 +195,76 @@
                 CornerRadius="0"
                 ClipToBounds="False">
             <Grid>
-                <TextBlock x:Name="StatusText"
-                           HorizontalAlignment="Center" VerticalAlignment="Center"
-                           FontSize="16" Foreground="#667"
-                           Text="正在启动 DSH 主机…" />
-                <wv2:WebView2 x:Name="Browser"
-                              Visibility="Collapsed"
-                              DefaultBackgroundColor="White" />
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition x:Name="RightSidebarColumn" Width="360" MaxWidth="520" />
+                </Grid.ColumnDefinitions>
+
+                <Grid Grid.Column="0">
+                    <TextBlock x:Name="StatusText"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               FontSize="16" Foreground="#667"
+                               Text="正在启动 DSH 主机…" />
+                    <wv2:WebView2 x:Name="Browser"
+                                  Visibility="Collapsed"
+                                  DefaultBackgroundColor="White" />
+                </Grid>
+
+                <Border x:Name="RightSidebarDivider"
+                        Grid.Column="1"
+                        Panel.ZIndex="1"
+                        Width="1"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Stretch"
+                        Background="{DynamicResource SidebarBorderBrush}"
+                        Visibility="{Binding Visibility, ElementName=RightSidebarSplitter}" />
+
+                <GridSplitter x:Name="RightSidebarSplitter"
+                              Grid.Column="1"
+                              Panel.ZIndex="2"
+                              Margin="-4,60,0,0"
+                              Width="8"
+                              HorizontalAlignment="Left"
+                              VerticalAlignment="Stretch"
+                              Background="Transparent"
+                              ResizeDirection="Columns"
+                              ResizeBehavior="PreviousAndCurrent"
+                              ShowsPreview="False"
+                              DragStarted="OnRightSidebarDragStarted"
+                              DragCompleted="OnRightSidebarDragCompleted">
+                    <GridSplitter.Template>
+                        <ControlTemplate TargetType="GridSplitter">
+                            <Grid Background="Transparent">
+                                <Border x:Name="HandlePill"
+                                        Width="6" Height="32"
+                                        CornerRadius="3"
+                                        Background="{DynamicResource SidebarHandleBrush}"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"
+                                        Opacity="0" />
+                            </Grid>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="HandlePill" Property="Opacity" Value="1" />
+                                    <Setter TargetName="HandlePill"
+                                            Property="Background"
+                                            Value="{DynamicResource SidebarHandleHoverBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsDragging" Value="True">
+                                    <Setter TargetName="HandlePill" Property="Opacity" Value="1" />
+                                    <Setter TargetName="HandlePill"
+                                            Property="Background"
+                                            Value="{DynamicResource SidebarHandleHoverBrush}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </GridSplitter.Template>
+                </GridSplitter>
+
+                <Border x:Name="RightSidebar"
+                        Grid.Column="1"
+                        Margin="0,60,0,0"
+                        Background="{DynamicResource RightSidebarBackgroundBrush}" />
             </Grid>
         </Border>
     </Grid>

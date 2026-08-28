@@ -19,6 +19,7 @@ internal enum WindowBackdropKind
 /// </summary>
 internal sealed class WindowComposition : IDisposable
 {
+    private const int WmGetMinMaxInfo = 0x0024;
     private const int DwmWindowCornerPreference = 33;
     private const int DwmUseImmersiveDarkMode = 20;
     private const int DwmSystemBackdropType = 38;
@@ -26,6 +27,7 @@ internal sealed class WindowComposition : IDisposable
     private const int DwmBackdropTransientWindow = 3;
     private const int WindowCompositionAccentPolicy = 19;
     private const uint DwmBbEnable = 0x00000001;
+    private const uint MonitorDefaultToNearest = 0x00000002;
 
     private readonly HwndSource _source;
     private readonly Action _taskbarRecreated;
@@ -68,12 +70,48 @@ internal sealed class WindowComposition : IDisposable
         IntPtr lParam,
         ref bool handled)
     {
+        if (!_disposed && message == WmGetMinMaxInfo && TryApplyMaximizedWorkArea(hwnd, lParam))
+        {
+            handled = true;
+            return IntPtr.Zero;
+        }
+
         if (!_disposed && (uint)message == _taskbarCreatedMessage)
         {
             _taskbarRecreated();
         }
         return IntPtr.Zero;
     }
+
+    private static bool TryApplyMaximizedWorkArea(IntPtr hwnd, IntPtr lParam)
+    {
+        IntPtr monitor = MonitorFromWindow(hwnd, MonitorDefaultToNearest);
+        if (monitor == IntPtr.Zero || lParam == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        var monitorInfo = new MonitorInfo
+        {
+            Size = Marshal.SizeOf<MonitorInfo>(),
+        };
+        if (!GetMonitorInfo(monitor, ref monitorInfo))
+        {
+            return false;
+        }
+
+        MaximizedWindowBounds bounds = WindowWorkArea.Calculate(
+            ToNativeBounds(monitorInfo.Monitor),
+            ToNativeBounds(monitorInfo.WorkArea));
+        MinMaxInfo minMaxInfo = Marshal.PtrToStructure<MinMaxInfo>(lParam);
+        minMaxInfo.MaxPosition = new NativePoint(bounds.X, bounds.Y);
+        minMaxInfo.MaxSize = new NativePoint(bounds.Width, bounds.Height);
+        Marshal.StructureToPtr(minMaxInfo, lParam, fDeleteOld: false);
+        return true;
+    }
+
+    private static NativeBounds ToNativeBounds(NativeRectangle rectangle) =>
+        new(rectangle.Left, rectangle.Top, rectangle.Right, rectangle.Bottom);
 
     private static WindowBackdropKind ApplyNativeComposition(HwndSource source)
     {
@@ -228,6 +266,47 @@ internal sealed class WindowComposition : IDisposable
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint
+    {
+        public NativePoint(int x, int y)
+        {
+            X = x;
+            Y = y;
+        }
+
+        public int X;
+        public int Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MinMaxInfo
+    {
+        public NativePoint Reserved;
+        public NativePoint MaxSize;
+        public NativePoint MaxPosition;
+        public NativePoint MinTrackSize;
+        public NativePoint MaxTrackSize;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRectangle
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MonitorInfo
+    {
+        public int Size;
+        public NativeRectangle Monitor;
+        public NativeRectangle WorkArea;
+        public uint Flags;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     private struct DwmBlurBehind
     {
         public uint Flags;
@@ -249,6 +328,13 @@ internal sealed class WindowComposition : IDisposable
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern uint RegisterWindowMessage(string message);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo monitorInfo);
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmExtendFrameIntoClientArea(

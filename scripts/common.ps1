@@ -176,8 +176,17 @@ function Initialize-CetusRuntime {
         Copy-Item -LiteralPath $archiveNode -Destination (Join-Path $stage "node.exe")
         $dshStage = Join-Path $stage "dsh"
         New-Item -ItemType Directory -Path $dshStage | Out-Null
-        Copy-Item -LiteralPath (Join-Path $layout.RepositoryRoot "eng\dsh-runtime\package.json") -Destination $dshStage
-        Copy-Item -LiteralPath (Join-Path $layout.RepositoryRoot "eng\dsh-runtime\package-lock.json") -Destination $dshStage
+        $packageJson = Join-Path $layout.RepositoryRoot "eng\dsh-runtime\package.json"
+        $packageLock = Join-Path $layout.RepositoryRoot "eng\dsh-runtime\package-lock.json"
+        $lock = Get-Content -LiteralPath $packageLock -Raw | ConvertFrom-Json -AsHashtable
+        $lockedDsh = $lock.packages['node_modules/@deepseek-ai/dsh']
+        if (-not $lockedDsh -or
+            $lockedDsh.version -ne [string]$manifest.dsh.version -or
+            $lockedDsh.integrity -ne [string]$manifest.dsh.integrity) {
+            throw "DSH lockfile does not match the pinned runtime manifest."
+        }
+        Copy-Item -LiteralPath $packageJson -Destination $dshStage
+        Copy-Item -LiteralPath $packageLock -Destination $dshStage
 
         Write-Host "Installing locked DSH runtime with Node-bundled npm..."
         & $archiveNode $npmCli ci --prefix $dshStage --omit=dev --no-audit --no-fund
