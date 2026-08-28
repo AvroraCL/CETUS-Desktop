@@ -21,9 +21,24 @@ namespace Cetus;
 public partial class MainWindow : Window
 {
     // Snappier than DSH's 300ms: fewer per-frame cross-process resizes of the
-    // hosted WebView means less visible stutter on the push layout.
-    private static readonly Duration RightSidebarAnimationDuration =
-        new(TimeSpan.FromMilliseconds(220));
+    // hosted WebView means less visible stutter on the push layout. Expand
+    // decelerates into place (instant response), collapse accelerates away
+    // (snappy exit) and runs shorter.
+    private static readonly Duration SidebarExpandDuration =
+        new(TimeSpan.FromMilliseconds(240));
+
+    private static readonly Duration SidebarCollapseDuration =
+        new(TimeSpan.FromMilliseconds(190));
+
+    private static readonly KeySpline SidebarExpandSpline = FreezeSpline(new KeySpline(0, 0, 0.2, 1));
+
+    private static readonly KeySpline SidebarCollapseSpline = FreezeSpline(new KeySpline(0.4, 0, 1, 1));
+
+    private static KeySpline FreezeSpline(KeySpline spline)
+    {
+        spline.Freeze();
+        return spline;
+    }
 
     /// <summary>Client width the DSH page keeps while the panel is expanded.</summary>
     private const double MinimumDshSurfaceWidth = 480;
@@ -230,8 +245,11 @@ public partial class MainWindow : Window
         {
             From = new GridLength(currentWidth, GridUnitType.Pixel),
             To = new GridLength(targetWidth, GridUnitType.Pixel),
-            Duration = RightSidebarAnimationDuration,
-            FillBehavior = FillBehavior.Stop,
+            Duration = isOpen ? SidebarExpandDuration : SidebarCollapseDuration,
+            Spline = isOpen ? SidebarExpandSpline : SidebarCollapseSpline,
+            // Hold the final value through the completion callback: with Stop
+            // the column snapped back to its start width for one frame.
+            FillBehavior = FillBehavior.HoldEnd,
         };
         // Layout-driven animation: cap the tick rate so high-refresh monitors
         // do not pay double relayout cost for imperceptible extra frames.
