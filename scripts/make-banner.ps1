@@ -4,9 +4,8 @@
     Render the CETUS README banner (dark + light variants).
 
     Layout: the original app icon on the left, title + tagline on the right,
-    vertically centered on a 1200x360 canvas. The icon pixels are never
-    recolored; the dark variant puts the icon on a white rounded tile so the
-    original dark line-art stays visible on the dark background.
+    vertically centered on a 1200x360 canvas. The icon is drawn unchanged in
+    both variants.
 
     Output:
       docs/banner-dark.png
@@ -27,7 +26,6 @@ $Width  = 1200
 $Height = 360
 
 $TileSize = 248
-$TileRadius = 48
 $TileX = 84
 $TileY = [int](($Height - $TileSize) / 2)
 $IconSize = 224
@@ -36,21 +34,9 @@ $IconY = $TileY + [int](($TileSize - $IconSize) / 2)
 $TitleX = $TileX + $TileSize + 56
 $TextRightEdge = $Width - 60
 
-function New-RoundedRectPath([double]$x, [double]$y, [double]$w, [double]$h, [double]$r) {
-    $path = [System.Drawing.Drawing2D.GraphicsPath]::new()
-    $d = $r * 2
-    $path.AddArc([float]$x, [float]$y, [float]$d, [float]$d, 180, 90)
-    $path.AddArc([float]($x + $w - $d), [float]$y, [float]$d, [float]$d, 270, 90)
-    $path.AddArc([float]($x + $w - $d), [float]($y + $h - $d), [float]$d, [float]$d, 0, 90)
-    $path.AddArc([float]$x, [float]($y + $h - $d), [float]$d, [float]$d, 90, 90)
-    $path.CloseFigure()
-    return $path
-}
-
 function Render-Banner {
     param(
         [string]$Background,
-        [bool]$IconTile,
         [string]$TitleColor,
         [string]$TaglineColor,
         [string]$Output
@@ -62,15 +48,6 @@ function Render-Banner {
         $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
         $graphics.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::AntiAliasGridFit
         $graphics.Clear([System.Drawing.ColorTranslator]::FromHtml($Background))
-
-        # White tile under the icon in the dark variant so the original dark
-        # line-art stays visible; the icon itself is drawn unchanged.
-        if ($IconTile) {
-            $tilePath = New-RoundedRectPath $TileX $TileY $TileSize $TileSize $TileRadius
-            $tileBrush = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::White)
-            $graphics.FillPath($tileBrush, $tilePath)
-            $tileBrush.Dispose(); $tilePath.Dispose()
-        }
 
         $iconImage = [System.Drawing.Image]::FromFile($icon)
         try {
@@ -118,8 +95,8 @@ function Render-Banner {
 }
 
 Write-Host "==> rendering README banners"
-Render-Banner -Background "#151517" -IconTile $true `
+Render-Banner -Background "#151517" `
     -TitleColor "#F5F7FA" -TaglineColor "#AAB7CC" -Output $outDark
-Render-Banner -Background "#F5F7FA" -IconTile $false `
+Render-Banner -Background "#F5F7FA" `
     -TitleColor "#172033" -TaglineColor "#667085" -Output $outLite
 Write-Host "DONE"
