@@ -11,7 +11,8 @@ dist/
 tools/
 
 # --- local docs / non-committable files ---
-docs/
+docs/*
+!docs/CETUS-ico.png
 
 # --- isolated development checks ---
 .dev/
