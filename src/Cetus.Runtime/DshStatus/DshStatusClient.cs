@@ -5,12 +5,37 @@ using System.Text.Json;
 
 namespace Cetus.DshStatus;
 
-public sealed record DshWorkspaceInfo(string Title, string Path, int SessionCount, DateTime UpdatedAt);
+public sealed record DshTokenUsage(long UncachedInputTokens, long OutputTokens, long CacheReadTokens, long CacheWriteTokens);
 
-public sealed record DshSessionUsage(
+public sealed record DshContextPressure(double? ProjectedTokens, double? PressureTokens, long? ContextWindow)
+{
+    /// <summary>Occupancy percent of the next request against the context window; null when unknown.</summary>
+    public double? OccupancyPercent => ContextWindow is > 0
+        ? (ProjectedTokens ?? PressureTokens) / (double)ContextWindow * 100
+        : null;
+}
+
+public sealed record DshTodo(string Content, string Status);
+
+public sealed record DshSessionDetail(
+    string SessionId,
     string Title,
-    long InputTokens,
-    long OutputTokens,
+    string Cwd,
+    bool Running,
+    DateTime UpdatedAt,
+    DshTokenUsage? Usage,
+    long Turns,
+    long Steps,
+    long LlmMilliseconds,
+    long ToolMilliseconds,
+    DshContextPressure? Pressure,
+    IReadOnlyList<DshTodo> Todos);
+
+public sealed record DshWorkspaceInfo(
+    string WorkspaceId,
+    string Title,
+    string Path,
+    int SessionCount,
     DateTime UpdatedAt);
 
 public sealed record DshUsageSummary(
@@ -20,27 +45,52 @@ public sealed record DshUsageSummary(
     long CacheWriteTokens,
     long Turns,
     long Steps,
-    int SessionCount,
-    IReadOnlyList<DshSessionUsage> Sessions);
+    long LlmMilliseconds,
+    long ToolMilliseconds,
+    int SessionCount)
+{
+    public static DshUsageSummary Sum(IEnumerable<DshSessionDetail> sessions)
+    {
+        long input = 0, output = 0, cacheRead = 0, cacheWrite = 0, turns = 0, steps = 0, llmMs = 0, toolMs = 0, count = 0;
+        foreach (DshSessionDetail session in sessions)
+        {
+            count++;
+            if (session.Usage is { } usage)
+            {
+                input += usage.UncachedInputTokens;
+                output += usage.OutputTokens;
+                cacheRead += usage.CacheReadTokens;
+                cacheWrite += usage.CacheWriteTokens;
+            }
+
+            turns += session.Turns;
+            steps += session.Steps;
+            llmMs += session.LlmMilliseconds;
+            toolMs += session.ToolMilliseconds;
+        }
+
+        return new DshUsageSummary(input, output, cacheRead, cacheWrite, turns, steps, llmMs, toolMs, (int)count);
+    }
+}
 
 public sealed record DshStatusSnapshot(
     DshWorkspaceInfo? Workspace,
     string? Provider,
     string? Model,
-    DshUsageSummary Usage);
+    DshUsageSummary Usage,
+    IReadOnlyList<DshSessionDetail> Sessions);
 
 public sealed record DeepSeekBalance(bool IsAvailable, string Currency, decimal TotalBalance, decimal GrantedBalance);
 
 /// <summary>
 /// Reads status data from the local DSH host over its loopback RPC API
-/// (workspace context, per-session token projections) and the DeepSeek
-/// platform balance endpoint. JSON parsing is tolerant: fields are looked up
-/// by name and missing entries contribute zero.
+/// (workspaces, per-session projections including token usage, context
+/// pressure and todos; session create/cancel) and the DeepSeek platform
+/// balance endpoint. JSON parsing is tolerant: fields are looked up by name
+/// and missing entries contribute zero or null.
 /// </summary>
 public sealed class DshStatusClient : IDisposable
 {
-    private static readonly JsonSerializerOptions RequestOptions = new();
-
     private readonly HttpClient _client;
     private int _rpcId;
 
@@ -56,11 +106,26 @@ public sealed class DshStatusClient : IDisposable
         JsonElement sessions = await PostMethodAsync(endpoint, "session.list", new { }, cancellationToken);
         JsonElement describe = await PostMethodAsync(endpoint, "host.describe", new { }, cancellationToken);
 
+        var details = ParseSessions(sessions).OrderBy(session => session.UpdatedAt).ToList();
         return new DshStatusSnapshot(
             ParseLatestWorkspace(workspaces),
             GetString(describe, "provider"),
             GetString(describe, "model"),
-            ParseUsage(sessions));
+            DshUsageSummary.Sum(details),
+            details);
+    }
+
+    /// <summary>Creates a session in a workspace; returns the new session id.</summary>
+    public async Task<string> CreateSessionAsync(Uri endpoint, string workspaceId, CancellationToken cancellationToken)
+    {
+        JsonElement value = await PostMethodAsync(endpoint, "session.create", new { workspaceId }, cancellationToken);
+        return GetString(value, "sessionId") ?? throw new InvalidOperationException("DSH 未返回新会话 id。");
+    }
+
+    /// <summary>Cancels the running agent loop of a session.</summary>
+    public async Task CancelSessionAsync(Uri endpoint, string sessionId, CancellationToken cancellationToken)
+    {
+        await PostMethodAsync(endpoint, "session.cancel", new { sessionId }, cancellationToken);
     }
 
     /// <summary>
@@ -111,8 +176,7 @@ public sealed class DshStatusClient : IDisposable
     {
         int rpcId = Interlocked.Increment(ref _rpcId);
         string body = JsonSerializer.Serialize(
-            new { type = "client-request", rpcId = $"cetus-{rpcId}", method, payload },
-            RequestOptions);
+            new { type = "client-request", rpcId = $"cetus-{rpcId}", method, payload });
 
         using var content = new StringContent(body, Encoding.UTF8, "application/json");
         using HttpResponseMessage response = await _client.PostAsync(
@@ -161,69 +225,96 @@ public sealed class DshStatusClient : IDisposable
             ? ids.GetArrayLength()
             : 0;
         return new DshWorkspaceInfo(
+            GetString(latest.Value, "workspaceId") ?? string.Empty,
             GetString(latest.Value, "title") ?? "未命名工作区",
             GetString(latest.Value, "path") ?? string.Empty,
             sessionCount,
             latestUpdated);
     }
 
-    private static DshUsageSummary ParseUsage(JsonElement value)
+    private static List<DshSessionDetail> ParseSessions(JsonElement value)
     {
-        long input = 0, output = 0, cacheRead = 0, cacheWrite = 0, turns = 0, steps = 0;
-        int sessionCount = 0;
-        var sessions = new List<DshSessionUsage>();
+        var sessions = new List<DshSessionDetail>();
         foreach (JsonElement item in EnumerateArray(value, "items"))
         {
-            sessionCount++;
-            if (!TryGetProjection(item, "tokenUsage", out JsonElement usage))
+            string cwd = GetString(item, "cwd") ?? string.Empty;
+            string title = GetString(item, "cwd") is { } cwdValue
+                ? Path.GetFileName(cwdValue.TrimEnd(Path.DirectorySeparatorChar))
+                : "会话";
+            bool running = item.TryGetProperty("running", out var runningElement)
+                && runningElement.ValueKind == JsonValueKind.True;
+
+            DshTokenUsage? usage = null;
+            if (TryGetProjection(item, "tokenUsage", out JsonElement usageElement))
             {
-                continue;
+                usage = new DshTokenUsage(
+                    GetInt64(usageElement, "uncachedInputTokens"),
+                    GetInt64(usageElement, "outputTokens"),
+                    GetInt64(usageElement, "cacheReadTokens"),
+                    GetInt64(usageElement, "cacheWriteTokens"));
             }
 
-            long itemInput = GetInt64(usage, "uncachedInputTokens");
-            long itemOutput = GetInt64(usage, "outputTokens");
-            input += itemInput;
-            output += itemOutput;
-            cacheRead += GetInt64(usage, "cacheReadTokens");
-            cacheWrite += GetInt64(usage, "cacheWriteTokens");
-
+            long turns = 0, steps = 0, llmMs = 0, toolMs = 0;
             if (TryGetProjection(item, "sessionStats", out JsonElement stats))
             {
-                turns += GetInt64(stats, "turns");
-                steps += GetInt64(stats, "steps");
+                turns = GetInt64(stats, "turns");
+                steps = GetInt64(stats, "steps");
+                llmMs = GetInt64(stats, "llmMs");
+                toolMs = GetInt64(stats, "toolMs");
             }
 
-            string title = GetString(item, "cwd") is { } cwd
-                ? Path.GetFileName(cwd.TrimEnd(Path.DirectorySeparatorChar))
-                : "会话";
+            DshContextPressure? pressure = null;
+            if (TryGetProjection(item, "contextPressure", out JsonElement pressureElement))
+            {
+                double? projected = GetNullableDouble(pressureElement, "projectedTokens");
+                double? raw = GetNullableDouble(pressureElement, "pressureTokens");
+                long? window = pressureElement.TryGetProperty("contextWindow", out var windowElement)
+                    && windowElement.ValueKind == JsonValueKind.Number
+                    && windowElement.TryGetInt64(out long parsedWindow)
+                    ? parsedWindow
+                    : null;
+                if (projected is not null || raw is not null || window is not null)
+                {
+                    pressure = new DshContextPressure(projected, raw, window);
+                }
+            }
+
+            var todos = new List<DshTodo>();
+            if (TryGetProjection(item, "todos", out JsonElement todosElement)
+                && todosElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (JsonElement todo in todosElement.EnumerateArray())
+                {
+                    string? content = GetString(todo, "content");
+                    if (content is not null)
+                    {
+                        todos.Add(new DshTodo(content, GetString(todo, "status") ?? "pending"));
+                    }
+                }
+            }
+
             if (TryGetProjection(item, "title", out JsonElement titleElement)
                 && GetString(titleElement, "title") is { } projectedTitle)
             {
                 title = projectedTitle;
             }
-            else if (GetString(item, "title") is { } itemTitle)
-            {
-                title = itemTitle;
-            }
 
-            sessions.Add(new DshSessionUsage(
+            sessions.Add(new DshSessionDetail(
+                GetString(item, "sessionId") ?? string.Empty,
                 title,
-                itemInput,
-                itemOutput,
-                GetEpochTime(item, "updatedAt")));
+                cwd,
+                running,
+                GetEpochTime(item, "updatedAt"),
+                usage,
+                turns,
+                steps,
+                llmMs,
+                toolMs,
+                pressure,
+                todos));
         }
 
-        return new DshUsageSummary(
-            input,
-            output,
-            cacheRead,
-            cacheWrite,
-            turns,
-            steps,
-            sessionCount,
-            sessions
-                .OrderBy(session => session.UpdatedAt)
-                .ToList());
+        return sessions;
     }
 
     private static bool TryGetProjection(JsonElement sessionItem, string name, out JsonElement projection)
@@ -234,7 +325,8 @@ public sealed class DshStatusClient : IDisposable
             && projections.TryGetProperty("values", out JsonElement values)
             && values.ValueKind == JsonValueKind.Object
             && values.TryGetProperty(name, out projection)
-            && projection.ValueKind == JsonValueKind.Object;
+            && projection.ValueKind != JsonValueKind.Null
+            && projection.ValueKind != JsonValueKind.Undefined;
     }
 
     private static IEnumerable<JsonElement> EnumerateArray(JsonElement value, string name)
@@ -283,6 +375,14 @@ public sealed class DshStatusClient : IDisposable
         && property.TryGetInt64(out long value)
             ? value
             : 0;
+
+    private static double? GetNullableDouble(JsonElement element, string name) =>
+        element.ValueKind == JsonValueKind.Object
+        && element.TryGetProperty(name, out JsonElement property)
+        && property.ValueKind == JsonValueKind.Number
+        && property.GetDouble() is { } value
+            ? value
+            : null;
 
     private static decimal GetDecimal(JsonElement element, string name) =>
         decimal.TryParse(GetString(element, name), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out decimal value)

@@ -30,10 +30,56 @@
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="Margin" Value="0,0,5,0" />
         </Style>
+        <Style x:Key="ScopePill" TargetType="RadioButton">
+            <Setter Property="Foreground" Value="{DynamicResource SidebarPanelSecondaryBrush}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="Chrome"
+                                CornerRadius="6"
+                                Padding="{TemplateBinding Padding}"
+                                Background="{TemplateBinding Background}">
+                            <ContentPresenter VerticalAlignment="Center"
+                                              HorizontalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Chrome" Property="Background"
+                                        Value="{DynamicResource SidebarPanelSelectedBrush}" />
+                                <Setter Property="Foreground"
+                                        Value="{DynamicResource SidebarPanelForegroundBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background"
+                                        Value="{DynamicResource CaptionHoverBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="InsightActionButton" TargetType="Button">
+            <Setter Property="Padding" Value="10,3" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SidebarBorderBrush}" />
+            <Setter Property="Background" Value="{DynamicResource SidebarPanelSelectedBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource SidebarPanelForegroundBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Margin" Value="0,6,0,0" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+        </Style>
     </UserControl.Resources>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="42" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
         <Grid Grid.Row="0" Margin="6,0">
@@ -54,11 +100,26 @@
                 <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="13" Text="&#xE72C;" />
             </Button>
         </Grid>
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="10,4,10,6">
+            <RadioButton x:Name="ScopeSessionButton" Style="{StaticResource ScopePill}" GroupName="StatusScope"
+                         Content="当前会话" IsChecked="True" Checked="OnScopeChanged" />
+            <RadioButton x:Name="ScopeProjectButton" Style="{StaticResource ScopePill}" GroupName="StatusScope"
+                         Content="当前项目" Margin="4,0,0,0" Checked="OnScopeChanged" />
+            <RadioButton x:Name="ScopeAllButton" Style="{StaticResource ScopePill}" GroupName="StatusScope"
+                         Content="全部历史" Margin="4,0,0,0" Checked="OnScopeChanged" />
+        </StackPanel>
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
             <StackPanel Margin="0,0,0,10">
                 <Border Style="{StaticResource StatusCard}">
                     <StackPanel>
-                        <TextBlock Text="当前项目" Style="{StaticResource StatusLabel}" Margin="0" />
+                        <TextBlock Text="洞察" Style="{StaticResource StatusLabel}" Margin="0,0,0,6" />
+                        <StackPanel x:Name="InsightsHost" />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource StatusCard}">
+                    <StackPanel>
+                        <TextBlock Text="当前项目" Style="{StaticResource StatusLabel}" Margin="0,0,0,6" />
                         <TextBlock x:Name="WorkspaceTitleText" Style="{StaticResource StatusBigValue}" Text="—" />
                         <TextBlock x:Name="WorkspacePathText"
                                    FontSize="11"
@@ -72,6 +133,77 @@
                                    Margin="0,4,0,0" />
                         <TextBlock Text="模型" Style="{StaticResource StatusLabel}" />
                         <TextBlock x:Name="ModelText" Style="{StaticResource StatusValue}" Text="—" />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource StatusCard}">
+                    <StackPanel>
+                        <TextBlock Text="上下文占用（焦点会话）" Style="{StaticResource StatusLabel}" Margin="0,0,0,6" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Border Grid.Column="0" Height="8" CornerRadius="4"
+                                    Background="{DynamicResource SidebarPanelSelectedBrush}">
+                                <Border x:Name="ContextBar" Height="8" CornerRadius="4"
+                                        HorizontalAlignment="Left"
+                                        Background="#34D399" />
+                            </Border>
+                            <TextBlock Grid.Column="1" x:Name="ContextPercentText"
+                                       Margin="8,0,0,0" FontSize="13" FontWeight="SemiBold"
+                                       VerticalAlignment="Center" Text="—" />
+                        </Grid>
+                        <TextBlock x:Name="ContextDetailText"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource SidebarPanelSecondaryBrush}"
+                                   Margin="0,6,0,0"
+                                   Text="—" />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource StatusCard}">
+                    <StackPanel>
+                        <TextBlock Text="核心指标" Style="{StaticResource StatusLabel}" Margin="0,0,0,6" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,0,10">
+                                <TextBlock Text="缓存命中率" Style="{StaticResource StatusLabel}" Margin="0" />
+                                <TextBlock x:Name="CacheHitText" Style="{StaticResource StatusBigValue}" Text="—" />
+                            </StackPanel>
+                            <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,0,10">
+                                <TextBlock Text="消耗速度" Style="{StaticResource StatusLabel}" Margin="0" />
+                                <TextBlock x:Name="RateText" Style="{StaticResource StatusBigValue}" Text="—" />
+                            </StackPanel>
+                            <StackPanel Grid.Row="1" Grid.Column="0">
+                                <TextBlock Text="LLM 耗时" Style="{StaticResource StatusLabel}" Margin="0" />
+                                <TextBlock x:Name="LlmTimeText" Style="{StaticResource StatusValue}" Text="—" />
+                            </StackPanel>
+                            <StackPanel Grid.Row="1" Grid.Column="1">
+                                <TextBlock Text="工具耗时" Style="{StaticResource StatusLabel}" Margin="0" />
+                                <TextBlock x:Name="ToolTimeText" Style="{StaticResource StatusValue}" Text="—" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource StatusCard}">
+                    <StackPanel>
+                        <TextBlock Text="任务进度" Style="{StaticResource StatusLabel}" Margin="0,0,0,6" />
+                        <TextBlock x:Name="TaskProgressText" Style="{StaticResource StatusValue}" Text="无任务清单" />
+                        <TextBlock x:Name="TaskCurrentText"
+                                   FontSize="11"
+                                   TextWrapping="Wrap"
+                                   Foreground="{DynamicResource SidebarPanelSecondaryBrush}"
+                                   Margin="0,4,0,0"
+                                   Visibility="Collapsed" />
                     </StackPanel>
                 </Border>
 
@@ -118,7 +250,7 @@
 
                 <Border Style="{StaticResource StatusCard}">
                     <StackPanel>
-                        <TextBlock Text="累计调用（全部会话）" Style="{StaticResource StatusLabel}" Margin="0" />
+                        <TextBlock Text="累计调用" Style="{StaticResource StatusLabel}" Margin="0,0,0,6" />
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />

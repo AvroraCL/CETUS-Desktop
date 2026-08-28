@@ -6,18 +6,27 @@ using Cetus.DshStatus;
 using Brush = System.Windows.Media.Brush;
 using Color = System.Windows.Media.Color;
 using ColorConverter = System.Windows.Media.ColorConverter;
+using FontFamily = System.Windows.Media.FontFamily;
 
 namespace Cetus.Sidebar;
 
+public enum StatusScope
+{
+    CurrentSession,
+    CurrentProject,
+    AllHistory,
+}
+
 /// <summary>
-/// Status tab: project/workspace context, token usage with a stacked
-/// composition bar, a per-session output bar chart, call totals and the
-/// DeepSeek platform balance. Polls while visible; the balance is only
-/// queried on demand (activation or manual refresh).
+/// Status tab v2: an observe-and-act surface for the DSH agent. Scope
+/// selector (current session / current project / all history), an insight
+/// strip driven by pure rules (context pressure, cache hit, output spikes),
+/// decision-first KPIs, usage charts and DeepSeek balance. Polls every 10s
+/// while visible; the balance is queried on activation and manual refresh.
 /// </summary>
 public partial class StatusTabContent : UserControl
 {
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(10);
 
     private static readonly Brush TokenInputBrush = Frozen("#60A5FA");
     private static readonly Brush TokenOutputBrush = Frozen("#34D399");
@@ -26,10 +35,17 @@ public partial class StatusTabContent : UserControl
     private static readonly Brush BalanceGrantedBrush = Frozen("#34D399");
     private static readonly Brush BalanceToppedBrush = Frozen("#60A5FA");
     private static readonly Brush SessionBarBrush = Frozen("#60A5FA");
+    private static readonly Brush ContextOkBrush = Frozen("#34D399");
+    private static readonly Brush ContextWarnBrush = Frozen("#FBBF24");
+    private static readonly Brush ContextCriticalBrush = Frozen("#F87171");
 
     private readonly DshStatusClient _client = new();
     private Func<Uri>? _endpointProvider;
     private DispatcherTimer? _pollTimer;
+    private StatusScope _scope = StatusScope.CurrentSession;
+    private (long Tokens, DateTime At)? _lastRateSample;
+    private string? _focusSessionId;
+    private string? _focusWorkspaceId;
     private bool _refreshing;
     private bool _disposed;
 
@@ -49,7 +65,7 @@ public partial class StatusTabContent : UserControl
 
     public void ApplyTheme(bool isDark)
     {
-        // All colors ride DynamicResource brushes or fixed chart accents.
+        // Colors ride DynamicResource brushes or fixed chart accents.
     }
 
     private static Brush Frozen(string color) =>
@@ -76,6 +92,14 @@ public partial class StatusTabContent : UserControl
     private void OnRefreshClicked(object sender, RoutedEventArgs e) =>
         _ = RefreshAsync(includeBalance: true);
 
+    private void OnScopeChanged(object sender, RoutedEventArgs e)
+    {
+        if (!_disposed && IsLoaded)
+        {
+            _ = RefreshAsync(includeBalance: false);
+        }
+    }
+
     private async Task RefreshAsync(bool includeBalance)
     {
         if (_refreshing || _disposed)
@@ -89,6 +113,12 @@ public partial class StatusTabContent : UserControl
             return;
         }
 
+        _scope = ScopeSessionButton.IsChecked == true
+            ? StatusScope.CurrentSession
+            : ScopeProjectButton.IsChecked == true
+                ? StatusScope.CurrentProject
+                : StatusScope.AllHistory;
+
         _refreshing = true;
         RefreshButton.IsEnabled = false;
         try
@@ -100,29 +130,20 @@ public partial class StatusTabContent : UserControl
                 return;
             }
 
-            if (snapshot.Workspace is { } workspace)
-            {
-                WorkspaceTitleText.Text = workspace.Title;
-                WorkspacePathText.Text = workspace.Path;
-                WorkspaceMetaText.Text =
-                    $"{workspace.SessionCount} 个会话 · 最近活动 {workspace.UpdatedAt:MM-dd HH:mm}";
-            }
-            else
-            {
-                WorkspaceTitleText.Text = "没有工作区";
-                WorkspacePathText.Text = string.Empty;
-                WorkspaceMetaText.Text = string.Empty;
-            }
+            var (scopedUsage, focus) = ResolveScope(snapshot);
+            _focusSessionId = focus?.SessionId;
+            _focusWorkspaceId = snapshot.Workspace?.WorkspaceId;
 
-            ModelText.Text = string.IsNullOrWhiteSpace(snapshot.Model)
-                ? "—"
-                : $"{snapshot.Model}（{snapshot.Provider ?? "未知来源"}）";
+            bool anyRunning = snapshot.Sessions.Any(session => session.Running);
+            double outputRate = MeasureOutputRate(snapshot, anyRunning);
 
-            RenderUsageChart(snapshot.Usage);
-            RenderSessionBars(snapshot.Usage);
-            SessionsText.Text = snapshot.Usage.SessionCount.ToString("N0");
-            TurnsText.Text = snapshot.Usage.Turns.ToString("N0");
-            StepsText.Text = snapshot.Usage.Steps.ToString("N0");
+            RenderWorkspace(snapshot, focus);
+            RenderContext(focus);
+            RenderUsageChart(scopedUsage);
+            RenderSessionBars(snapshot);
+            RenderKpis(snapshot, scopedUsage, focus, outputRate);
+            RenderInsights(snapshot, scopedUsage, focus, outputRate);
+            RenderTask(focus);
 
             if (includeBalance)
             {
@@ -148,12 +169,287 @@ public partial class StatusTabContent : UserControl
         }
     }
 
-    private static long TotalTokens(DshUsageSummary usage) =>
-        usage.InputTokens + usage.OutputTokens + usage.CacheReadTokens + usage.CacheWriteTokens;
+    /// <summary>
+    /// Computes the scope's aggregated usage and its focus session (running
+    /// first, else the most recently updated).
+    /// </summary>
+    private (DshUsageSummary Usage, DshSessionDetail? Focus) ResolveScope(DshStatusSnapshot snapshot)
+    {
+        static DshSessionDetail? FocusOf(IEnumerable<DshSessionDetail> sessions) =>
+            sessions.FirstOrDefault(session => session.Running)
+            ?? sessions.OrderByDescending(session => session.UpdatedAt).FirstOrDefault();
+
+        switch (_scope)
+        {
+            case StatusScope.CurrentSession:
+            {
+                var focus = FocusOf(snapshot.Sessions);
+                var single = focus is null ? Array.Empty<DshSessionDetail>() : new[] { focus };
+                return (DshUsageSummary.Sum(single), focus);
+            }
+            case StatusScope.CurrentProject when snapshot.Workspace is { } workspace:
+            {
+                // workspace.list rows do not carry session ids here, so
+                // "project" means sessions whose cwd belongs to the workspace
+                // title folder; when nothing matches, fall back to all.
+                var matching = snapshot.Sessions
+                    .Where(session => session.Cwd.EndsWith(
+                        workspace.Title,
+                        StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (matching.Count == 0)
+                {
+                    matching = snapshot.Sessions.ToList();
+                }
+
+                return (DshUsageSummary.Sum(matching), FocusOf(matching));
+            }
+            default:
+                return (DshUsageSummary.Sum(snapshot.Sessions), FocusOf(snapshot.Sessions));
+        }
+    }
+
+    private void RenderWorkspace(DshStatusSnapshot snapshot, DshSessionDetail? focus)
+    {
+        if (snapshot.Workspace is { } workspace)
+        {
+            WorkspaceTitleText.Text = workspace.Title;
+            WorkspacePathText.Text = workspace.Path;
+            WorkspaceMetaText.Text =
+                $"{workspace.SessionCount} 个会话 · 最近活动 {workspace.UpdatedAt:MM-dd HH:mm}"
+                + (focus is { } f ? $" · 焦点 {f.Title}" : string.Empty);
+        }
+        else
+        {
+            WorkspaceTitleText.Text = "没有工作区";
+            WorkspacePathText.Text = string.Empty;
+            WorkspaceMetaText.Text = string.Empty;
+        }
+
+        ModelText.Text = string.IsNullOrWhiteSpace(snapshot.Model)
+            ? "—"
+            : $"{snapshot.Model}（{snapshot.Provider ?? "未知来源"}）";
+    }
+
+    private void RenderContext(DshSessionDetail? focus)
+    {
+        double? occupancy = focus?.Pressure?.OccupancyPercent;
+        if (focus is null || occupancy is null)
+        {
+            ContextBar.Width = 0;
+            ContextPercentText.Text = "—";
+            ContextDetailText.Text = "该会话尚未报告上下文压力。";
+            return;
+        }
+
+        double percent = Math.Clamp(occupancy.Value, 0, 100);
+        double trackWidth = (ContextBar.Parent as Border)?.ActualWidth ?? 0;
+        ContextBar.Width = trackWidth > 0 ? trackWidth * percent / 100 : 0;
+        ContextPercentText.Text = $"{percent:0}%";
+
+        Brush bar = percent >= DshInsights.ContextCriticalPercent
+            ? ContextCriticalBrush
+            : percent >= DshInsights.ContextWarnPercent
+                ? ContextWarnBrush
+                : ContextOkBrush;
+        ContextBar.Background = bar;
+
+        long? window = focus.Pressure?.ContextWindow;
+        double? projected = focus.Pressure?.ProjectedTokens ?? focus.Pressure?.PressureTokens;
+        ContextDetailText.Text = window is > 0 && projected is not null
+            ? $"{projected:N0} / {window:N0} tokens"
+            : "压力数据不完整。";
+    }
+
+    private void RenderKpis(DshStatusSnapshot snapshot, DshUsageSummary usage, DshSessionDetail? focus, double outputRate)
+    {
+        long denominator = usage.CacheReadTokens + usage.InputTokens;
+        CacheHitText.Text = denominator > 0
+            ? $"{usage.CacheReadTokens / (double)denominator * 100:0}%"
+            : "—";
+
+        bool anyRunning = snapshot.Sessions.Any(session => session.Running);
+        RateText.Text = anyRunning
+            ? (outputRate >= 0 ? $"{outputRate:N0} tokens/分" : "测量中…")
+            : "空闲";
+
+        LlmTimeText.Text = FormatDuration(usage.LlmMilliseconds);
+        ToolTimeText.Text = FormatDuration(usage.ToolMilliseconds);
+    }
+
+    /// <summary>
+    /// Output velocity measured between consecutive refreshes (all-history
+    /// totals so the rate is scope-independent); -1 when not yet measurable.
+    /// </summary>
+    private double MeasureOutputRate(DshStatusSnapshot snapshot, bool anyRunning)
+    {
+        long total = snapshot.Usage.OutputTokens;
+        DateTime now = DateTime.Now;
+        double rate = -1;
+        if (_lastRateSample is { } previous && anyRunning && now > previous.At)
+        {
+            double minutes = (now - previous.At).TotalMinutes;
+            if (minutes > 0.01 && total >= previous.Tokens)
+            {
+                rate = (total - previous.Tokens) / minutes;
+            }
+        }
+
+        _lastRateSample = (total, now);
+        return rate;
+    }
+
+    private static string FormatDuration(long milliseconds)
+    {
+        if (milliseconds <= 0)
+        {
+            return "—";
+        }
+
+        TimeSpan span = TimeSpan.FromMilliseconds(milliseconds);
+        return span.TotalMinutes >= 1
+            ? $"{(int)span.TotalMinutes}分{span.Seconds}秒"
+            : $"{span.TotalSeconds:0.#}秒";
+    }
+
+    private void RenderInsights(DshStatusSnapshot snapshot, DshUsageSummary usage, DshSessionDetail? focus, double outputRate)
+    {
+        InsightsHost.Children.Clear();
+
+        double? occupancy = focus?.Pressure?.OccupancyPercent;
+        long denominator = usage.CacheReadTokens + usage.InputTokens;
+        double cacheHit = denominator > 0
+            ? usage.CacheReadTokens / (double)denominator * 100
+            : -1;
+        bool anyRunning = snapshot.Sessions.Any(session => session.Running);
+
+        foreach (DshInsight insight in DshInsights.Evaluate(
+                     occupancy,
+                     cacheHit,
+                     usage.InputTokens,
+                     anyRunning,
+                     outputRate))
+        {
+            InsightsHost.Children.Add(CreateInsightRow(insight));
+        }
+    }
+
+    private FrameworkElement CreateInsightRow(DshInsight insight)
+    {
+        (string glyph, Brush color) = insight.Severity switch
+        {
+            InsightSeverity.Critical => ("\uEA39", ContextCriticalBrush),
+            InsightSeverity.Warn => ("\uE7BA", ContextWarnBrush),
+            _ => ("\uE946", TokenInputBrush),
+        };
+
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 2) };
+        row.Children.Add(new TextBlock
+        {
+            Text = glyph,
+            FontFamily = new FontFamily("Segoe MDL2 Assets"),
+            FontSize = 13,
+            Foreground = color,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, 1, 8, 0),
+        });
+
+        var messageColumn = new StackPanel();
+        messageColumn.Children.Add(new TextBlock
+        {
+            Text = insight.Message,
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        if (insight.Action == InsightAction.NewSession && _focusWorkspaceId is { } workspaceId)
+        {
+            var newSession = new Button
+            {
+                Content = "新建会话",
+                Style = (Style)FindResource("InsightActionButton"),
+            };
+            newSession.Click += (_, _) => _ = RunInsightActionAsync(InsightAction.NewSession, workspaceId);
+            messageColumn.Children.Add(newSession);
+        }
+        else if (insight.Action == InsightAction.CancelSession && _focusSessionId is { } sessionId)
+        {
+            var cancel = new Button
+            {
+                Content = "中断会话",
+                Style = (Style)FindResource("InsightActionButton"),
+            };
+            cancel.Click += (_, _) => _ = RunInsightActionAsync(InsightAction.CancelSession, sessionId);
+            messageColumn.Children.Add(cancel);
+        }
+
+        row.Children.Add(messageColumn);
+        return row;
+    }
+
+    private async Task RunInsightActionAsync(InsightAction action, string argument)
+    {
+        if (_endpointProvider is null)
+        {
+            return;
+        }
+
+        Uri endpoint = _endpointProvider();
+        try
+        {
+            switch (action)
+            {
+                case InsightAction.NewSession:
+                {
+                    string sessionId = await _client.CreateSessionAsync(endpoint, argument, CancellationToken.None);
+                    UpdatedText.Text = $"已新建会话 {sessionId}";
+                    break;
+                }
+                case InsightAction.CancelSession:
+                {
+                    await _client.CancelSessionAsync(endpoint, argument, CancellationToken.None);
+                    UpdatedText.Text = "已发送中断请求";
+                    break;
+                }
+            }
+
+            _ = RefreshAsync(includeBalance: false);
+        }
+        catch (Exception error)
+        {
+            UpdatedText.Text = $"操作失败：{error.Message}";
+        }
+    }
+
+    private void RenderTask(DshSessionDetail? focus)
+    {
+        IReadOnlyList<DshTodo> todos = focus?.Todos ?? Array.Empty<DshTodo>();
+        if (todos.Count == 0)
+        {
+            TaskProgressText.Text = "无任务清单";
+            TaskCurrentText.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        int completed = todos.Count(todo => todo.Status == "completed");
+        TaskProgressText.Text = $"{completed}/{todos.Count} 项完成";
+
+        DshTodo? current = todos.FirstOrDefault(todo => todo.Status == "in_progress")
+            ?? todos.FirstOrDefault(todo => todo.Status == "pending");
+        if (current is not null)
+        {
+            TaskCurrentText.Text = $"当前：{current.Content}";
+            TaskCurrentText.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            TaskCurrentText.Visibility = Visibility.Collapsed;
+        }
+    }
 
     private void RenderUsageChart(DshUsageSummary usage)
     {
-        long total = TotalTokens(usage);
+        long total = usage.InputTokens + usage.OutputTokens + usage.CacheReadTokens + usage.CacheWriteTokens;
         TotalTokensText.Text = $"{total:N0} tokens";
         UsageLegend.Children.Clear();
         UsageBarHost.Children.Clear();
@@ -208,32 +504,35 @@ public partial class StatusTabContent : UserControl
         }
     }
 
-    private void RenderSessionBars(DshUsageSummary usage)
+    private void RenderSessionBars(DshStatusSnapshot snapshot)
     {
         SessionBarsHost.Children.Clear();
         SessionBarsHost.ColumnDefinitions.Clear();
-        var recent = usage.Sessions
+
+        // The bars always draw from the full history so the chart keeps its
+        // at-a-glance timeline meaning regardless of the selected scope.
+        var recent = snapshot.Sessions
             .Where(session => session.UpdatedAt > DateTime.MinValue)
             .OrderBy(session => session.UpdatedAt)
             .TakeLast(8)
-            .ToList();
+            .ToArray();
 
-        if (recent.Count == 0)
+        if (recent.Length == 0)
         {
             SessionBarsEmptyText.Visibility = Visibility.Visible;
             return;
         }
 
         SessionBarsEmptyText.Visibility = Visibility.Collapsed;
-        long max = Math.Max(1, recent.Max(session => session.OutputTokens));
-        for (int i = 0; i < recent.Count; i++)
+        long max = Math.Max(1, recent.Max(session => session.Usage?.OutputTokens ?? 0));
+        for (int i = 0; i < recent.Length; i++)
         {
-            DshSessionUsage session = recent[i];
+            DshSessionDetail session = recent[i];
             SessionBarsHost.ColumnDefinitions.Add(new ColumnDefinition
             {
                 Width = new GridLength(1, GridUnitType.Star),
             });
-            double fraction = session.OutputTokens / (double)max;
+            double fraction = (session.Usage?.OutputTokens ?? 0) / (double)max;
             var bar = new Border
             {
                 CornerRadius = new CornerRadius(3, 3, 0, 0),
@@ -241,7 +540,7 @@ public partial class StatusTabContent : UserControl
                 Height = Math.Max(4, 90 * fraction),
                 VerticalAlignment = VerticalAlignment.Bottom,
                 Margin = new Thickness(2, 0, 2, 0),
-                ToolTip = $"{session.Title}\n输出 {session.OutputTokens:N0} tokens · {session.UpdatedAt:MM-dd HH:mm}",
+                ToolTip = $"{session.Title}\n输出 {(session.Usage?.OutputTokens ?? 0):N0} tokens · {session.UpdatedAt:MM-dd HH:mm}",
             };
             Grid.SetColumn(bar, i);
             SessionBarsHost.Children.Add(bar);

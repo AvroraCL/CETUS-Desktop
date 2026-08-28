@@ -85,9 +85,9 @@ public sealed class DshStatusClientTests
         Assert.Equal(3, snapshot.Usage.SessionCount);
         Assert.Equal(3, snapshot.Usage.Turns);
         Assert.Equal(10, snapshot.Usage.Steps);
-        Assert.Equal(2, snapshot.Usage.Sessions.Count);
-        Assert.Equal(50, snapshot.Usage.Sessions[0].OutputTokens);
-        Assert.Equal(20, snapshot.Usage.Sessions[1].OutputTokens);
+        Assert.Equal(2, snapshot.Sessions.Count(session => session.Usage is not null));
+        Assert.Equal(50, snapshot.Sessions[0].Usage!.OutputTokens);
+        Assert.Equal(20, snapshot.Sessions[1].Usage!.OutputTokens);
     }
 
     [Fact]
