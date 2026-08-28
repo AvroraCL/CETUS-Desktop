@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        xmlns:sidebar="clr-namespace:Cetus.Sidebar"
         Title="CETUS鲸鱼座"
         Width="1280" Height="800"
         MinWidth="900" MinHeight="600"
@@ -30,6 +31,17 @@
         <SolidColorBrush x:Key="TitleBarTintBrush" Color="#151517" Opacity="0.70" />
         <SolidColorBrush x:Key="TitleForegroundBrush" Color="#E0F5F7FA" />
         <SolidColorBrush x:Key="CaptionForegroundBrush" Color="#E0F5F7FA" />
+        <SolidColorBrush x:Key="CaptionHoverBrush" Color="#2EFFFFFF" />
+        <SolidColorBrush x:Key="CaptionPressedBrush" Color="#4AFFFFFF" />
+        <SolidColorBrush x:Key="CaptionFocusBrush" Color="#24FFFFFF" />
+        <SolidColorBrush x:Key="SidebarBorderBrush" Color="#2AFFFFFF" />
+        <SolidColorBrush x:Key="RightSidebarBackgroundBrush" Color="#1B1B1C" />
+        <SolidColorBrush x:Key="SidebarPanelForegroundBrush" Color="#F9FAFB" />
+        <SolidColorBrush x:Key="SidebarPanelSecondaryBrush" Color="#CFD3D6" />
+        <SolidColorBrush x:Key="SidebarPanelSelectedBrush" Color="#2EFFFFFF" />
+        <SolidColorBrush x:Key="SidebarPanelInputBrush" Color="#222224" />
+        <SolidColorBrush x:Key="SidebarTerminalBackgroundBrush" Color="#101011" />
+        <SolidColorBrush x:Key="SidebarTerminalForegroundBrush" Color="#E5E7EB" />
 
         <Style x:Key="CaptionButton"
                TargetType="Button">
@@ -190,12 +202,8 @@
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
-                    <!-- Divider strip under the sidebar window's left edge;
-                         doubles as the drag hit zone while the panel is open. -->
-                    <ColumnDefinition x:Name="RightSidebarDividerColumn" Width="0" />
-                    <!-- Spacer reserving the sidebar window's width so the
-                         DSH surface makes room (push layout). -->
-                    <ColumnDefinition x:Name="RightSidebarColumn" Width="0" />
+                    <ColumnDefinition x:Name="RightSidebarDividerColumn" Width="8" />
+                    <ColumnDefinition x:Name="RightSidebarColumn" Width="360" MaxWidth="520" />
                 </Grid.ColumnDefinitions>
 
                 <Grid Grid.Column="0">
@@ -208,16 +216,41 @@
                                   DefaultBackgroundColor="White" />
                 </Grid>
 
-                <Thumb x:Name="RightSidebarResizeThumb"
-                       Grid.Column="1"
-                       Panel.ZIndex="2"
-                       VerticalAlignment="Stretch"
-                       Background="Transparent"
-                       Cursor="SizeWE"
-                       Focusable="False"
-                       IsEnabled="False"
-                       DragDelta="OnRightSidebarResizeDelta"
-                       DragCompleted="OnRightSidebarResizeCompleted" />
+                <Border x:Name="RightSidebarDivider"
+                        Grid.Column="1"
+                        Panel.ZIndex="1"
+                        Width="1"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Stretch"
+                        Background="{DynamicResource SidebarBorderBrush}"
+                        Visibility="{Binding Visibility, ElementName=RightSidebarSplitter}" />
+
+                <GridSplitter x:Name="RightSidebarSplitter"
+                              Grid.Column="1"
+                              Panel.ZIndex="2"
+                              Margin="0,60,0,0"
+                              Width="8"
+                              HorizontalAlignment="Stretch"
+                              VerticalAlignment="Stretch"
+                              Background="Transparent"
+                              ResizeDirection="Columns"
+                              ResizeBehavior="PreviousAndNext"
+                              ShowsPreview="False"
+                              DragStarted="OnRightSidebarDragStarted"
+                              DragCompleted="OnRightSidebarDragCompleted">
+                    <GridSplitter.Template>
+                        <!-- Invisible hit zone: the 1px divider is the only visual. -->
+                        <ControlTemplate TargetType="GridSplitter">
+                            <Grid Background="Transparent" />
+                        </ControlTemplate>
+                    </GridSplitter.Template>
+                </GridSplitter>
+
+                <Border x:Name="RightSidebar"
+                        Grid.Column="2"
+                        Background="{DynamicResource RightSidebarBackgroundBrush}">
+                    <sidebar:RightSidebarView x:Name="RightSidebarContent" />
+                </Border>
             </Grid>
         </Border>
     </Grid>
