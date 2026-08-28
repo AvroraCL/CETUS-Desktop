@@ -1,9 +1,9 @@
 <div align="center">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/banner-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="docs/banner-light.png">
-  <img src="docs/banner-light.png" alt="CETUS · 鲸鱼座 — 将 DeepSeek Harness 带到 Windows 桌面的原生工作台" width="720">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/banner-dark.png?v=2">
+  <source media="(prefers-color-scheme: light)" srcset="docs/banner-light.png?v=2">
+  <img src="docs/banner-light.png?v=2" alt="CETUS · 鲸鱼座 — 将 DeepSeek Harness 带到 Windows 桌面的原生工作台" width="720">
 </picture>
 
 [![release](https://img.shields.io/github/v/release/AvroraCL/CETUS-Desktop?style=flat-square&logo=github)](https://github.com/AvroraCL/CETUS-Desktop/releases)
