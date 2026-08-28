@@ -20,8 +20,10 @@ namespace Cetus;
 /// </summary>
 public partial class MainWindow : Window
 {
+    // Snappier than DSH's 300ms: fewer per-frame cross-process resizes of the
+    // hosted WebView means less visible stutter on the push layout.
     private static readonly Duration RightSidebarAnimationDuration =
-        new(TimeSpan.FromMilliseconds(300));
+        new(TimeSpan.FromMilliseconds(220));
 
     private readonly CetusSettings _settings;
     private readonly BrowserSession _browserSession;
@@ -191,6 +193,8 @@ public partial class MainWindow : Window
         // instead of resizing every frame.
         RightSidebarContent.Width = isOpen ? targetWidth : currentWidth;
         RightSidebarContent.HorizontalAlignment = HorizontalAlignment.Left;
+        // Hover restyles mid-slide only burn frames; freeze interaction too.
+        RightSidebarContent.IsHitTestVisible = false;
 
         var animation = new GridLengthAnimation
         {
@@ -222,6 +226,7 @@ public partial class MainWindow : Window
         // non-animated paths) so the panel stretches with its column again.
         RightSidebarContent.ClearValue(WidthProperty);
         RightSidebarContent.HorizontalAlignment = HorizontalAlignment.Stretch;
+        RightSidebarContent.IsHitTestVisible = true;
         RightSidebarColumn.BeginAnimation(ColumnDefinition.WidthProperty, null);
         if (isOpen)
         {
@@ -381,6 +386,13 @@ public partial class MainWindow : Window
         Resources["SidebarTerminalForegroundBrush"] = CreateBrush(isDark ? "#E5E7EB" : "#172033");
         WindowFrame.Background = CreateBrush(isDark ? "#151517" : "#F8FAFC");
         StatusText.Foreground = CreateBrush(isDark ? "#AAB7CC" : "#52627A");
+        // Match the frame so Chromium's repaint lag during window/sidebar
+        // resizes shows themed bands instead of a flashing white sliver.
+        Browser.DefaultBackgroundColor = System.Drawing.Color.FromArgb(
+            255,
+            isDark ? 27 : 245,
+            isDark ? 27 : 247,
+            isDark ? 28 : 250);
         RightSidebarContent.ApplyTheme(isDark);
     }
 
