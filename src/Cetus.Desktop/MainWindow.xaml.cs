@@ -176,7 +176,7 @@ public partial class MainWindow : Window
         RightSidebarColumn.BeginAnimation(ColumnDefinition.WidthProperty, null);
         RightSidebarColumn.MinWidth = 0;
         RightSidebarColumn.Width = new GridLength(currentWidth, GridUnitType.Pixel);
-        RightSidebarSplitter.IsEnabled = false;
+        RightSidebarResizeThumb.IsEnabled = false;
 
         bool shouldAnimate = animate
             && SystemParameters.ClientAreaAnimation
@@ -228,6 +228,7 @@ public partial class MainWindow : Window
         RightSidebarContent.HorizontalAlignment = HorizontalAlignment.Stretch;
         RightSidebarContent.IsHitTestVisible = true;
         RightSidebarColumn.BeginAnimation(ColumnDefinition.WidthProperty, null);
+        RightSidebarContent.UpdateEmptyState();
         if (isOpen)
         {
             double clampedWidth = Math.Clamp(
@@ -237,31 +238,39 @@ public partial class MainWindow : Window
             RightSidebarColumn.MinWidth = CetusSettings.MinimumRightSidebarWidth;
             RightSidebarColumn.MaxWidth = CetusSettings.MaximumRightSidebarWidth;
             RightSidebarColumn.Width = new GridLength(clampedWidth, GridUnitType.Pixel);
-            RightSidebarSplitter.IsEnabled = true;
+            RightSidebarResizeThumb.IsEnabled = true;
         }
         else
         {
             RightSidebarColumn.MinWidth = 0;
             RightSidebarColumn.Width = new GridLength(0, GridUnitType.Pixel);
-            RightSidebarSplitter.IsEnabled = false;
+            RightSidebarResizeThumb.IsEnabled = false;
         }
     }
 
-    private void OnRightSidebarDragStarted(object sender, DragStartedEventArgs e)
+    private void OnRightSidebarResizeDelta(object sender, DragDeltaEventArgs e)
     {
-        ++_rightSidebarAnimationGeneration;
-        double currentWidth = RightSidebarColumn.ActualWidth;
+        if (!_rightSidebarOpen)
+        {
+            return;
+        }
+
         RightSidebarColumn.BeginAnimation(ColumnDefinition.WidthProperty, null);
-        RightSidebarColumn.Width = new GridLength(currentWidth, GridUnitType.Pixel);
+        double width = Math.Clamp(
+            RightSidebarColumn.ActualWidth - e.HorizontalChange,
+            CetusSettings.MinimumRightSidebarWidth,
+            CetusSettings.MaximumRightSidebarWidth);
+        RightSidebarColumn.Width = new GridLength(width, GridUnitType.Pixel);
     }
 
-    private void OnRightSidebarDragCompleted(object sender, DragCompletedEventArgs e)
+    private void OnRightSidebarResizeCompleted(object sender, DragCompletedEventArgs e)
     {
         double width = Math.Clamp(
             RightSidebarColumn.ActualWidth,
             CetusSettings.MinimumRightSidebarWidth,
             CetusSettings.MaximumRightSidebarWidth);
         RightSidebarColumn.Width = new GridLength(width, GridUnitType.Pixel);
+        _settings.SetRightSidebarWidth(width);
         _settings.SetRightSidebarWidth(width);
     }
 

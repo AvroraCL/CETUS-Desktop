@@ -252,7 +252,8 @@ public partial class RightSidebarView : UserControl, IDisposable
         }
     }
 
-    private void UpdateEmptyState()
+    /// <summary>Shows the empty-state picker when no tabs are open.</summary>
+    public void UpdateEmptyState()
     {
         bool empty = _tabs.Count == 0;
         EmptyStatePanel.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;

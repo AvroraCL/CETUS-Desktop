@@ -11,7 +11,7 @@ namespace Cetus.Configuration;
 public sealed class CetusSettings
 {
     public const int DefaultPort = 3080;
-    public const bool DefaultRightSidebarOpen = true;
+    public const bool DefaultRightSidebarOpen = false;
     public const int DefaultRightSidebarWidth = 360;
     public const int MinimumRightSidebarWidth = 300;
     public const int MaximumRightSidebarWidth = 520;

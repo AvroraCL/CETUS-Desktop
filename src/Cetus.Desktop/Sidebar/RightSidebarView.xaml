@@ -5,8 +5,8 @@
              Foreground="{DynamicResource SidebarPanelForegroundBrush}">
     <UserControl.Resources>
         <Style x:Key="SidebarTabTypeCard" TargetType="Button">
-            <Setter Property="Width" Value="128" />
-            <Setter Property="Height" Value="84" />
+            <Setter Property="Width" Value="148" />
+            <Setter Property="Height" Value="88" />
             <Setter Property="Margin" Value="6" />
             <Setter Property="Padding" Value="0" />
             <Setter Property="BorderThickness" Value="0" />
@@ -114,7 +114,7 @@
                            Foreground="{DynamicResource SidebarPanelForegroundBrush}"
                            HorizontalAlignment="Center"
                            Margin="0,60,0,0" />
-                <TextBlock Text="选择要在侧边面板中打开的类型。"
+                <TextBlock Text="选择要在侧边面板中打开的标签。"
                            FontSize="13"
                            Foreground="{DynamicResource SidebarPanelSecondaryBrush}"
                            HorizontalAlignment="Center"
@@ -135,9 +135,12 @@
                 </WrapPanel>
             </StackPanel>
             <!-- Mirrors the DSH in-page modal mask: when a real modal
-                 ([role=dialog][aria-modal=true]) opens on the page, the panel
-                 dims and stops taking clicks until it closes. -->
+                 ([role=dialog][aria-modal=true]) opens on the page, the whole
+                 panel — tab strip included — dims and stops taking clicks
+                 until it closes. -->
             <Border x:Name="ModalDim"
+                    Grid.Row="0"
+                    Grid.RowSpan="2"
                     Background="#80000000"
                     IsHitTestVisible="True"
                     Visibility="Collapsed" />
