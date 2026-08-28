@@ -45,7 +45,8 @@ public partial class MainWindow : Window
         _browserSession = new BrowserSession(
             Browser,
             ApplyWindowTheme,
-            OnRightSidebarToggleRequested);
+            OnRightSidebarToggleRequested,
+            OnDshModalStateChanged);
         _browserSession.SetRightSidebarOpen(_rightSidebarOpen);
         _runtime = new DesktopRuntime(_settings, _browserSession, Dispatcher);
         _runtime.StateChanged += OnRuntimeStateChanged;
@@ -141,6 +142,9 @@ public partial class MainWindow : Window
 
     private void OnRightSidebarToggleRequested() =>
         SetRightSidebarOpen(!_rightSidebarOpen, animate: true);
+
+    private void OnDshModalStateChanged(bool isOpen) =>
+        RightSidebarContent.SetModalDim(isOpen);
 
     private void OnMaximizeClicked(object sender, RoutedEventArgs e) =>
         SystemCommands.MaximizeWindow(this);

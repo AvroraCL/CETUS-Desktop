@@ -46,6 +46,21 @@ public partial class RightSidebarView : UserControl, IDisposable
         }
     }
 
+    /// <summary>
+    /// Dims the panel while a real modal ([role=dialog][aria-modal=true]) is
+    /// open on the DSH page, matching the page's own mask; the dim also
+    /// blocks panel interaction while the modal is topmost.
+    /// </summary>
+    public void SetModalDim(bool visible)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        ModalDim.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     private void OnNewTabClicked(object sender, RoutedEventArgs e)
     {
         if (DateTime.Now < _newTabMenuSuppressedUntil)

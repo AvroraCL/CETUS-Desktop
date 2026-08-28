@@ -20,6 +20,27 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
           const source = 'cetus-window';
           const topBarId = 'cetus-dsh-topbar';
           let rightSidebarOpen = true;
+          let modalOpen = false;
+          let modalScheduled = false;
+
+          // Real modals (API key onboarding, settings dialogs...) render
+          // [role="dialog"][aria-modal="true"] over a blurred mask; non-modal
+          // popovers carry role=dialog without aria-modal and must not match.
+          const modalSelector = '[role="dialog"][aria-modal="true"]';
+          const reportModal = () => {
+            if (modalScheduled) return;
+            modalScheduled = true;
+            window.setTimeout(() => {
+              modalScheduled = false;
+              const open = document.querySelector(modalSelector) !== null;
+              if (open !== modalOpen) {
+                modalOpen = open;
+                if (window.chrome && window.chrome.webview) {
+                  window.chrome.webview.postMessage({ source, type: 'modal', open });
+                }
+              }
+            }, 60);
+          };
 
           const report = () => {
             const root = document.documentElement;
@@ -144,6 +165,8 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
               themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class', 'data-theme', 'style'] });
               const layoutObserver = new MutationObserver(installTopBar);
               layoutObserver.observe(document.body, { childList: true, subtree: true });
+              const modalObserver = new MutationObserver(reportModal);
+              modalObserver.observe(document.body, { childList: true, subtree: true });
             }
             window.chrome.webview.addEventListener('message', (event) => {
               const message = event.data;
@@ -155,6 +178,7 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
             window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', report);
             installTopBar();
             report();
+            reportModal();
           };
           if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', install, { once: true });
@@ -167,6 +191,7 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
     private readonly WebView2 _view;
     private readonly Action<bool> _themeChanged;
     private readonly Action _rightSidebarToggleRequested;
+    private readonly Action<bool> _dshModalChanged;
     private LoopbackNavigationPolicy? _navigationPolicy;
     private bool _rightSidebarOpen = true;
     private bool _initialized;
@@ -175,11 +200,13 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
     public BrowserSession(
         WebView2 view,
         Action<bool> themeChanged,
-        Action rightSidebarToggleRequested)
+        Action rightSidebarToggleRequested,
+        Action<bool> dshModalChanged)
     {
         _view = view;
         _themeChanged = themeChanged;
         _rightSidebarToggleRequested = rightSidebarToggleRequested;
+        _dshModalChanged = dshModalChanged;
     }
 
     public async Task NavigateAsync(Uri trustedOrigin, CancellationToken cancellationToken)
@@ -286,6 +313,11 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
                 else if (type.GetString() == "right-sidebar-toggle")
                 {
                     _rightSidebarToggleRequested();
+                }
+                else if (type.GetString() == "modal"
+                    && root.TryGetProperty("open", out JsonElement open))
+                {
+                    _dshModalChanged(open.GetBoolean());
                 }
             }
         }

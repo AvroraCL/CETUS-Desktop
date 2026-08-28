@@ -134,6 +134,13 @@
                             Click="OnEmptyFilesClicked" />
                 </WrapPanel>
             </StackPanel>
+            <!-- Mirrors the DSH in-page modal mask: when a real modal
+                 ([role=dialog][aria-modal=true]) opens on the page, the panel
+                 dims and stops taking clicks until it closes. -->
+            <Border x:Name="ModalDim"
+                    Background="#80000000"
+                    IsHitTestVisible="True"
+                    Visibility="Collapsed" />
         </Grid>
 
         <Popup x:Name="NewTabMenuPopup"
