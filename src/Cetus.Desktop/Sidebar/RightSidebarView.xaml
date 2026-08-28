@@ -89,14 +89,13 @@
                         Click="OnNewTabClicked">
                     <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="13" Text="&#xE710;" />
                 </Button>
-                <ToggleButton DockPanel.Dock="Left"
-                              x:Name="TabsMenuButton"
-                              Style="{StaticResource SidebarIconButton}"
-                              ToolTip="标签页列表"
-                              ClickMode="Press"
-                              Click="OnTabsMenuClicked">
+                <Button DockPanel.Dock="Left"
+                        x:Name="TabsMenuButton"
+                        Style="{StaticResource SidebarIconButton}"
+                        ToolTip="标签页列表"
+                        Click="OnTabsMenuClicked">
                     <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="12" Text="&#xE70D;" />
-                </ToggleButton>
+                </Button>
                 <ScrollViewer VerticalScrollBarVisibility="Disabled"
                               HorizontalScrollBarVisibility="Hidden">
                     <StackPanel x:Name="TabStripPanel" Orientation="Horizontal" />
