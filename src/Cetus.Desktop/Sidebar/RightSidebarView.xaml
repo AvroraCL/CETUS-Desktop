@@ -132,6 +132,10 @@
                             Tag="&#xE8B7;"
                             Content="文件"
                             Click="OnEmptyFilesClicked" />
+                    <Button Style="{StaticResource SidebarTabTypeCard}"
+                            Tag="&#xE946;"
+                            Content="状态"
+                            Click="OnEmptyStatusClicked" />
                 </WrapPanel>
             </StackPanel>
             <!-- Mirrors the DSH in-page modal mask: when a real modal

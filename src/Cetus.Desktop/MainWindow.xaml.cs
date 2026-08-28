@@ -79,6 +79,7 @@ public partial class MainWindow : Window
         _browserSession.SetRightSidebarOpen(_rightSidebarOpen);
         _runtime = new DesktopRuntime(_settings, _browserSession, Dispatcher);
         _runtime.StateChanged += OnRuntimeStateChanged;
+        RightSidebarContent.SetDshEndpointProvider(() => _runtime.Endpoint);
 
         if (DevModeFlag.IsActive)
         {

@@ -5,6 +5,7 @@ public enum SidebarTabKind
     Browser,
     Terminal,
     Files,
+    Status,
 }
 
 /// <summary>Immutable snapshot of a closed tab, kept for the restore list.</summary>
@@ -28,6 +29,7 @@ public static class SidebarTabModel
     {
         SidebarTabKind.Browser => "\uE774",
         SidebarTabKind.Terminal => "\uE756",
+        SidebarTabKind.Status => "\uE946",
         _ => "\uE8B7",
     };
 
@@ -35,6 +37,7 @@ public static class SidebarTabModel
     {
         SidebarTabKind.Browser => "浏览器",
         SidebarTabKind.Terminal => "终端",
+        SidebarTabKind.Status => "状态",
         _ => "文件",
     };
 

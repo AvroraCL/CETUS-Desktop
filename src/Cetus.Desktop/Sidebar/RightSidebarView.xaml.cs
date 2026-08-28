@@ -22,6 +22,7 @@ public partial class RightSidebarView : UserControl, IDisposable
     private readonly List<ClosedTab> _closed = new();
     private readonly SidebarTerminalSession _terminal = new();
     private SidebarTab? _activeTab;
+    private Func<Uri>? _dshEndpointProvider;
     private bool _isDark = true;
     private bool _disposed;
     // When an auto-closing popup swallows the click that re-targets its anchor
@@ -33,6 +34,9 @@ public partial class RightSidebarView : UserControl, IDisposable
     {
         InitializeComponent();
     }
+
+    /// <summary>Provides the live DSH endpoint for status polling (port changes follow).</summary>
+    public void SetDshEndpointProvider(Func<Uri> provider) => _dshEndpointProvider = provider;
 
     public void ApplyTheme(bool isDark)
     {
@@ -110,6 +114,9 @@ public partial class RightSidebarView : UserControl, IDisposable
     private void OnEmptyFilesClicked(object sender, RoutedEventArgs e) =>
         OpenTab(SidebarTabKind.Files);
 
+    private void OnEmptyStatusClicked(object sender, RoutedEventArgs e) =>
+        OpenTab(SidebarTabKind.Status);
+
     private void OnTabsMenuClicked(object sender, RoutedEventArgs e)
     {
         if (DateTime.Now < _tabsMenuSuppressedUntil)
@@ -158,6 +165,13 @@ public partial class RightSidebarView : UserControl, IDisposable
                 break;
             case SidebarTabKind.Terminal:
                 content = new TerminalTabContent(_terminal);
+                title = SidebarTabModel.TitleOf(kind);
+                break;
+            case SidebarTabKind.Status:
+                var status = new StatusTabContent();
+                status.SetEndpointProvider(() => _dshEndpointProvider?.Invoke()
+                    ?? new Uri("http://127.0.0.1:3080/"));
+                content = status;
                 title = SidebarTabModel.TitleOf(kind);
                 break;
             default:
@@ -248,6 +262,9 @@ public partial class RightSidebarView : UserControl, IDisposable
                 break;
             case TerminalTabContent terminal:
                 terminal.Detach();
+                break;
+            case StatusTabContent status:
+                status.Dispose();
                 break;
         }
     }
