@@ -107,7 +107,8 @@ public partial class RightSidebarView : UserControl, IDisposable
         catch (Exception error) when (error is InvalidOperationException or COMException)
         {
             _browserInitialized = false;
-            BrowserAddressBox.Text = $"浏览器初始化失败：{error.Message}";
+            BrowserStatusText.Text = $"浏览器初始化失败：{error.Message}";
+            BrowserStatusText.Visibility = Visibility.Visible;
         }
     }
 
@@ -349,7 +350,8 @@ public partial class RightSidebarView : UserControl, IDisposable
 
     private void OnFileNodeDoubleClicked(object sender, MouseButtonEventArgs e)
     {
-        if (FilesTree.SelectedItem is not SidebarFileNode { IsDirectory: false } node)
+        if (ItemsControl.ContainerFromElement(FilesTree, e.OriginalSource as DependencyObject)
+            is not TreeViewItem { DataContext: SidebarFileNode { IsDirectory: false } node })
         {
             return;
         }

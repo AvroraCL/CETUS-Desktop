@@ -129,6 +129,7 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="42" />
                 <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <Grid Grid.Row="0" Margin="6">
                 <Grid.ColumnDefinitions>
@@ -177,6 +178,12 @@
             <wv2:WebView2 x:Name="SidebarBrowser"
                           Grid.Row="1"
                           DefaultBackgroundColor="#1B1B1C" />
+            <TextBlock x:Name="BrowserStatusText"
+                       Grid.Row="2"
+                       Margin="10,0,10,8"
+                       TextWrapping="Wrap"
+                       Foreground="{DynamicResource SidebarPanelSecondaryBrush}"
+                       Visibility="Collapsed" />
         </Grid>
 
         <Grid x:Name="TerminalPanel" Grid.Row="1" Visibility="Collapsed">

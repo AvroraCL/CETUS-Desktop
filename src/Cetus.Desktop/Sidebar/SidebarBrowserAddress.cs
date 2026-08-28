@@ -19,10 +19,9 @@ internal static class SidebarBrowserAddress
         }
 
         string localCandidate = value.TrimEnd('/');
-        if (localCandidate.Equals("localhost", StringComparison.OrdinalIgnoreCase)
-            || localCandidate.StartsWith("localhost:", StringComparison.OrdinalIgnoreCase)
-            || localCandidate.StartsWith("127.0.0.1", StringComparison.OrdinalIgnoreCase)
-            || localCandidate.StartsWith("[::1]", StringComparison.OrdinalIgnoreCase))
+        if (IsLoopbackHost(localCandidate, "localhost")
+            || IsLoopbackHost(localCandidate, "127.0.0.1")
+            || IsLoopbackHost(localCandidate, "[::1]"))
         {
             return new Uri($"http://{value}");
         }
@@ -41,4 +40,9 @@ internal static class SidebarBrowserAddress
         uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
         || uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
         || uri.Scheme.Equals("about", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Matches the bare loopback host or host:port, never longer lookalike names.</summary>
+    private static bool IsLoopbackHost(string candidate, string host) =>
+        candidate.Equals(host, StringComparison.OrdinalIgnoreCase)
+        || candidate.StartsWith($"{host}:", StringComparison.OrdinalIgnoreCase);
 }

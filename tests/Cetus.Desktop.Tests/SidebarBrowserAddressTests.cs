@@ -10,9 +10,19 @@ public sealed class SidebarBrowserAddressTests
     [InlineData("example.com", "https://example.com/")]
     [InlineData("localhost:4173", "http://localhost:4173/")]
     [InlineData("127.0.0.1:3084", "http://127.0.0.1:3084/")]
+    [InlineData("127.0.0.1", "http://127.0.0.1/")]
+    [InlineData("[::1]:3080", "http://[::1]:3080/")]
     public void Resolve_RecognizesAddresses(string input, string expected)
     {
         Assert.Equal(expected, SidebarBrowserAddress.Resolve(input).AbsoluteUri);
+    }
+
+    [Fact]
+    public void Resolve_TreatsLookalikeLoopbackHostAsRemoteAddress()
+    {
+        Uri result = SidebarBrowserAddress.Resolve("127.0.0.1.evil.com");
+
+        Assert.Equal("https://127.0.0.1.evil.com/", result.AbsoluteUri);
     }
 
     [Fact]
