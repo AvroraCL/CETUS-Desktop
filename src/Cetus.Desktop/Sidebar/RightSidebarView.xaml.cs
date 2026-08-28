@@ -102,6 +102,7 @@ public partial class RightSidebarView : UserControl, IDisposable
             core.NavigationStarting += OnBrowserNavigationStarting;
             core.NavigationCompleted += OnBrowserNavigationCompleted;
             core.NewWindowRequested += OnBrowserNewWindowRequested;
+            core.DownloadStarting += OnBrowserDownloadStarting;
             ShowBrowserStartPage();
         }
         catch (Exception error) when (error is InvalidOperationException or COMException)
@@ -154,6 +155,28 @@ public partial class RightSidebarView : UserControl, IDisposable
         }
     }
 
+    private void OnBrowserDownloadStarting(
+        object? sender,
+        CoreWebView2DownloadStartingEventArgs e)
+    {
+        // The narrow sidebar is not a download manager; hand downloads to the
+        // system browser instead of showing the in-view download overlay.
+        e.Cancel = true;
+        if (Uri.TryCreate(e.DownloadOperation.Uri, UriKind.Absolute, out Uri? uri)
+            && (uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+                || uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+            }
+            catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception)
+            {
+                // External launch is best effort; the sidebar download stays cancelled.
+            }
+        }
+    }
+
     private void OnBrowserBackClicked(object sender, RoutedEventArgs e)
     {
         if (SidebarBrowser.CanGoBack)
@@ -182,6 +205,40 @@ public partial class RightSidebarView : UserControl, IDisposable
             e.Handled = true;
             NavigateBrowserInput();
         }
+        else if (e.Key == Key.Escape)
+        {
+            e.Handled = true;
+            BrowserAddressBox.Clear();
+        }
+    }
+
+    private void OnSidebarPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.L
+            && Keyboard.Modifiers == ModifierKeys.Control
+            && BrowserPanel.Visibility == Visibility.Visible)
+        {
+            e.Handled = true;
+            FocusBrowserAddress();
+        }
+    }
+
+    private void OnBrowserAddressGotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e) =>
+        BrowserAddressBox.SelectAll();
+
+    private void OnBrowserAddressPreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (!BrowserAddressBox.IsKeyboardFocusWithin)
+        {
+            FocusBrowserAddress();
+            e.Handled = true;
+        }
+    }
+
+    private void FocusBrowserAddress()
+    {
+        BrowserAddressBox.Focus();
+        BrowserAddressBox.SelectAll();
     }
 
     private void NavigateBrowserInput() =>
@@ -388,6 +445,7 @@ public partial class RightSidebarView : UserControl, IDisposable
             core.NavigationStarting -= OnBrowserNavigationStarting;
             core.NavigationCompleted -= OnBrowserNavigationCompleted;
             core.NewWindowRequested -= OnBrowserNewWindowRequested;
+            core.DownloadStarting -= OnBrowserDownloadStarting;
         }
         SidebarBrowser.Dispose();
     }

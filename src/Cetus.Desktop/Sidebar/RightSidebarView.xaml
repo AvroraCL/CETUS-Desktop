@@ -3,7 +3,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
              Background="Transparent"
-             Foreground="{DynamicResource SidebarPanelForegroundBrush}">
+             Foreground="{DynamicResource SidebarPanelForegroundBrush}"
+             PreviewKeyDown="OnSidebarPreviewKeyDown">
     <UserControl.Resources>
         <Style x:Key="SidebarIconButton" TargetType="Button">
             <Setter Property="Width" Value="30" />
@@ -167,6 +168,8 @@
                          Style="{StaticResource SidebarTextBox}"
                          FontSize="12"
                          ToolTip="输入网址或搜索内容"
+                         GotKeyboardFocus="OnBrowserAddressGotKeyboardFocus"
+                         PreviewMouseLeftButtonDown="OnBrowserAddressPreviewMouseDown"
                          KeyDown="OnBrowserAddressKeyDown" />
                 <Button Grid.Column="4"
                         Style="{StaticResource SidebarIconButton}"
