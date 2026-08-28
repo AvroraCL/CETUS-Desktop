@@ -39,22 +39,32 @@ $TextRightEdge = $Width - 60
 function Convert-IconColor {
     <#
     .SYNOPSIS
-        Recolor an alpha-preserving icon to a single hue (white or black).
-        The source icon is a dark line-art on transparency; the window title
-        bars use white/black glyphs, so each banner draws the matching one.
+        Prepare the icon for a banner background.
+        - Light banner: the source icon as-is (dark line-art + bright stars).
+        - Dark banner: a negative of the source (white line-art + dark stars),
+          so the shape reads on a dark background while keeping the star detail
+          instead of becoming a solid white silhouette.
     #>
     param(
         [string]$Source,
-        [bool]$White
+        [bool]$Invert
     )
     $sourceBitmap = [System.Drawing.Bitmap]::new($Source)
+    if (-not $Invert) {
+        # Returned as-is; the caller owns and disposes it.
+        return $sourceBitmap
+    }
+
     try {
         $out = [System.Drawing.Bitmap]::new($sourceBitmap.Width, $sourceBitmap.Height, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-        $color = if ($White) { [System.Drawing.Color]::FromArgb(255, 255, 255) } else { [System.Drawing.Color]::FromArgb(0, 0, 0) }
         for ($y = 0; $y -lt $sourceBitmap.Height; $y++) {
             for ($x = 0; $x -lt $sourceBitmap.Width; $x++) {
                 $pixel = $sourceBitmap.GetPixel($x, $y)
-                $out.SetPixel($x, $y, [System.Drawing.Color]::FromArgb($pixel.A, $color))
+                $out.SetPixel($x, $y, [System.Drawing.Color]::FromArgb(
+                    $pixel.A,
+                    [byte](255 - $pixel.R),
+                    [byte](255 - $pixel.G),
+                    [byte](255 - $pixel.B)))
             }
         }
         return $out
@@ -67,7 +77,7 @@ function Convert-IconColor {
 function Render-Banner {
         param(
             [string]$Background,
-            [bool]$WhiteIcon,
+            [bool]$InvertIcon,
             [string]$TitleColor,
             [string]$TaglineColor,
             [string]$Output
@@ -80,8 +90,8 @@ function Render-Banner {
         $graphics.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::AntiAliasGridFit
         $graphics.Clear([System.Drawing.ColorTranslator]::FromHtml($Background))
 
-        # App icon (recolored to contrast the banner background)
-        $iconImage = Convert-IconColor -Source $icon -White $WhiteIcon
+        # App icon (inverted on dark so the dark line-art stays visible)
+        $iconImage = Convert-IconColor -Source $icon -Invert $InvertIcon
         try {
             $graphics.DrawImage($iconImage, $IconX, $IconY, $IconSize, $IconSize)
         }
@@ -127,8 +137,8 @@ function Render-Banner {
 }
 
 Write-Host "==> rendering README banners"
-Render-Banner -Background "#151517" -WhiteIcon $true `
+Render-Banner -Background "#151517" -InvertIcon $true `
     -TitleColor "#F5F7FA" -TaglineColor "#AAB7CC" -Output $outDark
-Render-Banner -Background "#F5F7FA" -WhiteIcon $false `
+Render-Banner -Background "#F5F7FA" -InvertIcon $false `
     -TitleColor "#172033" -TaglineColor "#667085" -Output $outLite
 Write-Host "DONE"
