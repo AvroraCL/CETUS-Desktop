@@ -15,11 +15,13 @@ public sealed class CetusSettings
     public const int DefaultRightSidebarWidth = 360;
     public const int MinimumRightSidebarWidth = 300;
     public const int MaximumRightSidebarWidth = 520;
+    public const bool DefaultCheckUpdatesOnStartup = true;
 
     private readonly string _settingsPath;
     private int _configuredPort;
     private bool _rightSidebarOpen;
     private int _rightSidebarWidth;
+    private bool _checkUpdatesOnStartup;
 
     public CetusSettings(string settingsPath)
     {
@@ -28,6 +30,7 @@ public sealed class CetusSettings
         _configuredPort = snapshot.Port;
         _rightSidebarOpen = snapshot.RightSidebarOpen;
         _rightSidebarWidth = snapshot.RightSidebarWidth;
+        _checkUpdatesOnStartup = snapshot.CheckUpdatesOnStartup;
     }
 
     public int ConfiguredPort => _configuredPort;
@@ -47,6 +50,8 @@ public sealed class CetusSettings
     public bool RightSidebarOpen => _rightSidebarOpen;
 
     public int RightSidebarWidth => _rightSidebarWidth;
+
+    public bool CheckUpdatesOnStartup => _checkUpdatesOnStartup;
 
     /// <summary>
     /// Cetus shares the inherited/default DSH_HOME by default. This optional
@@ -88,6 +93,12 @@ public sealed class CetusSettings
         Persist();
     }
 
+    public void SetCheckUpdatesOnStartup(bool enabled)
+    {
+        _checkUpdatesOnStartup = enabled;
+        Persist();
+    }
+
     public static bool TryParsePort(string? value, out int port) =>
         int.TryParse(value, out port) && port is > 0 and <= 65535;
 
@@ -114,7 +125,8 @@ public sealed class CetusSettings
                 file.RightSidebarOpen ?? DefaultRightSidebarOpen,
                 file.RightSidebarWidth is { } width
                     ? NormalizeRightSidebarWidth(width)
-                    : DefaultRightSidebarWidth);
+                    : DefaultRightSidebarWidth,
+                file.CheckUpdatesOnStartup ?? DefaultCheckUpdatesOnStartup);
         }
         catch (IOException)
         {
@@ -154,6 +166,7 @@ public sealed class CetusSettings
             Port = _configuredPort,
             RightSidebarOpen = _rightSidebarOpen,
             RightSidebarWidth = _rightSidebarWidth,
+            CheckUpdatesOnStartup = _checkUpdatesOnStartup,
         },
             new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(temporaryPath, json);
@@ -165,13 +178,19 @@ public sealed class CetusSettings
         public int? Port { get; set; }
         public bool? RightSidebarOpen { get; set; }
         public int? RightSidebarWidth { get; set; }
+        public bool? CheckUpdatesOnStartup { get; set; }
     }
 
-    private sealed record SettingsSnapshot(int Port, bool RightSidebarOpen, int RightSidebarWidth)
+    private sealed record SettingsSnapshot(
+        int Port,
+        bool RightSidebarOpen,
+        int RightSidebarWidth,
+        bool CheckUpdatesOnStartup)
     {
         public static SettingsSnapshot Default { get; } = new(
             DefaultPort,
             DefaultRightSidebarOpen,
-            DefaultRightSidebarWidth);
+            DefaultRightSidebarWidth,
+            DefaultCheckUpdatesOnStartup);
     }
 }

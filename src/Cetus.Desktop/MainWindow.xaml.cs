@@ -9,6 +9,7 @@ using Cetus.Configuration;
 using Cetus.Platform;
 using Cetus.Presentation;
 using Cetus.Runtime;
+using Cetus.Updates;
 using Microsoft.Win32;
 
 namespace Cetus;
@@ -28,6 +29,7 @@ public partial class MainWindow : Window
 
     private TrayIconController? _tray;
     private WindowComposition? _windowComposition;
+    private UpdateCoordinator? _updates;
     private bool _isExiting;
     private bool _rightSidebarOpen;
     private int _rightSidebarAnimationGeneration;
@@ -78,6 +80,23 @@ public partial class MainWindow : Window
         SetupTray();
         DesktopRuntimeResult result = await _runtime.StartAsync();
         ShowRuntimeError(result, "Cetus · 启动失败");
+        if (_settings.CheckUpdatesOnStartup)
+        {
+            _updates ??= new UpdateCoordinator(this, ExitApplication);
+            _ = CheckForUpdatesSilentlyAsync();
+        }
+    }
+
+    private async Task CheckForUpdatesSilentlyAsync()
+    {
+        try
+        {
+            await _updates!.CheckForUpdatesAsync(interactive: false);
+        }
+        catch
+        {
+            // Startup update checks must never surface as errors.
+        }
     }
 
     private void OnRuntimeStateChanged(object? sender, DesktopRuntimeStateChangedEventArgs e)
@@ -105,10 +124,12 @@ public partial class MainWindow : Window
             return;
         }
 
+        _updates ??= new UpdateCoordinator(this, ExitApplication);
         _tray = new TrayIconController(new TrayCommands(
             ShowWindow,
             RetryDshAsync,
             ConfigurePortAsync,
+            () => _updates.CheckForUpdatesAsync(interactive: true),
             ExitApplication));
         _tray.SetRetryEnabled(_runtime.State.CanRetry);
     }

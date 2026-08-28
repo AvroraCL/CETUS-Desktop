@@ -60,6 +60,21 @@ public sealed class CetusSettingsTests
         Assert.Equal(4312, settings.ConfiguredPort);
         Assert.True(settings.RightSidebarOpen);
         Assert.Equal(360, settings.RightSidebarWidth);
+        Assert.True(settings.CheckUpdatesOnStartup);
+    }
+
+    [Fact]
+    public void CheckUpdatesOnStartup_PersistsAcrossLoads()
+    {
+        using var directory = new TemporaryDirectory();
+        string settingsPath = Path.Combine(directory.Path, "settings.json");
+        var settings = new CetusSettings(settingsPath);
+
+        Assert.True(settings.CheckUpdatesOnStartup);
+        settings.SetCheckUpdatesOnStartup(false);
+
+        var reloaded = new CetusSettings(settingsPath);
+        Assert.False(reloaded.CheckUpdatesOnStartup);
     }
 
     [Theory]

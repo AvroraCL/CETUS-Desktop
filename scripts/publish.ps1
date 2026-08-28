@@ -99,7 +99,7 @@ if (Test-Path $zip) {
 }
 Compress-Archive -Path (Join-Path $appDir "*") -DestinationPath $zip -CompressionLevel Optimal
 
-Write-Host "==> [7/7] installer (Inno Setup)"
+Write-Host "==> [7/8] installer (Inno Setup)"
 $setupExe = Join-Path $dist "Cetus-Setup-$Version.exe"
 $iscc = $env:CETUS_ISCC
 if (-not $iscc -or -not (Test-Path $iscc)) {
@@ -116,6 +116,17 @@ if ($iscc) {
 } else {
     Write-Host "      ISCC not found — installer skipped (set CETUS_ISCC to enable)"
 }
+
+Write-Host "==> [8/8] SHA256SUMS (upload with the release; the updater verifies it)"
+$sumsPath = Join-Path $dist "SHA256SUMS.txt"
+$sumArtifacts = @($zip)
+if ($iscc -and (Test-Path $setupExe)) { $sumArtifacts += $setupExe }
+$sums = foreach ($artifact in $sumArtifacts) {
+    $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
+    "$hash  $(Split-Path -Leaf $artifact)"
+}
+Set-Content -LiteralPath $sumsPath -Value $sums -Encoding ascii
+Write-Host "      wrote $sumsPath"
 
 $appSize = [math]::Round((Get-ChildItem $appDir -Recurse -File | Measure-Object Length -Sum).Sum / 1MB, 1)
 $zipSize = [math]::Round((Get-Item $zip).Length / 1MB, 1)

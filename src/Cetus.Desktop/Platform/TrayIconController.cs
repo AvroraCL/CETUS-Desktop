@@ -7,6 +7,7 @@ internal sealed record TrayCommands(
     Action ShowWindow,
     Func<Task> RetryDsh,
     Func<Task> ConfigurePort,
+    Func<Task> CheckForUpdates,
     Action ExitApplication);
 
 /// <summary>
@@ -33,6 +34,11 @@ internal sealed class TrayIconController : IDisposable
         var configurePortItem = new ToolStripMenuItem("设置 DSH 端口…");
         configurePortItem.Click += async (_, _) => await commands.ConfigurePort();
         _menu.Items.Add(configurePortItem);
+
+        var checkUpdatesItem = new ToolStripMenuItem("检查更新…");
+        checkUpdatesItem.Click += async (_, _) => await commands.CheckForUpdates();
+        _menu.Items.Add(checkUpdatesItem);
+
         _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add("退出", null, (_, _) => commands.ExitApplication());
 

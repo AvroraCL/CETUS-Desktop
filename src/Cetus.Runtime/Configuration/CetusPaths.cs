@@ -24,6 +24,10 @@ public static class CetusPaths
         "CETUS_LOG_DIR",
         Path.Combine(UserDataDirectory, "logs"));
 
+    public static string UpdateCacheDirectory => ResolveOverride(
+        "CETUS_UPDATE_DIR",
+        Path.Combine(UserDataDirectory, "updates"));
+
     private static string ResolveOverride(string variableName, string fallback)
     {
         string? value = Environment.GetEnvironmentVariable(variableName);
