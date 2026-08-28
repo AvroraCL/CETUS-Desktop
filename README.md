@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/README 品牌横幅.png" alt="CETUS · 鲸鱼座 — 将 DeepSeek Harness 带到 Windows 桌面的原生工作台" width="100%">
+<img src="docs/README 品牌横幅.png?v=3" alt="CETUS · 鲸鱼座 — 将 DeepSeek Harness 带到 Windows 桌面的原生工作台" width="100%">
 
 [![release](https://img.shields.io/github/v/release/AvroraCL/CETUS-Desktop?style=flat-square&logo=github)](https://github.com/AvroraCL/CETUS-Desktop/releases)
 [![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?style=flat-square&logo=windows11&logoColor=white)](https://github.com/AvroraCL/CETUS-Desktop)
