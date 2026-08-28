@@ -216,6 +216,27 @@
                                   DefaultBackgroundColor="White" />
                 </Grid>
 
+                <!-- The divider column: a 1px bridge continues the DSH top
+                     bar's line across the drag strip, and the vertical line
+                     starts at that height instead of poking above it. -->
+                <Border Grid.Column="1"
+                        Panel.ZIndex="1"
+                        Height="1"
+                        Margin="0,60,0,0"
+                        VerticalAlignment="Top"
+                        Background="{DynamicResource SidebarBorderBrush}"
+                        IsHitTestVisible="False"
+                        Visibility="{Binding Visibility, ElementName=RightSidebarSplitter}" />
+                <Border Grid.Column="1"
+                        Panel.ZIndex="1"
+                        Width="1"
+                        Margin="0,60,0,0"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Stretch"
+                        Background="{DynamicResource SidebarBorderBrush}"
+                        IsHitTestVisible="False"
+                        Visibility="{Binding Visibility, ElementName=RightSidebarSplitter}" />
+
                 <GridSplitter x:Name="RightSidebarSplitter"
                               Grid.Column="1"
                               Panel.ZIndex="2"
@@ -237,13 +258,11 @@
                     </GridSplitter.Template>
                 </GridSplitter>
 
-                <!-- The 1px left border IS the divider line: drawn by the
-                     sidebar itself, it cannot detach from the panel. -->
+                <!-- The drag strip and the sidebar window region; the 1px
+                     divider is drawn in the strip column above. -->
                 <Border x:Name="RightSidebar"
                         Grid.Column="2"
-                        Background="{DynamicResource RightSidebarBackgroundBrush}"
-                        BorderBrush="{DynamicResource SidebarBorderBrush}"
-                        BorderThickness="1,0,0,0">
+                        Background="{DynamicResource RightSidebarBackgroundBrush}">
                     <sidebar:RightSidebarView x:Name="RightSidebarContent" />
                 </Border>
             </Grid>
