@@ -7,8 +7,8 @@ using System.Windows.Media.Animation;
 using Cetus.Browser;
 using Cetus.Configuration;
 using Cetus.Platform;
-using Cetus.Presentation;
 using Cetus.Runtime;
+using Cetus.Sidebar;
 using Cetus.Updates;
 using Microsoft.Win32;
 
@@ -29,7 +29,9 @@ public partial class MainWindow : Window
 
     private TrayIconController? _tray;
     private WindowComposition? _windowComposition;
+    private SidebarWindow? _sidebarWindow;
     private UpdateCoordinator? _updates;
+    private bool _isDark = true;
     private bool _isExiting;
     private bool _rightSidebarOpen;
     private int _rightSidebarAnimationGeneration;
@@ -78,6 +80,7 @@ public partial class MainWindow : Window
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         SetupTray();
+        EnsureSidebarWindow();
         DesktopRuntimeResult result = await _runtime.StartAsync();
         ShowRuntimeError(result, "Cetus · 启动失败");
         if (_settings.CheckUpdatesOnStartup)
@@ -85,6 +88,19 @@ public partial class MainWindow : Window
             _updates ??= new UpdateCoordinator(this, ExitApplication);
             _ = CheckForUpdatesSilentlyAsync();
         }
+    }
+
+    private void EnsureSidebarWindow()
+    {
+        if (_sidebarWindow is not null)
+        {
+            return;
+        }
+
+        _sidebarWindow = new SidebarWindow();
+        _sidebarWindow.Attach(this);
+        ApplyRightSidebarLayout(_rightSidebarOpen, _settings.RightSidebarWidth);
+        _sidebarWindow.ApplyTheme(_isDark);
     }
 
     private async Task CheckForUpdatesSilentlyAsync()
@@ -151,7 +167,6 @@ public partial class MainWindow : Window
     private void InitializeRightSidebar()
     {
         _rightSidebarOpen = _settings.RightSidebarOpen;
-        ApplyRightSidebarLayout(_rightSidebarOpen, _settings.RightSidebarWidth);
     }
 
     private void SetRightSidebarOpen(bool isOpen, bool animate)
@@ -159,25 +174,23 @@ public partial class MainWindow : Window
         _rightSidebarOpen = isOpen;
         _settings.SetRightSidebarOpen(isOpen);
         _browserSession.SetRightSidebarOpen(isOpen);
+        if (_sidebarWindow is null)
+        {
+            return;
+        }
+
+        _sidebarWindow.IsOpen = isOpen;
 
         double currentWidth = Math.Clamp(
-            RightSidebarColumn.ActualWidth,
+            _sidebarWindow.ActualWidth,
             0,
             CetusSettings.MaximumRightSidebarWidth);
         double targetWidth = isOpen ? _settings.RightSidebarWidth : 0;
         int generation = ++_rightSidebarAnimationGeneration;
 
-        RightSidebarColumn.BeginAnimation(ColumnDefinition.WidthProperty, null);
-        RightSidebarColumn.MinWidth = 0;
-        RightSidebarColumn.Width = new GridLength(currentWidth, GridUnitType.Pixel);
-        RightSidebarSplitter.IsEnabled = false;
-        if (isOpen)
-        {
-            SetRightSidebarDivider(isOpen: true);
-        }
-
         bool shouldAnimate = animate
             && SystemParameters.ClientAreaAnimation
+            && _sidebarWindow.IsLoaded
             && Math.Abs(currentWidth - targetWidth) >= 1;
         if (!shouldAnimate)
         {
@@ -185,17 +198,22 @@ public partial class MainWindow : Window
             return;
         }
 
-        // DSH sidebar method (slide, not morph): the panel holds its full
-        // expanded layout while the column clips it against the window edge,
-        // so nothing re-wraps mid-slide and the hosted WebView2 windows move
-        // instead of resizing every frame.
-        RightSidebarContent.Width = isOpen ? targetWidth : currentWidth;
-        RightSidebarContent.HorizontalAlignment = HorizontalAlignment.Left;
-
-        var animation = new GridLengthAnimation
+        // DSH slide-not-morph: the panel keeps its expanded layout, anchored
+        // to its own window's right edge and clipped by it, while only the
+        // sidebar window resizes — the DSH surface is never touched mid-slide.
+        _sidebarWindow.FreezeContent(Math.Max(currentWidth, targetWidth));
+        RightSidebarResizeThumb.IsEnabled = false;
+        if (!isOpen)
         {
-            From = new GridLength(currentWidth, GridUnitType.Pixel),
-            To = new GridLength(targetWidth, GridUnitType.Pixel),
+            // Widen the DSH surface up front so the collapse reveal shows real
+            // content; expanding defers its single reflow to settle.
+            ApplySidebarColumns(open: false, width: 0);
+        }
+
+        var animation = new DoubleAnimation
+        {
+            From = currentWidth,
+            To = targetWidth,
             Duration = RightSidebarAnimationDuration,
             FillBehavior = FillBehavior.Stop,
         };
@@ -209,62 +227,57 @@ public partial class MainWindow : Window
                 ApplyRightSidebarLayout(isOpen, targetWidth);
             }
         };
-        RightSidebarColumn.BeginAnimation(
-            ColumnDefinition.WidthProperty,
-            animation,
-            HandoffBehavior.SnapshotAndReplace);
+        _sidebarWindow.BeginAnimation(WidthProperty, animation);
     }
 
     private void ApplyRightSidebarLayout(bool isOpen, double width)
     {
         ++_rightSidebarAnimationGeneration;
-        // Release the mid-slide frozen layout (idempotent for the
-        // non-animated paths) so the panel stretches with its column again.
-        RightSidebarContent.ClearValue(WidthProperty);
-        RightSidebarContent.HorizontalAlignment = HorizontalAlignment.Stretch;
-        RightSidebarColumn.BeginAnimation(ColumnDefinition.WidthProperty, null);
-        if (isOpen)
+        RightSidebarResizeThumb.IsEnabled = isOpen;
+        if (_sidebarWindow is null)
         {
-            double clampedWidth = Math.Clamp(
-                width,
-                CetusSettings.MinimumRightSidebarWidth,
-                CetusSettings.MaximumRightSidebarWidth);
-            RightSidebarColumn.MinWidth = CetusSettings.MinimumRightSidebarWidth;
-            RightSidebarColumn.MaxWidth = CetusSettings.MaximumRightSidebarWidth;
-            RightSidebarColumn.Width = new GridLength(clampedWidth, GridUnitType.Pixel);
-            SetRightSidebarDivider(isOpen: true);
-            RightSidebarSplitter.IsEnabled = true;
+            return;
         }
-        else
+
+        _sidebarWindow.EndWidthAnimation();
+        _sidebarWindow.ReleaseContent();
+        _sidebarWindow.Width = isOpen ? width : 0;
+        _sidebarWindow.IsOpen = isOpen;
+        ApplySidebarColumns(isOpen, width);
+    }
+
+    private void ApplySidebarColumns(bool open, double width)
+    {
+        RightSidebarDividerColumn.Width = new GridLength(open ? 8 : 0, GridUnitType.Pixel);
+        RightSidebarColumn.Width = new GridLength(open ? width : 0, GridUnitType.Pixel);
+    }
+
+    private void OnRightSidebarResizeDelta(object sender, DragDeltaEventArgs e)
+    {
+        if (_sidebarWindow is null || !_rightSidebarOpen)
         {
-            RightSidebarColumn.MinWidth = 0;
-            RightSidebarColumn.Width = new GridLength(0, GridUnitType.Pixel);
-            SetRightSidebarDivider(isOpen: false);
-            RightSidebarSplitter.IsEnabled = false;
+            return;
         }
-    }
 
-    private void SetRightSidebarDivider(bool isOpen)
-    {
-        RightSidebarDividerColumn.Width = new GridLength(isOpen ? 8 : 0, GridUnitType.Pixel);
-        RightSidebarSplitter.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    private void OnRightSidebarDragStarted(object sender, DragStartedEventArgs e)
-    {
-        ++_rightSidebarAnimationGeneration;
-        double currentWidth = RightSidebarColumn.ActualWidth;
-        RightSidebarColumn.BeginAnimation(ColumnDefinition.WidthProperty, null);
-        RightSidebarColumn.Width = new GridLength(currentWidth, GridUnitType.Pixel);
-    }
-
-    private void OnRightSidebarDragCompleted(object sender, DragCompletedEventArgs e)
-    {
         double width = Math.Clamp(
-            RightSidebarColumn.ActualWidth,
+            _sidebarWindow.ActualWidth - e.HorizontalChange,
             CetusSettings.MinimumRightSidebarWidth,
             CetusSettings.MaximumRightSidebarWidth);
-        RightSidebarColumn.Width = new GridLength(width, GridUnitType.Pixel);
+        _sidebarWindow.Width = width;
+        ApplySidebarColumns(open: true, width);
+    }
+
+    private void OnRightSidebarResizeCompleted(object sender, DragCompletedEventArgs e)
+    {
+        if (_sidebarWindow is null)
+        {
+            return;
+        }
+
+        double width = Math.Clamp(
+            _sidebarWindow.ActualWidth,
+            CetusSettings.MinimumRightSidebarWidth,
+            CetusSettings.MaximumRightSidebarWidth);
         _settings.SetRightSidebarWidth(width);
     }
 
@@ -362,26 +375,30 @@ public partial class MainWindow : Window
 
     private void ApplyWindowTheme(bool isDark)
     {
+        _isDark = isDark;
         _windowComposition?.SetDarkMode(isDark);
+        // Brushes shared with the sidebar window live in the application
+        // resources so DynamicResource resolves inside both windows.
+        var shared = System.Windows.Application.Current.Resources;
+        shared["CaptionHoverBrush"] = CreateBrush(isDark ? "#2EFFFFFF" : "#14000000");
+        shared["CaptionPressedBrush"] = CreateBrush(isDark ? "#4AFFFFFF" : "#24000000");
+        shared["CaptionFocusBrush"] = CreateBrush(isDark ? "#24FFFFFF" : "#10000000");
+        shared["SidebarBorderBrush"] = CreateBrush(isDark ? "#2AFFFFFF" : "#1C000000");
+        shared["RightSidebarBackgroundBrush"] = CreateBrush(isDark ? "#1B1B1C" : "#F5F7FA");
+        shared["SidebarPanelForegroundBrush"] = CreateBrush(isDark ? "#F9FAFB" : "#0F1115");
+        shared["SidebarPanelSecondaryBrush"] = CreateBrush(isDark ? "#CFD3D6" : "#61666B");
+        shared["SidebarPanelSelectedBrush"] = CreateBrush(isDark ? "#2EFFFFFF" : "#12000000");
+        shared["SidebarPanelInputBrush"] = CreateBrush(isDark ? "#222224" : "#FFFFFF");
+        shared["SidebarTerminalBackgroundBrush"] = CreateBrush(isDark ? "#101011" : "#F8FAFC");
+        shared["SidebarTerminalForegroundBrush"] = CreateBrush(isDark ? "#E5E7EB" : "#172033");
         Resources["TitleBarTintBrush"] = CreateBrush(
             isDark ? "#151517" : "#F5F7FA",
             isDark ? 0.70 : 0.78);
         Resources["TitleForegroundBrush"] = CreateBrush(isDark ? "#E0F5F7FA" : "#E6172033");
         Resources["CaptionForegroundBrush"] = CreateBrush(isDark ? "#E0F5F7FA" : "#D6172033");
-        Resources["CaptionHoverBrush"] = CreateBrush(isDark ? "#2EFFFFFF" : "#14000000");
-        Resources["CaptionPressedBrush"] = CreateBrush(isDark ? "#4AFFFFFF" : "#24000000");
-        Resources["CaptionFocusBrush"] = CreateBrush(isDark ? "#24FFFFFF" : "#10000000");
-        Resources["SidebarBorderBrush"] = CreateBrush(isDark ? "#2AFFFFFF" : "#1C000000");
-        Resources["RightSidebarBackgroundBrush"] = CreateBrush(isDark ? "#1B1B1C" : "#F5F7FA");
-        Resources["SidebarPanelForegroundBrush"] = CreateBrush(isDark ? "#F9FAFB" : "#0F1115");
-        Resources["SidebarPanelSecondaryBrush"] = CreateBrush(isDark ? "#CFD3D6" : "#61666B");
-        Resources["SidebarPanelSelectedBrush"] = CreateBrush(isDark ? "#2EFFFFFF" : "#12000000");
-        Resources["SidebarPanelInputBrush"] = CreateBrush(isDark ? "#222224" : "#FFFFFF");
-        Resources["SidebarTerminalBackgroundBrush"] = CreateBrush(isDark ? "#101011" : "#F8FAFC");
-        Resources["SidebarTerminalForegroundBrush"] = CreateBrush(isDark ? "#E5E7EB" : "#172033");
         WindowFrame.Background = CreateBrush(isDark ? "#151517" : "#F8FAFC");
         StatusText.Foreground = CreateBrush(isDark ? "#AAB7CC" : "#52627A");
-        RightSidebarContent.ApplyTheme(isDark);
+        _sidebarWindow?.ApplyTheme(isDark);
     }
 
     private static System.Windows.Media.Brush CreateBrush(string color, double opacity = 1) =>
@@ -414,7 +431,8 @@ public partial class MainWindow : Window
         _isExiting = true;
         _tray?.Dispose();
         _tray = null;
-        RightSidebarContent.Dispose();
+        _sidebarWindow?.Dispose();
+        _sidebarWindow = null;
         await _runtime.StopAsync();
         _browserSession.Dispose();
         System.Windows.Application.Current.Shutdown();
@@ -428,7 +446,8 @@ public partial class MainWindow : Window
         _tray = null;
         _windowComposition?.Dispose();
         _windowComposition = null;
-        RightSidebarContent.Dispose();
+        _sidebarWindow?.Dispose();
+        _sidebarWindow = null;
         _ = StopAfterUnexpectedCloseAsync();
         base.OnClosed(e);
     }
