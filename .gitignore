@@ -13,8 +13,7 @@ tools/
 # --- local docs / non-committable files ---
 docs/*
 !docs/CETUS-ico.png
-!docs/banner-dark.png
-!docs/banner-light.png
+!docs/README 品牌横幅.png
 
 # --- isolated development checks ---
 .dev/
