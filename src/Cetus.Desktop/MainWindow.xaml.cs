@@ -152,6 +152,7 @@ public partial class MainWindow : Window
         RightSidebarSplitter.IsEnabled = false;
         if (isOpen)
         {
+            RightSidebarDividerColumn.Width = new GridLength(8, GridUnitType.Pixel);
             RightSidebarSplitter.Visibility = Visibility.Visible;
         }
 
@@ -197,6 +198,7 @@ public partial class MainWindow : Window
             RightSidebarColumn.MinWidth = CetusSettings.MinimumRightSidebarWidth;
             RightSidebarColumn.MaxWidth = CetusSettings.MaximumRightSidebarWidth;
             RightSidebarColumn.Width = new GridLength(clampedWidth, GridUnitType.Pixel);
+            RightSidebarDividerColumn.Width = new GridLength(8, GridUnitType.Pixel);
             RightSidebarSplitter.Visibility = Visibility.Visible;
             RightSidebarSplitter.IsEnabled = true;
         }
@@ -204,6 +206,7 @@ public partial class MainWindow : Window
         {
             RightSidebarColumn.MinWidth = 0;
             RightSidebarColumn.Width = new GridLength(0, GridUnitType.Pixel);
+            RightSidebarDividerColumn.Width = new GridLength(0, GridUnitType.Pixel);
             RightSidebarSplitter.Visibility = Visibility.Collapsed;
             RightSidebarSplitter.IsEnabled = false;
         }
@@ -332,10 +335,17 @@ public partial class MainWindow : Window
         Resources["CaptionFocusBrush"] = CreateBrush(isDark ? "#24FFFFFF" : "#10000000");
         Resources["SidebarBorderBrush"] = CreateBrush(isDark ? "#2AFFFFFF" : "#1C000000");
         Resources["RightSidebarBackgroundBrush"] = CreateBrush(isDark ? "#1B1B1C" : "#F5F7FA");
+        Resources["SidebarPanelForegroundBrush"] = CreateBrush(isDark ? "#F9FAFB" : "#0F1115");
+        Resources["SidebarPanelSecondaryBrush"] = CreateBrush(isDark ? "#CFD3D6" : "#61666B");
+        Resources["SidebarPanelSelectedBrush"] = CreateBrush(isDark ? "#2EFFFFFF" : "#12000000");
+        Resources["SidebarPanelInputBrush"] = CreateBrush(isDark ? "#222224" : "#FFFFFF");
+        Resources["SidebarTerminalBackgroundBrush"] = CreateBrush(isDark ? "#101011" : "#F8FAFC");
+        Resources["SidebarTerminalForegroundBrush"] = CreateBrush(isDark ? "#E5E7EB" : "#172033");
         Resources["SidebarHandleBrush"] = CreateBrush(isDark ? "#24FFFFFF" : "#14000000");
         Resources["SidebarHandleHoverBrush"] = CreateBrush(isDark ? "#3AFFFFFF" : "#28000000");
         WindowFrame.Background = CreateBrush(isDark ? "#151517" : "#F8FAFC");
         StatusText.Foreground = CreateBrush(isDark ? "#AAB7CC" : "#52627A");
+        RightSidebarContent.ApplyTheme(isDark);
     }
 
     private static System.Windows.Media.Brush CreateBrush(string color, double opacity = 1) =>
@@ -368,6 +378,7 @@ public partial class MainWindow : Window
         _isExiting = true;
         _tray?.Dispose();
         _tray = null;
+        RightSidebarContent.Dispose();
         await _runtime.StopAsync();
         _browserSession.Dispose();
         System.Windows.Application.Current.Shutdown();
@@ -381,6 +392,7 @@ public partial class MainWindow : Window
         _tray = null;
         _windowComposition?.Dispose();
         _windowComposition = null;
+        RightSidebarContent.Dispose();
         _ = StopAfterUnexpectedCloseAsync();
         base.OnClosed(e);
     }

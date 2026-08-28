@@ -16,6 +16,7 @@ CETUS 使用 .NET、WPF 与 WebView2，将 DeepSeek Harness 的官方 Web UI、A
 - 保证应用单实例运行，避免重复启动多个 Harness
 - 退出 CETUS 时自动回收由它启动的 Node 子进程
 - 完整复用 DeepSeek Harness 的 Agent 能力与插件生态
+- 使用可调整宽度的右侧工具栏浏览网页、运行 PowerShell 命令和查看本地文件
 
 ### 当前状态
 
@@ -51,6 +52,8 @@ CETUS 目前处于早期开发阶段，**M0 桌面骨架与 M2 自包含打包�
 - 当前版本尚未进行代码签名，Windows 可能显示安全提醒。
 - 暂无自动更新通道，新版本需要手动下载。
 - 暂无安全模式；DSH 自动恢复耗尽后需要从托盘手动重试。
+- 右侧终端当前是基础 PowerShell 文本会话，尚未实现完整 ANSI/PTY 终端仿真。
+- 右侧文件面板当前以浏览和打开为主，尚不支持创建、重命名、移动或删除。
 - 界面与 Agent 能力主要来自 DeepSeek Harness 上游，部分问题可能随上游版本变化。
 
 ### 架构约束
