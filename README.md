@@ -6,6 +6,12 @@
 
 **将 DeepSeek Harness 带到 Windows 桌面的原生工作台。**
 
+[![release](https://img.shields.io/github/v/release/AvroraCL/CETUS-Desktop?style=flat-square&logo=github)](https://github.com/AvroraCL/CETUS-Desktop/releases)
+[![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?style=flat-square&logo=windows11&logoColor=white)](https://github.com/AvroraCL/CETUS-Desktop)
+[![.NET](https://img.shields.io/badge/.NET-10-512BD4?style=flat-square&logo=dotnet&logoColor=white)](https://github.com/AvroraCL/CETUS-Desktop)
+[![Node.js](https://img.shields.io/badge/Node.js-24-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://github.com/AvroraCL/CETUS-Desktop)
+[![license](https://img.shields.io/github/license/AvroraCL/CETUS-Desktop?style=flat-square)](LICENSE)
+
 </div>
 
 CETUS 使用 .NET、WPF 与 WebView2，将 DeepSeek Harness 的官方 Web UI、Agent 能力和插件生态装进一个开箱即用的 Windows 应用。无需命令行，也不必一直保留浏览器标签页；启动、托盘驻留和后台进程回收都由 CETUS 负责。
