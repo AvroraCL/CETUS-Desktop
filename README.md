@@ -1,6 +1,6 @@
 <div align="center">
 
-### CETUS · 鲸鱼座
+<font size="7">**CETUS · 鲸鱼座**</font>
 
 <img src="docs/CETUS-ico.png" alt="CETUS · 鲸鱼座" width="160"/>
 
