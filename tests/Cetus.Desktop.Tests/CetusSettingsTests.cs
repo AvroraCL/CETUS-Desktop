@@ -17,7 +17,6 @@ public sealed class CetusSettingsTests
             var settings = new CetusSettings(settingsPath);
 
             Assert.Equal(CetusSettings.DefaultPort, settings.ConfiguredPort);
-            Assert.False(settings.RightSidebarOpen);
             Assert.Equal(CetusSettings.DefaultRightSidebarWidth, settings.RightSidebarWidth);
             settings.SetConfiguredPort(4312);
 
@@ -32,19 +31,17 @@ public sealed class CetusSettingsTests
     }
 
     [Fact]
-    public void RightSidebarSettings_PersistWithoutOverwritingPort()
+    public void SidebarWidth_PersistsWithoutOverwritingPort()
     {
         using var directory = new TemporaryDirectory();
         string settingsPath = Path.Combine(directory.Path, "settings.json");
         var settings = new CetusSettings(settingsPath);
         settings.SetConfiguredPort(4312);
 
-        settings.SetRightSidebarOpen(false);
         settings.SetRightSidebarWidth(417.6);
 
         var reloaded = new CetusSettings(settingsPath);
         Assert.Equal(4312, reloaded.ConfiguredPort);
-        Assert.False(reloaded.RightSidebarOpen);
         Assert.Equal(418, reloaded.RightSidebarWidth);
     }
 
@@ -58,7 +55,6 @@ public sealed class CetusSettingsTests
         var settings = new CetusSettings(settingsPath);
 
         Assert.Equal(4312, settings.ConfiguredPort);
-        Assert.False(settings.RightSidebarOpen);
         Assert.Equal(360, settings.RightSidebarWidth);
         Assert.True(settings.CheckUpdatesOnStartup);
     }

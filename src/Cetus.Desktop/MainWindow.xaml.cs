@@ -156,14 +156,14 @@ public partial class MainWindow : Window
 
     private void InitializeRightSidebar()
     {
-        _rightSidebarOpen = _settings.RightSidebarOpen;
+        // The panel always starts collapsed; only its width is remembered.
+        _rightSidebarOpen = false;
         ApplyRightSidebarLayout(_rightSidebarOpen, _settings.RightSidebarWidth);
     }
 
     private void SetRightSidebarOpen(bool isOpen, bool animate)
     {
         _rightSidebarOpen = isOpen;
-        _settings.SetRightSidebarOpen(isOpen);
         _browserSession.SetRightSidebarOpen(isOpen);
 
         double currentWidth = Math.Clamp(
