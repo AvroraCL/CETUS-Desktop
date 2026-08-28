@@ -78,7 +78,8 @@ public sealed class CetusSettingsTests
     [InlineData(300, 300)]
     [InlineData(419.5, 420)]
     [InlineData(520, 520)]
-    [InlineData(900, 520)]
+    [InlineData(800, 800)]
+    [InlineData(900, 800)]
     public void SetRightSidebarWidth_ClampsAndRounds(double width, int expected)
     {
         using var directory = new TemporaryDirectory();
