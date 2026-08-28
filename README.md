@@ -1,5 +1,7 @@
 # CETUS · 鲸鱼座
 
+<img src="docs/CETUS-ico.png" alt="CETUS · 鲸鱼座" width="160"/>
+
 **将 DeepSeek Harness 带到 Windows 桌面的原生工作台。**
 
 CETUS 使用 .NET、WPF 与 WebView2，将 DeepSeek Harness 的官方 Web UI、Agent 能力和插件生态装进一个开箱即用的 Windows 应用。无需命令行，也不必一直保留浏览器标签页；启动、托盘驻留和后台进程回收都由 CETUS 负责。
@@ -197,14 +199,6 @@ scripts\installer-smoke.ps1 -InstallerPath dist\Cetus-Setup-0.1.9.exe -ExpectedV
 
 - DSH sidecar：`%LOCALAPPDATA%\Cetus\logs\dsh-*.log`
 - CETUS 壳层崩溃：`cetus-crash.log`
-
-### 开发里程碑
-
-- [x] M0：WPF + WebView2 + DSH 进程生命周期，构建与冒烟测试通过
-- [x] M2：自包含发布 + 内嵌固定版本 Node/DSH + 便携 zip + Inno 安装程序
-- [x] M1 核心：崩溃自动恢复、健康监控与 Job Object 进程树回收
-- [ ] M1 余项：安全模式与皮肤引导安装
-- [ ] M2 余项：代码签名、更新通道、图标资源
 
 ### 参与开发
 
