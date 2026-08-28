@@ -19,6 +19,17 @@
             <Setter Property="FontSize" Value="13" />
             <Setter Property="TextWrapping" Value="Wrap" />
         </Style>
+        <Style x:Key="StatusBigValue" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="18" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style x:Key="LegendDot" TargetType="Border">
+            <Setter Property="Width" Value="8" />
+            <Setter Property="Height" Value="8" />
+            <Setter Property="CornerRadius" Value="2" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,0,5,0" />
+        </Style>
     </UserControl.Resources>
     <Grid>
         <Grid.RowDefinitions>
@@ -48,7 +59,7 @@
                 <Border Style="{StaticResource StatusCard}">
                     <StackPanel>
                         <TextBlock Text="当前项目" Style="{StaticResource StatusLabel}" Margin="0" />
-                        <TextBlock x:Name="WorkspaceTitleText" Style="{StaticResource StatusValue}" Text="—" />
+                        <TextBlock x:Name="WorkspaceTitleText" Style="{StaticResource StatusBigValue}" Text="—" />
                         <TextBlock x:Name="WorkspacePathText"
                                    FontSize="11"
                                    FontFamily="Cascadia Mono, Consolas"
@@ -59,39 +70,52 @@
                                    FontSize="11"
                                    Foreground="{DynamicResource SidebarPanelSecondaryBrush}"
                                    Margin="0,4,0,0" />
-                    </StackPanel>
-                </Border>
-                <Border Style="{StaticResource StatusCard}">
-                    <StackPanel>
-                        <TextBlock Text="模型" Style="{StaticResource StatusLabel}" Margin="0" />
+                        <TextBlock Text="模型" Style="{StaticResource StatusLabel}" />
                         <TextBlock x:Name="ModelText" Style="{StaticResource StatusValue}" Text="—" />
                     </StackPanel>
                 </Border>
+
                 <Border Style="{StaticResource StatusCard}">
                     <StackPanel>
-                        <TextBlock Text="Token 用量（全部会话累计）" Style="{StaticResource StatusLabel}" Margin="0" />
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="输入" Style="{StaticResource StatusLabel}" />
-                            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="InputTokensText" Style="{StaticResource StatusValue}" Text="0" HorizontalAlignment="Right" />
-                            <TextBlock Grid.Row="1" Grid.Column="0" Text="输出" Style="{StaticResource StatusLabel}" />
-                            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="OutputTokensText" Style="{StaticResource StatusValue}" Text="0" HorizontalAlignment="Right" />
-                            <TextBlock Grid.Row="2" Grid.Column="0" Text="缓存读取" Style="{StaticResource StatusLabel}" />
-                            <TextBlock Grid.Row="2" Grid.Column="1" x:Name="CacheReadText" Style="{StaticResource StatusValue}" Text="0" HorizontalAlignment="Right" />
-                            <TextBlock Grid.Row="3" Grid.Column="0" Text="缓存写入" Style="{StaticResource StatusLabel}" />
-                            <TextBlock Grid.Row="3" Grid.Column="1" x:Name="CacheWriteText" Style="{StaticResource StatusValue}" Text="0" HorizontalAlignment="Right" />
+                        <Grid Margin="0,0,0,8">
+                            <TextBlock Text="Token 用量" Style="{StaticResource StatusLabel}" Margin="0" />
+                            <TextBlock x:Name="TotalTokensText"
+                                       HorizontalAlignment="Right"
+                                       FontSize="12"
+                                       FontWeight="SemiBold" />
                         </Grid>
+                        <Grid x:Name="UsageBarHost" Height="10">
+                            <Grid.Clip>
+                                <RectangleGeometry Rect="0,0,1000,10" RadiusX="5" RadiusY="5" />
+                            </Grid.Clip>
+                        </Grid>
+                        <TextBlock x:Name="UsageEmptyText"
+                                   Text="暂无会话数据"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource SidebarPanelSecondaryBrush}"
+                                   Visibility="Collapsed" />
+                        <WrapPanel x:Name="UsageLegend" Margin="0,8,0,0" />
                     </StackPanel>
                 </Border>
+
+                <Border Style="{StaticResource StatusCard}">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,8">
+                            <TextBlock Text="最近会话 · 输出 Token" Style="{StaticResource StatusLabel}" Margin="0" />
+                            <TextBlock Text="悬停查看详情"
+                                       HorizontalAlignment="Right"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource SidebarPanelSecondaryBrush}" />
+                        </Grid>
+                        <Grid x:Name="SessionBarsHost" Height="90" VerticalAlignment="Bottom" />
+                        <TextBlock x:Name="SessionBarsEmptyText"
+                                   Text="暂无会话数据"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource SidebarPanelSecondaryBrush}"
+                                   Visibility="Collapsed" />
+                    </StackPanel>
+                </Border>
+
                 <Border Style="{StaticResource StatusCard}">
                     <StackPanel>
                         <TextBlock Text="累计调用（全部会话）" Style="{StaticResource StatusLabel}" Margin="0" />
@@ -102,28 +126,34 @@
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <StackPanel Grid.Column="0">
-                                <TextBlock Text="会话" Style="{StaticResource StatusLabel}" Margin="0" />
-                                <TextBlock x:Name="SessionsText" Style="{StaticResource StatusValue}" Text="0" HorizontalAlignment="Center" />
+                                <TextBlock Text="会话" Style="{StaticResource StatusLabel}" Margin="0" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="SessionsText" Style="{StaticResource StatusBigValue}" Text="0" HorizontalAlignment="Center" />
                             </StackPanel>
                             <StackPanel Grid.Column="1">
-                                <TextBlock Text="轮次" Style="{StaticResource StatusLabel}" Margin="0" />
-                                <TextBlock x:Name="TurnsText" Style="{StaticResource StatusValue}" Text="0" HorizontalAlignment="Center" />
+                                <TextBlock Text="轮次" Style="{StaticResource StatusLabel}" Margin="0" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="TurnsText" Style="{StaticResource StatusBigValue}" Text="0" HorizontalAlignment="Center" />
                             </StackPanel>
                             <StackPanel Grid.Column="2">
-                                <TextBlock Text="步骤" Style="{StaticResource StatusLabel}" Margin="0" />
-                                <TextBlock x:Name="StepsText" Style="{StaticResource StatusValue}" Text="0" HorizontalAlignment="Center" />
+                                <TextBlock Text="步骤" Style="{StaticResource StatusLabel}" Margin="0" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="StepsText" Style="{StaticResource StatusBigValue}" Text="0" HorizontalAlignment="Center" />
                             </StackPanel>
                         </Grid>
                     </StackPanel>
                 </Border>
+
                 <Border Style="{StaticResource StatusCard}">
                     <StackPanel>
                         <TextBlock Text="DeepSeek 余额" Style="{StaticResource StatusLabel}" Margin="0" />
-                        <TextBlock x:Name="BalanceText" Style="{StaticResource StatusValue}" Text="—" />
+                        <TextBlock x:Name="BalanceText" Style="{StaticResource StatusBigValue}" Text="—" />
+                        <Grid x:Name="BalanceBarHost" Height="8" Margin="0,8,0,0" Visibility="Collapsed">
+                            <Grid.Clip>
+                                <RectangleGeometry Rect="0,0,1000,8" RadiusX="4" RadiusY="4" />
+                            </Grid.Clip>
+                        </Grid>
                         <TextBlock x:Name="BalanceDetailText"
                                    FontSize="11"
                                    Foreground="{DynamicResource SidebarPanelSecondaryBrush}"
-                                   Margin="0,4,0,0"
+                                   Margin="0,6,0,0"
                                    Visibility="Collapsed" />
                     </StackPanel>
                 </Border>

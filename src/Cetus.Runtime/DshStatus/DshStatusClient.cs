@@ -1,3 +1,4 @@
+using System.IO;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -6,6 +7,12 @@ namespace Cetus.DshStatus;
 
 public sealed record DshWorkspaceInfo(string Title, string Path, int SessionCount, DateTime UpdatedAt);
 
+public sealed record DshSessionUsage(
+    string Title,
+    long InputTokens,
+    long OutputTokens,
+    DateTime UpdatedAt);
+
 public sealed record DshUsageSummary(
     long InputTokens,
     long OutputTokens,
@@ -13,7 +20,8 @@ public sealed record DshUsageSummary(
     long CacheWriteTokens,
     long Turns,
     long Steps,
-    int SessionCount);
+    int SessionCount,
+    IReadOnlyList<DshSessionUsage> Sessions);
 
 public sealed record DshStatusSnapshot(
     DshWorkspaceInfo? Workspace,
@@ -163,6 +171,7 @@ public sealed class DshStatusClient : IDisposable
     {
         long input = 0, output = 0, cacheRead = 0, cacheWrite = 0, turns = 0, steps = 0;
         int sessionCount = 0;
+        var sessions = new List<DshSessionUsage>();
         foreach (JsonElement item in EnumerateArray(value, "items"))
         {
             sessionCount++;
@@ -171,8 +180,10 @@ public sealed class DshStatusClient : IDisposable
                 continue;
             }
 
-            input += GetInt64(usage, "uncachedInputTokens");
-            output += GetInt64(usage, "outputTokens");
+            long itemInput = GetInt64(usage, "uncachedInputTokens");
+            long itemOutput = GetInt64(usage, "outputTokens");
+            input += itemInput;
+            output += itemOutput;
             cacheRead += GetInt64(usage, "cacheReadTokens");
             cacheWrite += GetInt64(usage, "cacheWriteTokens");
 
@@ -181,9 +192,38 @@ public sealed class DshStatusClient : IDisposable
                 turns += GetInt64(stats, "turns");
                 steps += GetInt64(stats, "steps");
             }
+
+            string title = GetString(item, "cwd") is { } cwd
+                ? Path.GetFileName(cwd.TrimEnd(Path.DirectorySeparatorChar))
+                : "会话";
+            if (TryGetProjection(item, "title", out JsonElement titleElement)
+                && GetString(titleElement, "title") is { } projectedTitle)
+            {
+                title = projectedTitle;
+            }
+            else if (GetString(item, "title") is { } itemTitle)
+            {
+                title = itemTitle;
+            }
+
+            sessions.Add(new DshSessionUsage(
+                title,
+                itemInput,
+                itemOutput,
+                GetEpochTime(item, "updatedAt")));
         }
 
-        return new DshUsageSummary(input, output, cacheRead, cacheWrite, turns, steps, sessionCount);
+        return new DshUsageSummary(
+            input,
+            output,
+            cacheRead,
+            cacheWrite,
+            turns,
+            steps,
+            sessionCount,
+            sessions
+                .OrderBy(session => session.UpdatedAt)
+                .ToList());
     }
 
     private static bool TryGetProjection(JsonElement sessionItem, string name, out JsonElement projection)
@@ -219,6 +259,22 @@ public sealed class DshStatusClient : IDisposable
 
     private static DateTime GetDateTime(JsonElement element, string name) =>
         DateTime.TryParse(GetString(element, name), out DateTime parsed) ? parsed : DateTime.MinValue;
+
+    private static DateTime GetEpochTime(JsonElement element, string name)
+    {
+        if (element.ValueKind == JsonValueKind.Object
+            && element.TryGetProperty(name, out JsonElement property))
+        {
+            if (property.ValueKind == JsonValueKind.Number && property.TryGetInt64(out long epochMs))
+            {
+                return DateTimeOffset.FromUnixTimeMilliseconds(epochMs).LocalDateTime;
+            }
+
+            return GetDateTime(element, name);
+        }
+
+        return DateTime.MinValue;
+    }
 
     private static long GetInt64(JsonElement element, string name) =>
         element.ValueKind == JsonValueKind.Object
