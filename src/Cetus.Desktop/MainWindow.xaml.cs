@@ -185,6 +185,13 @@ public partial class MainWindow : Window
             return;
         }
 
+        // DSH sidebar method (slide, not morph): the panel holds its full
+        // expanded layout while the column clips it against the window edge,
+        // so nothing re-wraps mid-slide and the hosted WebView2 windows move
+        // instead of resizing every frame.
+        RightSidebarContent.Width = isOpen ? targetWidth : currentWidth;
+        RightSidebarContent.HorizontalAlignment = HorizontalAlignment.Left;
+
         var animation = new GridLengthAnimation
         {
             From = new GridLength(currentWidth, GridUnitType.Pixel),
@@ -211,6 +218,10 @@ public partial class MainWindow : Window
     private void ApplyRightSidebarLayout(bool isOpen, double width)
     {
         ++_rightSidebarAnimationGeneration;
+        // Release the mid-slide frozen layout (idempotent for the
+        // non-animated paths) so the panel stretches with its column again.
+        RightSidebarContent.ClearValue(WidthProperty);
+        RightSidebarContent.HorizontalAlignment = HorizontalAlignment.Stretch;
         RightSidebarColumn.BeginAnimation(ColumnDefinition.WidthProperty, null);
         if (isOpen)
         {
