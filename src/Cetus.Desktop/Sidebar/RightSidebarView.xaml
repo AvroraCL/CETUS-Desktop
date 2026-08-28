@@ -74,7 +74,9 @@
 
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="40" />
+            <!-- 60px matches the injected DSH top bar so the strip's bottom
+                 line connects with the DSH top bar's own bottom line. -->
+            <RowDefinition Height="60" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
