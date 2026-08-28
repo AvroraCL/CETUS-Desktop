@@ -29,12 +29,12 @@ CETUS 把官方 Web UI、Agent 能力和插件生态装进一个开箱即用的 
 - 完整复用 DeepSeek Harness 的 Agent 能力与插件生态
 - 内置可调宽度的右侧工具栏：标签页式浏览网页、运行 PowerShell、查看本地文件，支持多开、下拉管理与最近关闭恢复
 
-### 下载 v0.1.9
+### 下载 v0.2.0
 
 | 文件 | 说明 |
 |---|---|
-| [Cetus-Setup-0.1.9.exe](https://github.com/AvroraCL/CETUS-Desktop/releases/download/v0.1.9/Cetus-Setup-0.1.9.exe) | 中文安装向导，按当前用户安装，无需管理员权限 |
-| [Cetus-0.1.9-win-x64-portable.zip](https://github.com/AvroraCL/CETUS-Desktop/releases/download/v0.1.9/Cetus-0.1.9-win-x64-portable.zip) | 便携版，解压后直接运行 |
+| [Cetus-Setup-0.2.0.exe](https://github.com/AvroraCL/CETUS-Desktop/releases/download/v0.2.0/Cetus-Setup-0.2.0.exe) | 中文安装向导，按当前用户安装，无需管理员权限 |
+| [Cetus-0.2.0-win-x64-portable.zip](https://github.com/AvroraCL/CETUS-Desktop/releases/download/v0.2.0/Cetus-0.2.0-win-x64-portable.zip) | 便携版，解压后直接运行 |
 
 历史版本与更新日志见 [Releases](https://github.com/AvroraCL/CETUS-Desktop/releases)。
 
@@ -174,9 +174,9 @@ scripts\publish.ps1
 
 脚本需要 PowerShell 7 与 .NET 10 SDK。它复用与开发环境相同的 Runtime 清单、校验缓存和锁定 bootstrap，不依赖系统 Node/npm。首次 bootstrap 需要网络。构建产物位于 `dist\`：
 
-- `app-0.1.9\`：自包含运行目录，目标电脑无需安装 .NET 或 Node.js
-- `Cetus-0.1.9-win-x64-portable.zip`：便携版
-- `Cetus-Setup-0.1.9.exe`：Inno Setup 安装程序
+- `app-0.2.0\`：自包含运行目录，目标电脑无需安装 .NET 或 Node.js
+- `Cetus-0.2.0-win-x64-portable.zip`：便携版
+- `Cetus-Setup-0.2.0.exe`：Inno Setup 安装程序
 
 当前 Runtime 固定版本：
 
@@ -190,15 +190,15 @@ scripts\publish.ps1
 发布后可分别验证便携包运行时和安装程序：
 
 ```powershell
-scripts\package-smoke.ps1 -ApplicationPath dist\app-0.1.9\Cetus.exe
-scripts\installer-smoke.ps1 -InstallerPath dist\Cetus-Setup-0.1.9.exe -ExpectedVersion 0.1.9
+scripts\package-smoke.ps1 -ApplicationPath dist\app-0.2.0\Cetus.exe
+scripts\installer-smoke.ps1 -InstallerPath dist\Cetus-Setup-0.2.0.exe -ExpectedVersion 0.2.0
 ```
 
 版本信息：
 
-- 文件版本：`0.0.1.9`
+- 文件版本：`0.0.2.0`
 - 产品名称：`CETUS鲸鱼座`
-- 产品版本：`0.1.9`
+- 产品版本：`0.2.0`
 - 版权：`AvroraCL`
 
 ### 验证场景
