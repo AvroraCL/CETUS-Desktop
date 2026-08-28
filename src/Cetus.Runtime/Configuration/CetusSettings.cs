@@ -13,7 +13,7 @@ public sealed class CetusSettings
     public const int DefaultPort = 3080;
     public const int DefaultRightSidebarWidth = 360;
     public const int MinimumRightSidebarWidth = 300;
-    public const int MaximumRightSidebarWidth = 800;
+    public const int MaximumRightSidebarWidth = 1600;
     public const bool DefaultCheckUpdatesOnStartup = true;
 
     private readonly string _settingsPath;

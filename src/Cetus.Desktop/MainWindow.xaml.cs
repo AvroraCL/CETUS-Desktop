@@ -25,6 +25,19 @@ public partial class MainWindow : Window
     private static readonly Duration RightSidebarAnimationDuration =
         new(TimeSpan.FromMilliseconds(220));
 
+    /// <summary>Client width the DSH page keeps while the panel is expanded.</summary>
+    private const double MinimumDshSurfaceWidth = 480;
+
+    /// <summary>
+    /// Sidebar cap for the current window: grows with the window (fullscreen
+    /// allows a much wider panel) but always leaves the DSH surface usable.
+    /// </summary>
+    private double EffectiveSidebarMax =>
+        Math.Clamp(
+            ActualWidth - MinimumDshSurfaceWidth,
+            CetusSettings.MinimumRightSidebarWidth,
+            CetusSettings.MaximumRightSidebarWidth);
+
     private readonly CetusSettings _settings;
     private readonly BrowserSession _browserSession;
     private readonly DesktopRuntime _runtime;
@@ -41,6 +54,7 @@ public partial class MainWindow : Window
         _settings = CetusSettings.LoadDefault();
         InitializeComponent();
         InitializeRightSidebar();
+        SizeChanged += (_, _) => ClampSidebarWidthToWindow();
 
         _browserSession = new BrowserSession(
             Browser,
@@ -161,6 +175,20 @@ public partial class MainWindow : Window
         ApplyRightSidebarLayout(_rightSidebarOpen, _settings.RightSidebarWidth);
     }
 
+    private void ClampSidebarWidthToWindow()
+    {
+        if (!_rightSidebarOpen)
+        {
+            return;
+        }
+
+        RightSidebarColumn.MaxWidth = EffectiveSidebarMax;
+        if (RightSidebarColumn.ActualWidth > EffectiveSidebarMax)
+        {
+            RightSidebarColumn.Width = new GridLength(EffectiveSidebarMax, GridUnitType.Pixel);
+        }
+    }
+
     private void SetRightSidebarOpen(bool isOpen, bool animate)
     {
         _rightSidebarOpen = isOpen;
@@ -169,8 +197,10 @@ public partial class MainWindow : Window
         double currentWidth = Math.Clamp(
             RightSidebarColumn.ActualWidth,
             0,
-            CetusSettings.MaximumRightSidebarWidth);
-        double targetWidth = isOpen ? _settings.RightSidebarWidth : 0;
+            EffectiveSidebarMax);
+        double targetWidth = isOpen
+            ? Math.Clamp(_settings.RightSidebarWidth, CetusSettings.MinimumRightSidebarWidth, EffectiveSidebarMax)
+            : 0;
         int generation = ++_rightSidebarAnimationGeneration;
 
         RightSidebarColumn.BeginAnimation(ColumnDefinition.WidthProperty, null);
@@ -234,9 +264,9 @@ public partial class MainWindow : Window
             double clampedWidth = Math.Clamp(
                 width,
                 CetusSettings.MinimumRightSidebarWidth,
-                CetusSettings.MaximumRightSidebarWidth);
+                EffectiveSidebarMax);
             RightSidebarColumn.MinWidth = CetusSettings.MinimumRightSidebarWidth;
-            RightSidebarColumn.MaxWidth = CetusSettings.MaximumRightSidebarWidth;
+            RightSidebarColumn.MaxWidth = EffectiveSidebarMax;
             RightSidebarColumn.Width = new GridLength(clampedWidth, GridUnitType.Pixel);
             RightSidebarResizeThumb.IsEnabled = true;
         }
@@ -259,7 +289,7 @@ public partial class MainWindow : Window
         double width = Math.Clamp(
             RightSidebarColumn.ActualWidth - e.HorizontalChange,
             CetusSettings.MinimumRightSidebarWidth,
-            CetusSettings.MaximumRightSidebarWidth);
+            EffectiveSidebarMax);
         RightSidebarColumn.Width = new GridLength(width, GridUnitType.Pixel);
     }
 
