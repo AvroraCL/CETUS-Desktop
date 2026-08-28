@@ -44,7 +44,10 @@ internal sealed class GridLengthAnimation : AnimationTimeline
         double progress = animationClock.CurrentProgress ?? 0;
         double easedProgress = DshEaseInOut.GetSplineProgress(progress);
         double value = From.Value + ((To.Value - From.Value) * easedProgress);
-        return new GridLength(Math.Max(0, value), GridUnitType.Pixel);
+        // Whole-DIP steps: sub-pixel widths invalidate layout and Chromium
+        // repaint every tick without moving a device pixel, which shows up as
+        // stutter in the slow tail of the ease.
+        return new GridLength(Math.Max(0, Math.Round(value)), GridUnitType.Pixel);
     }
 
     protected override Freezable CreateInstanceCore() => new GridLengthAnimation();

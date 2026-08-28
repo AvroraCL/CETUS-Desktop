@@ -192,6 +192,9 @@ public partial class MainWindow : Window
             Duration = RightSidebarAnimationDuration,
             FillBehavior = FillBehavior.Stop,
         };
+        // Layout-driven animation: cap the tick rate so high-refresh monitors
+        // do not pay double relayout cost for imperceptible extra frames.
+        Timeline.SetDesiredFrameRate(animation, 60);
         animation.Completed += (_, _) =>
         {
             if (generation == _rightSidebarAnimationGeneration)
@@ -365,8 +368,6 @@ public partial class MainWindow : Window
         Resources["SidebarPanelInputBrush"] = CreateBrush(isDark ? "#222224" : "#FFFFFF");
         Resources["SidebarTerminalBackgroundBrush"] = CreateBrush(isDark ? "#101011" : "#F8FAFC");
         Resources["SidebarTerminalForegroundBrush"] = CreateBrush(isDark ? "#E5E7EB" : "#172033");
-        Resources["SidebarHandleBrush"] = CreateBrush(isDark ? "#24FFFFFF" : "#14000000");
-        Resources["SidebarHandleHoverBrush"] = CreateBrush(isDark ? "#3AFFFFFF" : "#28000000");
         WindowFrame.Background = CreateBrush(isDark ? "#151517" : "#F8FAFC");
         StatusText.Foreground = CreateBrush(isDark ? "#AAB7CC" : "#52627A");
         RightSidebarContent.ApplyTheme(isDark);

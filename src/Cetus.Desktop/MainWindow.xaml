@@ -42,8 +42,6 @@
         <SolidColorBrush x:Key="SidebarPanelInputBrush" Color="#222224" />
         <SolidColorBrush x:Key="SidebarTerminalBackgroundBrush" Color="#101011" />
         <SolidColorBrush x:Key="SidebarTerminalForegroundBrush" Color="#E5E7EB" />
-        <SolidColorBrush x:Key="SidebarHandleBrush" Color="#24FFFFFF" />
-        <SolidColorBrush x:Key="SidebarHandleHoverBrush" Color="#3AFFFFFF" />
 
         <Style x:Key="CaptionButton"
                TargetType="Button">
@@ -222,7 +220,7 @@
                         Grid.Column="1"
                         Panel.ZIndex="1"
                         Width="1"
-                        HorizontalAlignment="Left"
+                        HorizontalAlignment="Right"
                         VerticalAlignment="Stretch"
                         Background="{DynamicResource SidebarBorderBrush}"
                         Visibility="{Binding Visibility, ElementName=RightSidebarSplitter}" />
@@ -241,30 +239,9 @@
                               DragStarted="OnRightSidebarDragStarted"
                               DragCompleted="OnRightSidebarDragCompleted">
                     <GridSplitter.Template>
+                        <!-- Invisible hit zone: the 1px divider is the only visual. -->
                         <ControlTemplate TargetType="GridSplitter">
-                            <Grid Background="Transparent">
-                                <Border x:Name="HandlePill"
-                                        Width="6" Height="32"
-                                        CornerRadius="3"
-                                        Background="{DynamicResource SidebarHandleBrush}"
-                                        HorizontalAlignment="Center"
-                                        VerticalAlignment="Center"
-                                        Opacity="0" />
-                            </Grid>
-                            <ControlTemplate.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="HandlePill" Property="Opacity" Value="1" />
-                                    <Setter TargetName="HandlePill"
-                                            Property="Background"
-                                            Value="{DynamicResource SidebarHandleHoverBrush}" />
-                                </Trigger>
-                                <Trigger Property="IsDragging" Value="True">
-                                    <Setter TargetName="HandlePill" Property="Opacity" Value="1" />
-                                    <Setter TargetName="HandlePill"
-                                            Property="Background"
-                                            Value="{DynamicResource SidebarHandleHoverBrush}" />
-                                </Trigger>
-                            </ControlTemplate.Triggers>
+                            <Grid Background="Transparent" />
                         </ControlTemplate>
                     </GridSplitter.Template>
                 </GridSplitter>
