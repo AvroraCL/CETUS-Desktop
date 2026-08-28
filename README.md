@@ -8,9 +8,11 @@
 [![Node.js](https://img.shields.io/badge/Node.js-24-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://github.com/AvroraCL/CETUS-Desktop)
 [![license](https://img.shields.io/github/license/AvroraCL/CETUS-Desktop?style=flat-square)](LICENSE)
 
+基于 DeepSeek Harness 构建的 Windows .NET 技术栈桌面客户端
+
 </div>
 
-基于 DeepSeek Harness 构建的 Windows .NET 技术栈桌面客户端。CETUS 把官方 Web UI、Agent 能力和插件生态装进一个开箱即用的 Windows 应用，无需命令行，也不必一直保留浏览器标签页；启动、托盘驻留和后台进程回收都由 CETUS 负责。
+CETUS 把官方 Web UI、Agent 能力和插件生态装进一个开箱即用的 Windows 应用，无需命令行，也不必一直保留浏览器标签页；启动、托盘驻留和后台进程回收都由 CETUS 负责。
 
 > CETUS 是独立社区项目，并非 DeepSeek 官方产品。
 
