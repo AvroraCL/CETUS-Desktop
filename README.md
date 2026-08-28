@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="docs/CETUS-ico.png" alt="CETUS · 鲸鱼座" width="160"/>
-
 ### CETUS · 鲸鱼座
+
+<img src="docs/CETUS-ico.png" alt="CETUS · 鲸鱼座" width="160"/>
 
 **将 DeepSeek Harness 带到 Windows 桌面的原生工作台。**
 
