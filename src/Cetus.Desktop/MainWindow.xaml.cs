@@ -177,10 +177,6 @@ public partial class MainWindow : Window
         RightSidebarColumn.MinWidth = 0;
         RightSidebarColumn.Width = new GridLength(currentWidth, GridUnitType.Pixel);
         RightSidebarSplitter.IsEnabled = false;
-        if (isOpen)
-        {
-            SetRightSidebarDivider(isOpen: true);
-        }
 
         bool shouldAnimate = animate
             && SystemParameters.ClientAreaAnimation
@@ -241,22 +237,14 @@ public partial class MainWindow : Window
             RightSidebarColumn.MinWidth = CetusSettings.MinimumRightSidebarWidth;
             RightSidebarColumn.MaxWidth = CetusSettings.MaximumRightSidebarWidth;
             RightSidebarColumn.Width = new GridLength(clampedWidth, GridUnitType.Pixel);
-            SetRightSidebarDivider(isOpen: true);
             RightSidebarSplitter.IsEnabled = true;
         }
         else
         {
             RightSidebarColumn.MinWidth = 0;
             RightSidebarColumn.Width = new GridLength(0, GridUnitType.Pixel);
-            SetRightSidebarDivider(isOpen: false);
             RightSidebarSplitter.IsEnabled = false;
         }
-    }
-
-    private void SetRightSidebarDivider(bool isOpen)
-    {
-        RightSidebarDividerColumn.Width = new GridLength(isOpen ? 8 : 0, GridUnitType.Pixel);
-        RightSidebarSplitter.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void OnRightSidebarDragStarted(object sender, DragStartedEventArgs e)
