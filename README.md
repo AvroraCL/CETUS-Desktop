@@ -1,8 +1,12 @@
+<div align="center">
+
 # CETUS · 鲸鱼座
 
 <img src="docs/CETUS-ico.png" alt="CETUS · 鲸鱼座" width="160"/>
 
 **将 DeepSeek Harness 带到 Windows 桌面的原生工作台。**
+
+</div>
 
 CETUS 使用 .NET、WPF 与 WebView2，将 DeepSeek Harness 的官方 Web UI、Agent 能力和插件生态装进一个开箱即用的 Windows 应用。无需命令行，也不必一直保留浏览器标签页；启动、托盘驻留和后台进程回收都由 CETUS 负责。
 
