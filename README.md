@@ -30,6 +30,15 @@ CETUS 使用 .NET、WPF 与 WebView2，将 DeepSeek Harness 的官方 Web UI、A
 - 完整复用 DeepSeek Harness 的 Agent 能力与插件生态
 - 内置可调宽度的右侧工具栏：浏览网页、运行 PowerShell、查看本地文件
 
+### 下载 v0.1.9
+
+| 文件 | 说明 |
+|---|---|
+| [Cetus-Setup-0.1.9.exe](https://github.com/AvroraCL/CETUS-Desktop/releases/download/v0.1.9/Cetus-Setup-0.1.9.exe) | 中文安装向导，按当前用户安装，无需管理员权限 |
+| [Cetus-0.1.9-win-x64-portable.zip](https://github.com/AvroraCL/CETUS-Desktop/releases/download/v0.1.9/Cetus-0.1.9-win-x64-portable.zip) | 便携版，解压后直接运行 |
+
+历史版本与更新日志见 [Releases](https://github.com/AvroraCL/CETUS-Desktop/releases)。
+
 ### 当前状态
 
 CETUS 目前处于早期开发阶段，**M0 桌面骨架与 M2 自包含打包已经完成并通过冒烟测试**。
@@ -45,10 +54,7 @@ CETUS 目前处于早期开发阶段，**M0 桌面骨架与 M2 自包含打包�
 
 ### 安装与使用
 
-安装包与便携版将在 [Releases](https://github.com/AvroraCL/CETUS-Desktop/releases) 中提供：
-
-- `Cetus-Setup-0.1.9.exe`：中文安装向导，按当前用户安装，无需管理员权限
-- `Cetus-0.1.9-win-x64-portable.zip`：解压后直接运行
+从上方下载区或 [Releases](https://github.com/AvroraCL/CETUS-Desktop/releases) 页面获取安装包。
 
 启动后，CETUS 会自动完成以下流程：
 
