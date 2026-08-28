@@ -1,0 +1,44 @@
+<UserControl x:Class="Cetus.Sidebar.TerminalTabContent"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="42" />
+        </Grid.RowDefinitions>
+        <TextBox x:Name="OutputBox"
+                 Grid.Row="0"
+                 Margin="6,6,6,0"
+                 Padding="8"
+                 IsReadOnly="True"
+                 AcceptsReturn="True"
+                 TextWrapping="NoWrap"
+                 HorizontalScrollBarVisibility="Auto"
+                 VerticalScrollBarVisibility="Auto"
+                 FontFamily="Cascadia Mono, Consolas"
+                 FontSize="12"
+                 Foreground="{DynamicResource SidebarTerminalForegroundBrush}"
+                 Background="{DynamicResource SidebarTerminalBackgroundBrush}"
+                 BorderBrush="{DynamicResource SidebarBorderBrush}" />
+        <Grid Grid.Row="1" Margin="6">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="30" />
+            </Grid.ColumnDefinitions>
+            <TextBox x:Name="InputBox"
+                     Grid.Column="0"
+                     Margin="0,0,4,0"
+                     Style="{StaticResource SidebarTextBox}"
+                     FontFamily="Cascadia Mono, Consolas"
+                     FontSize="12"
+                     ToolTip="输入 PowerShell 命令"
+                     KeyDown="OnInputKeyDown" />
+            <Button Grid.Column="1"
+                    Style="{StaticResource SidebarIconButton}"
+                    ToolTip="执行"
+                    Click="OnRunClicked">
+                <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="13" Text="&#xE768;" />
+            </Button>
+        </Grid>
+    </Grid>
+</UserControl>

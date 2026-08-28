@@ -1,432 +1,470 @@
-using System.Diagnostics;
-using System.IO;
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using Cetus.Configuration;
-using Microsoft.Web.WebView2.Core;
+using System.Windows.Media;
+using Brush = System.Windows.Media.Brush;
+using Brushes = System.Windows.Media.Brushes;
+using FontFamily = System.Windows.Media.FontFamily;
 
 namespace Cetus.Sidebar;
 
+/// <summary>
+/// Edge-style tabbed side panel: a pill tab strip with new-tab and dropdown
+/// management, an empty-state picker and per-kind tab contents. Browser tabs
+/// each own a WebView2; terminal tabs share one PowerShell session; file tabs
+/// carry independent tree state.
+/// </summary>
 public partial class RightSidebarView : UserControl, IDisposable
 {
-    private const int MaximumTerminalCharacters = 250_000;
+    private static readonly FontFamily GlyphFont = new("Segoe MDL2 Assets");
 
+    private readonly List<SidebarTab> _tabs = new();
+    private readonly List<ClosedTab> _closed = new();
     private readonly SidebarTerminalSession _terminal = new();
-    private bool _browserInitialized;
-    private bool _browserShowingStartPage = true;
+    private SidebarTab? _activeTab;
     private bool _isDark = true;
-    private bool _terminalStarted;
     private bool _disposed;
-    private string _filesRoot = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    // When an auto-closing popup swallows the click that re-targets its anchor
+    // button, the button's Click fires after the close; suppress the reopen.
+    private DateTime _newTabMenuSuppressedUntil;
+    private DateTime _tabsMenuSuppressedUntil;
 
     public RightSidebarView()
     {
         InitializeComponent();
-        _terminal.OutputReceived += OnTerminalOutputReceived;
-        _terminal.Exited += OnTerminalExited;
-        Loaded += OnLoaded;
     }
 
     public void ApplyTheme(bool isDark)
     {
         _isDark = isDark;
-        SidebarBrowser.DefaultBackgroundColor = isDark
-            ? System.Drawing.Color.FromArgb(255, 27, 27, 28)
-            : System.Drawing.Color.FromArgb(255, 245, 247, 250);
-
-        if (_browserInitialized && _browserShowingStartPage)
+        foreach (SidebarTab tab in _tabs)
         {
-            ShowBrowserStartPage();
-        }
-    }
-
-    private async void OnLoaded(object sender, RoutedEventArgs e)
-    {
-        LoadFilesRoot(_filesRoot);
-        await EnsureBrowserInitializedAsync();
-    }
-
-    private async void OnBrowserTabClicked(object sender, RoutedEventArgs e)
-    {
-        ShowPanel(BrowserPanel, BrowserTabButton);
-        await EnsureBrowserInitializedAsync();
-    }
-
-    private void OnTerminalTabClicked(object sender, RoutedEventArgs e)
-    {
-        ShowPanel(TerminalPanel, TerminalTabButton);
-        EnsureTerminalStarted();
-        TerminalInput.Focus();
-    }
-
-    private void OnFilesTabClicked(object sender, RoutedEventArgs e) =>
-        ShowPanel(FilesPanel, FilesTabButton);
-
-    private void ShowPanel(UIElement panel, System.Windows.Controls.Primitives.ToggleButton selected)
-    {
-        BrowserPanel.Visibility = panel == BrowserPanel ? Visibility.Visible : Visibility.Collapsed;
-        TerminalPanel.Visibility = panel == TerminalPanel ? Visibility.Visible : Visibility.Collapsed;
-        FilesPanel.Visibility = panel == FilesPanel ? Visibility.Visible : Visibility.Collapsed;
-        BrowserTabButton.IsChecked = selected == BrowserTabButton;
-        TerminalTabButton.IsChecked = selected == TerminalTabButton;
-        FilesTabButton.IsChecked = selected == FilesTabButton;
-    }
-
-    private async Task EnsureBrowserInitializedAsync()
-    {
-        if (_browserInitialized || _disposed)
-        {
-            return;
-        }
-
-        _browserInitialized = true;
-        try
-        {
-            string parent = Path.GetDirectoryName(CetusPaths.WebView2UserDataDirectory)
-                ?? CetusPaths.UserDataDirectory;
-            string userData = Path.Combine(parent, "SidebarWebView2");
-            CoreWebView2Environment environment = await CoreWebView2Environment.CreateAsync(
-                browserExecutableFolder: null,
-                userDataFolder: userData);
-            await SidebarBrowser.EnsureCoreWebView2Async(environment);
-            if (_disposed)
+            if (tab.Content is BrowserTabContent browser)
             {
-                return;
-            }
-
-            CoreWebView2 core = SidebarBrowser.CoreWebView2;
-            core.Settings.AreDefaultContextMenusEnabled = true;
-            core.Settings.IsStatusBarEnabled = false;
-            core.NavigationStarting += OnBrowserNavigationStarting;
-            core.NavigationCompleted += OnBrowserNavigationCompleted;
-            core.NewWindowRequested += OnBrowserNewWindowRequested;
-            core.DownloadStarting += OnBrowserDownloadStarting;
-            ShowBrowserStartPage();
-        }
-        catch (Exception error) when (error is InvalidOperationException or COMException)
-        {
-            _browserInitialized = false;
-            BrowserStatusText.Text = $"浏览器初始化失败：{error.Message}";
-            BrowserStatusText.Visibility = Visibility.Visible;
-        }
-    }
-
-    private void OnBrowserNavigationStarting(
-        object? sender,
-        CoreWebView2NavigationStartingEventArgs e)
-    {
-        if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out Uri? uri)
-            || !SidebarBrowserAddress.IsAllowed(uri))
-        {
-            e.Cancel = true;
-            return;
-        }
-
-        _browserShowingStartPage = uri.Scheme.Equals("about", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private void OnBrowserNavigationCompleted(
-        object? sender,
-        CoreWebView2NavigationCompletedEventArgs e)
-    {
-        BrowserBackButton.IsEnabled = SidebarBrowser.CanGoBack;
-        BrowserForwardButton.IsEnabled = SidebarBrowser.CanGoForward;
-        if (_browserShowingStartPage)
-        {
-            BrowserAddressBox.Clear();
-        }
-        else if (SidebarBrowser.Source is { } source && source.AbsoluteUri != "about:blank")
-        {
-            BrowserAddressBox.Text = source.AbsoluteUri;
-        }
-    }
-
-    private void OnBrowserNewWindowRequested(
-        object? sender,
-        CoreWebView2NewWindowRequestedEventArgs e)
-    {
-        e.Handled = true;
-        if (Uri.TryCreate(e.Uri, UriKind.Absolute, out Uri? uri)
-            && SidebarBrowserAddress.IsAllowed(uri))
-        {
-            NavigateBrowser(uri);
-        }
-    }
-
-    private void OnBrowserDownloadStarting(
-        object? sender,
-        CoreWebView2DownloadStartingEventArgs e)
-    {
-        // The narrow sidebar is not a download manager; hand downloads to the
-        // system browser instead of showing the in-view download overlay.
-        e.Cancel = true;
-        if (Uri.TryCreate(e.DownloadOperation.Uri, UriKind.Absolute, out Uri? uri)
-            && (uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
-                || uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)))
-        {
-            try
-            {
-                Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
-            }
-            catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception)
-            {
-                // External launch is best effort; the sidebar download stays cancelled.
+                browser.ApplyTheme(isDark);
             }
         }
     }
 
-    private void OnBrowserBackClicked(object sender, RoutedEventArgs e)
+    private void OnNewTabClicked(object sender, RoutedEventArgs e)
     {
-        if (SidebarBrowser.CanGoBack)
-        {
-            SidebarBrowser.GoBack();
-        }
-    }
-
-    private void OnBrowserForwardClicked(object sender, RoutedEventArgs e)
-    {
-        if (SidebarBrowser.CanGoForward)
-        {
-            SidebarBrowser.GoForward();
-        }
-    }
-
-    private void OnBrowserRefreshClicked(object sender, RoutedEventArgs e) =>
-        SidebarBrowser.CoreWebView2?.Reload();
-
-    private void OnBrowserGoClicked(object sender, RoutedEventArgs e) => NavigateBrowserInput();
-
-    private void OnBrowserAddressKeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter)
-        {
-            e.Handled = true;
-            NavigateBrowserInput();
-        }
-        else if (e.Key == Key.Escape)
-        {
-            e.Handled = true;
-            BrowserAddressBox.Clear();
-        }
-    }
-
-    private void OnSidebarPreviewKeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.L
-            && Keyboard.Modifiers == ModifierKeys.Control
-            && BrowserPanel.Visibility == Visibility.Visible)
-        {
-            e.Handled = true;
-            FocusBrowserAddress();
-        }
-    }
-
-    private void OnBrowserAddressGotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e) =>
-        BrowserAddressBox.SelectAll();
-
-    private void OnBrowserAddressPreviewMouseDown(object sender, MouseButtonEventArgs e)
-    {
-        if (!BrowserAddressBox.IsKeyboardFocusWithin)
-        {
-            FocusBrowserAddress();
-            e.Handled = true;
-        }
-    }
-
-    private void FocusBrowserAddress()
-    {
-        BrowserAddressBox.Focus();
-        BrowserAddressBox.SelectAll();
-    }
-
-    private void NavigateBrowserInput() =>
-        NavigateBrowser(SidebarBrowserAddress.Resolve(BrowserAddressBox.Text));
-
-    private void NavigateBrowser(Uri uri)
-    {
-        if (uri.Scheme.Equals("about", StringComparison.OrdinalIgnoreCase))
-        {
-            ShowBrowserStartPage();
-        }
-        else if (SidebarBrowser.CoreWebView2 is { } core)
-        {
-            _browserShowingStartPage = false;
-            core.Navigate(uri.AbsoluteUri);
-        }
-    }
-
-    private void ShowBrowserStartPage()
-    {
-        if (SidebarBrowser.CoreWebView2 is not { } core)
+        if (DateTime.Now < _newTabMenuSuppressedUntil)
         {
             return;
         }
 
-        _browserShowingStartPage = true;
-        BrowserAddressBox.Clear();
-        string background = _isDark ? "#1b1b1c" : "#f5f7fa";
-        string foreground = _isDark ? "#8b8b90" : "#667085";
-        string html = $$"""
-            <!doctype html>
-            <html lang="zh-CN">
-            <head>
-              <meta charset="utf-8">
-              <style>
-                html, body { width: 100%; height: 100%; margin: 0; }
-                body {
-                  display: grid;
-                  place-items: center;
-                  background: {{background}};
-                  color: {{foreground}};
-                  font: 13px "Segoe UI", "Microsoft YaHei", sans-serif;
-                }
-              </style>
-            </head>
-            <body>输入网址或搜索内容</body>
-            </html>
-            """;
-        core.NavigateToString(html);
+        if (NewTabMenuPopup.IsOpen)
+        {
+            NewTabMenuPopup.IsOpen = false;
+            return;
+        }
+
+        NewTabMenuPopup.PlacementTarget = NewTabButton;
+        NewTabMenuPopup.IsOpen = true;
     }
 
-    private void EnsureTerminalStarted()
+    private void OnNewTabMenuPopupClosed(object sender, EventArgs e)
     {
-        if (_terminalStarted || _disposed)
+        _newTabMenuSuppressedUntil = DateTime.Now.AddMilliseconds(250);
+    }
+
+    private void OnMenuBrowserClicked(object sender, RoutedEventArgs e)
+    {
+        NewTabMenuPopup.IsOpen = false;
+        OpenTab(SidebarTabKind.Browser);
+    }
+
+    private void OnMenuTerminalClicked(object sender, RoutedEventArgs e)
+    {
+        NewTabMenuPopup.IsOpen = false;
+        OpenTab(SidebarTabKind.Terminal);
+    }
+
+    private void OnMenuFilesClicked(object sender, RoutedEventArgs e)
+    {
+        NewTabMenuPopup.IsOpen = false;
+        OpenTab(SidebarTabKind.Files);
+    }
+
+    private void OnEmptyBrowserClicked(object sender, RoutedEventArgs e) =>
+        OpenTab(SidebarTabKind.Browser);
+
+    private void OnEmptyTerminalClicked(object sender, RoutedEventArgs e) =>
+        OpenTab(SidebarTabKind.Terminal);
+
+    private void OnEmptyFilesClicked(object sender, RoutedEventArgs e) =>
+        OpenTab(SidebarTabKind.Files);
+
+    private void OnTabsMenuClicked(object sender, RoutedEventArgs e)
+    {
+        if (DateTime.Now < _tabsMenuSuppressedUntil)
         {
             return;
         }
 
-        try
+        if (TabsMenuPopup.IsOpen)
         {
-            _terminal.Start();
-            _terminalStarted = true;
-            AppendTerminalLine("CETUS PowerShell · 输入命令后按 Enter", isError: false);
+            TabsMenuPopup.IsOpen = false;
+            return;
         }
-        catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception)
-        {
-            AppendTerminalLine($"终端启动失败：{error.Message}", isError: true);
-        }
+
+        TabsMenuBorder.Width = Math.Max(260, ActualWidth - 20);
+        RebuildPopupLists();
+        TabsMenuPopup.IsOpen = true;
     }
 
-    private void OnTerminalRunClicked(object sender, RoutedEventArgs e) => SendTerminalCommand();
-
-    private void OnTerminalInputKeyDown(object sender, KeyEventArgs e)
+    private void OnTabSearchChanged(object sender, TextChangedEventArgs e)
     {
-        if (e.Key == Key.Enter)
-        {
-            e.Handled = true;
-            SendTerminalCommand();
-        }
+        TabSearchPlaceholder.Visibility = TabSearchBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        RebuildPopupLists();
     }
 
-    private void SendTerminalCommand()
+    private void OnTabsMenuPopupClosed(object sender, EventArgs e)
     {
-        EnsureTerminalStarted();
-        string command = TerminalInput.Text;
-        TerminalInput.Clear();
-        try
-        {
-            _terminal.SendCommand(command);
-        }
-        catch (InvalidOperationException error)
-        {
-            AppendTerminalLine(error.Message, isError: true);
-        }
+        _tabsMenuSuppressedUntil = DateTime.Now.AddMilliseconds(250);
+        TabSearchBox.Clear();
     }
 
-    private void OnTerminalOutputReceived(string line, bool isError) =>
-        _ = Dispatcher.InvokeAsync(() => AppendTerminalLine(line, isError));
-
-    private void OnTerminalExited() =>
-        _ = Dispatcher.InvokeAsync(() =>
-        {
-            _terminalStarted = false;
-            AppendTerminalLine("PowerShell 已退出。", isError: true);
-        });
-
-    private void AppendTerminalLine(string line, bool isError)
+    private void OpenTab(SidebarTabKind kind, string? initialUrl = null)
     {
         if (_disposed)
         {
             return;
         }
 
-        if (TerminalOutput.Text.Length > MaximumTerminalCharacters)
+        FrameworkElement content;
+        string title;
+        switch (kind)
         {
-            TerminalOutput.Text = TerminalOutput.Text[^150_000..];
+            case SidebarTabKind.Browser:
+                var browser = new BrowserTabContent(initialUrl);
+                content = browser;
+                title = SidebarTabModel.TitleOf(kind);
+                break;
+            case SidebarTabKind.Terminal:
+                content = new TerminalTabContent(_terminal);
+                title = SidebarTabModel.TitleOf(kind);
+                break;
+            default:
+                content = new FilesTabContent();
+                title = SidebarTabModel.TitleOf(kind);
+                break;
         }
 
-        if (TerminalOutput.Text.Length > 0)
+        var tab = new SidebarTab(kind, title, SidebarTabModel.GlyphOf(kind), content);
+        if (content is BrowserTabContent browserContent)
         {
-            TerminalOutput.AppendText(Environment.NewLine);
+            browserContent.TitleChanged += (_, documentTitle) =>
+            {
+                tab.Title = documentTitle;
+                RefreshTabStrip();
+                if (TabsMenuPopup.IsOpen)
+                {
+                    RebuildPopupLists();
+                }
+            };
         }
 
-        TerminalOutput.AppendText(isError ? $"! {line}" : line);
-        TerminalOutput.ScrollToEnd();
+        _tabs.Add(tab);
+        ActivateTab(tab);
     }
 
-    private void OnChooseFolderClicked(object sender, RoutedEventArgs e)
+    private void ActivateTab(SidebarTab tab)
     {
-        using var dialog = new System.Windows.Forms.FolderBrowserDialog
+        if (_disposed)
         {
-            Description = "选择右侧文件面板的根目录",
-            InitialDirectory = _filesRoot,
-            UseDescriptionForTitle = true,
-            ShowNewFolderButton = false,
+            return;
+        }
+
+        _activeTab = tab;
+        ActiveTabHost.Content = tab.Content;
+        UpdateEmptyState();
+        RefreshTabStrip();
+    }
+
+    private void CloseTab(SidebarTab tab)
+    {
+        int index = _tabs.IndexOf(tab);
+        if (index < 0)
+        {
+            return;
+        }
+
+        string? url = tab.Content is BrowserTabContent browser ? browser.CurrentAddress : null;
+        _closed.Insert(0, new ClosedTab(tab.Kind, tab.Title, tab.Glyph, DateTime.Now, url));
+        if (_closed.Count > SidebarTabModel.MaxRecentlyClosed)
+        {
+            _closed.RemoveAt(_closed.Count - 1);
+        }
+
+        _tabs.Remove(tab);
+        if (ReferenceEquals(_activeTab, tab))
+        {
+            _activeTab = _tabs.Count > 0 ? _tabs[Math.Min(index, _tabs.Count - 1)] : null;
+            ActiveTabHost.Content = _activeTab?.Content;
+        }
+
+        ReleaseTab(tab);
+        UpdateEmptyState();
+        RefreshTabStrip();
+        if (TabsMenuPopup.IsOpen)
+        {
+            RebuildPopupLists();
+        }
+    }
+
+    private void RestoreClosed(ClosedTab entry)
+    {
+        _closed.Remove(entry);
+        if (TabsMenuPopup.IsOpen)
+        {
+            RebuildPopupLists();
+        }
+
+        OpenTab(entry.Kind, entry.Url);
+    }
+
+    private static void ReleaseTab(SidebarTab tab)
+    {
+        switch (tab.Content)
+        {
+            case BrowserTabContent browser:
+                browser.Dispose();
+                break;
+            case TerminalTabContent terminal:
+                terminal.Detach();
+                break;
+        }
+    }
+
+    private void UpdateEmptyState()
+    {
+        bool empty = _tabs.Count == 0;
+        EmptyStatePanel.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
+        ActiveTabHost.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void RefreshTabStrip()
+    {
+        TabStripPanel.Children.Clear();
+        foreach (SidebarTab tab in _tabs)
+        {
+            TabStripPanel.Children.Add(CreatePill(tab));
+        }
+    }
+
+    private Border CreatePill(SidebarTab tab)
+    {
+        bool active = ReferenceEquals(tab, _activeTab);
+        var pill = new Border
+        {
+            CornerRadius = new CornerRadius(6),
+            Margin = new Thickness(0, 0, 4, 0),
+            Padding = new Thickness(8, 4, 4, 4),
+            Background = active
+                ? (Brush)FindResource("SidebarPanelSelectedBrush")
+                : Brushes.Transparent,
+            Cursor = Cursors.Hand,
         };
-        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+
+        var close = new TextBlock
         {
-            LoadFilesRoot(dialog.SelectedPath);
-        }
+            Text = "\uE8BB",
+            FontFamily = GlyphFont,
+            FontSize = 10,
+            Opacity = 0.75,
+            Margin = new Thickness(8, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            ToolTip = "关闭标签页",
+        };
+        close.MouseLeftButtonUp += (_, e) =>
+        {
+            e.Handled = true;
+            CloseTab(tab);
+        };
+
+        var layout = new DockPanel();
+        DockPanel.SetDock(close, Dock.Right);
+        layout.Children.Add(close);
+        layout.Children.Add(new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = tab.Glyph,
+                    FontFamily = GlyphFont,
+                    FontSize = 13,
+                    VerticalAlignment = VerticalAlignment.Center,
+                },
+                new TextBlock
+                {
+                    Text = tab.Title,
+                    Margin = new Thickness(6, 0, 0, 0),
+                    MaxWidth = 110,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                },
+            },
+        });
+
+        pill.Child = layout;
+        pill.MouseEnter += (_, _) =>
+        {
+            if (!active)
+            {
+                pill.Background = HoverBrush();
+            }
+        };
+        pill.MouseLeave += (_, _) =>
+        {
+            if (!active)
+            {
+                pill.Background = Brushes.Transparent;
+            }
+        };
+        pill.MouseLeftButtonUp += (_, _) => ActivateTab(tab);
+        ToolTipService.SetToolTip(pill, tab.Title);
+        return pill;
     }
 
-    private void OnFilesRefreshClicked(object sender, RoutedEventArgs e) => LoadFilesRoot(_filesRoot);
-
-    private void LoadFilesRoot(string path)
+    private void RebuildPopupLists()
     {
-        if (!Directory.Exists(path))
+        string? search = TabSearchBox.Text;
+        OpenTabsHost.Children.Clear();
+        ClosedTabsHost.Children.Clear();
+
+        int openCount = 0;
+        foreach (SidebarTab tab in _tabs)
         {
-            return;
+            if (!SidebarTabModel.MatchesSearch(tab.Title, search))
+            {
+                continue;
+            }
+
+            OpenTabsHost.Children.Add(CreateOpenTabRow(tab));
+            openCount++;
         }
 
-        _filesRoot = path;
-        FilesPathBox.Text = path;
-        var root = new SidebarFileNode(path, isDirectory: true);
-        root.LoadChildren();
-        FilesTree.ItemsSource = new[] { root };
+        int closedCount = 0;
+        foreach (ClosedTab entry in _closed)
+        {
+            if (!SidebarTabModel.MatchesSearch(entry.Title, search))
+            {
+                continue;
+            }
+
+            ClosedTabsHost.Children.Add(CreateClosedRow(entry));
+            closedCount++;
+        }
+
+        OpenTabsHeader.Visibility = openCount > 0 ? Visibility.Visible : Visibility.Collapsed;
+        ClosedTabsHeader.Visibility = closedCount > 0 ? Visibility.Visible : Visibility.Collapsed;
+        NoMatchHint.Visibility = openCount == 0 && closedCount == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private void OnFileNodeExpanded(object sender, RoutedEventArgs e)
+    private Border CreateOpenTabRow(SidebarTab tab)
     {
-        if (e.OriginalSource is TreeViewItem { DataContext: SidebarFileNode node })
+        var close = new TextBlock
         {
-            node.LoadChildren();
-        }
+            Text = "\uE8BB",
+            FontFamily = GlyphFont,
+            FontSize = 11,
+            Opacity = 0.75,
+            VerticalAlignment = VerticalAlignment.Center,
+            ToolTip = "关闭",
+        };
+        close.MouseLeftButtonUp += (_, e) =>
+        {
+            e.Handled = true;
+            CloseTab(tab);
+        };
+
+        var row = CreateRow(tab.Glyph, tab.Title, "刚刚", close);
+        row.MouseLeftButtonUp += (_, e) =>
+        {
+            e.Handled = true;
+            TabsMenuPopup.IsOpen = false;
+            ActivateTab(tab);
+        };
+        return row;
     }
 
-    private void OnFileNodeDoubleClicked(object sender, MouseButtonEventArgs e)
+    private Border CreateClosedRow(ClosedTab entry)
     {
-        if (ItemsControl.ContainerFromElement(FilesTree, e.OriginalSource as DependencyObject)
-            is not TreeViewItem { DataContext: SidebarFileNode { IsDirectory: false } node })
+        var row = CreateRow(
+            entry.Glyph,
+            entry.Title,
+            SidebarTabModel.RelativeTime(entry.ClosedAt, DateTime.Now),
+            trailing: null);
+        row.MouseLeftButtonUp += (_, e) =>
         {
-            return;
+            e.Handled = true;
+            RestoreClosed(entry);
+        };
+        return row;
+    }
+
+    private Border CreateRow(string glyph, string title, string timeText, TextBlock? trailing)
+    {
+        var row = new Border
+        {
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(8, 6, 8, 6),
+            Background = Brushes.Transparent,
+            Cursor = Cursors.Hand,
+        };
+
+        var layout = new DockPanel { LastChildFill = true };
+        var time = new TextBlock
+        {
+            Text = timeText,
+            FontSize = 11,
+            Opacity = 0.7,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, trailing is null ? 0 : 8, 0),
+        };
+        DockPanel.SetDock(time, Dock.Right);
+        layout.Children.Add(time);
+        if (trailing is not null)
+        {
+            DockPanel.SetDock(trailing, Dock.Right);
+            layout.Children.Add(trailing);
         }
 
-        try
+        layout.Children.Add(new StackPanel
         {
-            Process.Start(new ProcessStartInfo(node.FullPath) { UseShellExecute = true });
-        }
-        catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception)
-        {
-            _ = MessageBox.Show(
-                Window.GetWindow(this),
-                $"无法打开文件：{error.Message}",
-                "CETUS · 文件",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
-        }
+            Orientation = Orientation.Horizontal,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = glyph,
+                    FontFamily = GlyphFont,
+                    FontSize = 13,
+                    VerticalAlignment = VerticalAlignment.Center,
+                },
+                new TextBlock
+                {
+                    Text = title,
+                    FontSize = 12,
+                    Margin = new Thickness(8, 0, 0, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    MaxWidth = 220,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                },
+            },
+        });
+
+        row.Child = layout;
+        row.MouseEnter += (_, _) => row.Background = HoverBrush();
+        row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
+        return row;
     }
+
+    private Brush HoverBrush() =>
+        (TryFindResource("CaptionHoverBrush") as Brush) ?? Brushes.Transparent;
 
     public void Dispose()
     {
@@ -436,17 +474,37 @@ public partial class RightSidebarView : UserControl, IDisposable
         }
 
         _disposed = true;
-        Loaded -= OnLoaded;
-        _terminal.OutputReceived -= OnTerminalOutputReceived;
-        _terminal.Exited -= OnTerminalExited;
-        _terminal.Dispose();
-        if (_browserInitialized && SidebarBrowser.CoreWebView2 is { } core)
+        NewTabMenuPopup.IsOpen = false;
+        TabsMenuPopup.IsOpen = false;
+        foreach (SidebarTab tab in _tabs)
         {
-            core.NavigationStarting -= OnBrowserNavigationStarting;
-            core.NavigationCompleted -= OnBrowserNavigationCompleted;
-            core.NewWindowRequested -= OnBrowserNewWindowRequested;
-            core.DownloadStarting -= OnBrowserDownloadStarting;
+            ReleaseTab(tab);
         }
-        SidebarBrowser.Dispose();
+
+        _tabs.Clear();
+        _activeTab = null;
+        _terminal.Dispose();
     }
+}
+
+/// <summary>View-layer tab entry pairing the model data with its live content.</summary>
+public sealed class SidebarTab
+{
+    public SidebarTab(SidebarTabKind kind, string title, string glyph, FrameworkElement content)
+    {
+        Kind = kind;
+        Title = title;
+        Glyph = glyph;
+        Content = content;
+    }
+
+    public SidebarTabKind Kind { get; }
+
+    public string Title { get; set; }
+
+    public string Glyph { get; }
+
+    public FrameworkElement Content { get; }
+
+    public DateTime OpenedAt { get; } = DateTime.Now;
 }

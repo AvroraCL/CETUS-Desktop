@@ -4,7 +4,7 @@ using System.Text;
 
 namespace Cetus.Sidebar;
 
-internal sealed class SidebarTerminalSession : IDisposable
+public sealed class SidebarTerminalSession : IDisposable
 {
     private readonly object _sync = new();
     private Process? _process;
