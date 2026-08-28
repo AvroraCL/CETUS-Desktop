@@ -28,7 +28,6 @@ $Width  = 1200
 $Height = 360
 
 $CardSize = 248
-$CardRadius = 52
 $CardX = 84
 $CardY = [int](($Height - $CardSize) / 2)
 $IconSize = 224
@@ -37,26 +36,42 @@ $IconY = $CardY + [int](($CardSize - $IconSize) / 2)
 $TitleX = $CardX + $CardSize + 56
 $TextRightEdge = $Width - 60
 
-function New-RoundedRectPath([double]$x, [double]$y, [double]$w, [double]$h, [double]$r) {
-    $path = [System.Drawing.Drawing2D.GraphicsPath]::new()
-    $d = $r * 2
-    $path.AddArc([float]$x, [float]$y, [float]$d, [float]$d, 180, 90)
-    $path.AddArc([float]($x + $w - $d), [float]$y, [float]$d, [float]$d, 270, 90)
-    $path.AddArc([float]($x + $w - $d), [float]($y + $h - $d), [float]$d, [float]$d, 0, 90)
-    $path.AddArc([float]$x, [float]($y + $h - $d), [float]$d, [float]$d, 90, 90)
-    $path.CloseFigure()
-    return $path
+function Convert-IconColor {
+    <#
+    .SYNOPSIS
+        Recolor an alpha-preserving icon to a single hue (white or black).
+        The source icon is a dark line-art on transparency; the window title
+        bars use white/black glyphs, so each banner draws the matching one.
+    #>
+    param(
+        [string]$Source,
+        [bool]$White
+    )
+    $sourceBitmap = [System.Drawing.Bitmap]::new($Source)
+    try {
+        $out = [System.Drawing.Bitmap]::new($sourceBitmap.Width, $sourceBitmap.Height, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+        $color = if ($White) { [System.Drawing.Color]::FromArgb(255, 255, 255) } else { [System.Drawing.Color]::FromArgb(0, 0, 0) }
+        for ($y = 0; $y -lt $sourceBitmap.Height; $y++) {
+            for ($x = 0; $x -lt $sourceBitmap.Width; $x++) {
+                $pixel = $sourceBitmap.GetPixel($x, $y)
+                $out.SetPixel($x, $y, [System.Drawing.Color]::FromArgb($pixel.A, $color))
+            }
+        }
+        return $out
+    }
+    finally {
+        $sourceBitmap.Dispose()
+    }
 }
 
 function Render-Banner {
-    param(
-        [string]$Background,
-        [string]$CardColor,
-        [string]$CardBorder,
-        [string]$TitleColor,
-        [string]$TaglineColor,
-        [string]$Output
-    )
+        param(
+            [string]$Background,
+            [bool]$WhiteIcon,
+            [string]$TitleColor,
+            [string]$TaglineColor,
+            [string]$Output
+        )
 
     $bitmap = [System.Drawing.Bitmap]::new($Width, $Height)
     $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
@@ -65,17 +80,8 @@ function Render-Banner {
         $graphics.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::AntiAliasGridFit
         $graphics.Clear([System.Drawing.ColorTranslator]::FromHtml($Background))
 
-        # Icon card
-        $cardPath = New-RoundedRectPath $CardX $CardY $CardSize $CardSize $CardRadius
-        $cardBrush = [System.Drawing.SolidBrush]::new([System.Drawing.ColorTranslator]::FromHtml($CardColor))
-        $graphics.FillPath($cardBrush, $cardPath)
-        if ($CardBorder) {
-            $borderPen = [System.Drawing.Pen]::new([System.Drawing.ColorTranslator]::FromHtml($CardBorder), 1.5)
-            $graphics.DrawPath($borderPen, $cardPath)
-            $borderPen.Dispose()
-        }
-
-        $iconImage = [System.Drawing.Image]::FromFile($icon)
+        # App icon (recolored to contrast the banner background)
+        $iconImage = Convert-IconColor -Source $icon -White $WhiteIcon
         try {
             $graphics.DrawImage($iconImage, $IconX, $IconY, $IconSize, $IconSize)
         }
@@ -113,7 +119,6 @@ function Render-Banner {
 
         $titleFont.Dispose(); $taglineFont.Dispose()
         $titleBrush.Dispose(); $taglineBrush.Dispose()
-        $cardBrush.Dispose(); $cardPath.Dispose()
     }
     finally {
         $graphics.Dispose()
@@ -122,8 +127,8 @@ function Render-Banner {
 }
 
 Write-Host "==> rendering README banners"
-Render-Banner -Background "#151517" -CardColor "#1F1F22" -CardBorder "#33FFFFFF" `
+Render-Banner -Background "#151517" -WhiteIcon $true `
     -TitleColor "#F5F7FA" -TaglineColor "#AAB7CC" -Output $outDark
-Render-Banner -Background "#F5F7FA" -CardColor "#151517" -CardBorder "#14000000" `
+Render-Banner -Background "#F5F7FA" -WhiteIcon $false `
     -TitleColor "#172033" -TaglineColor "#667085" -Output $outLite
 Write-Host "DONE"
