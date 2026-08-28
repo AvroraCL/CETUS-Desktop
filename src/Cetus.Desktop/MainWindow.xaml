@@ -236,7 +236,15 @@
                        Cursor="SizeWE"
                        Focusable="False"
                        DragDelta="OnRightSidebarResizeDelta"
-                       DragCompleted="OnRightSidebarResizeCompleted" />
+                       DragCompleted="OnRightSidebarResizeCompleted">
+                    <Thumb.Template>
+                        <!-- Explicit empty template: the default Thumb chrome
+                             would render a light band over the divider. -->
+                        <ControlTemplate TargetType="Thumb">
+                            <Grid Background="Transparent" />
+                        </ControlTemplate>
+                    </Thumb.Template>
+                </Thumb>
             </Grid>
         </Border>
     </Grid>
