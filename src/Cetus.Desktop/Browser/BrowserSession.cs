@@ -156,6 +156,198 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
             updateRightSidebarButton();
           };
 
+          // ── CETUS settings group, injected under DSH 通用设置 ──
+          const settingsGroupId = 'cetus-settings-group';
+          let cetusSettingsState = {};
+          const shellLabels = { pwsh: 'PowerShell 7', powershell: 'PowerShell 5.1', cmd: 'cmd' };
+          const shellOrder = ['pwsh', 'powershell', 'cmd'];
+
+          const postCetus = (message) => {
+            if (!window.chrome || !window.chrome.webview) return;
+            window.chrome.webview.postMessage({ source, ...message });
+          };
+
+          const findCetusSettingsDialog = () =>
+            document.querySelector('div[role="dialog"][aria-modal="true"]');
+
+          const installCetusSettingsStyle = () => {
+            if (document.getElementById('cetus-settings-style')) return;
+            const style = document.createElement('style');
+            style.id = 'cetus-settings-style';
+            style.textContent = `
+              #cetus-settings-group { min-width: 0; }
+              #cetus-settings-group .cetus-caption {
+                font-size: 12px; color: var(--dsw-alias-label-tertiary);
+                padding: 20px 0 2px; letter-spacing: 0.02em; }
+              #cetus-settings-group .cetus-row {
+                display: flex; align-items: center; gap: 8px; padding: 16px 0;
+                border-bottom: 1px solid var(--dsw-alias-border-l2); }
+              #cetus-settings-group .cetus-row:has(.cetus-switch) { cursor: pointer; }
+              #cetus-settings-group .cetus-row:last-child { border-bottom: none; }
+              #cetus-settings-group .cetus-rowText {
+                flex: 1; display: flex; flex-direction: column; gap: 4px;
+                padding-right: 48px; min-width: 0; }
+              #cetus-settings-group .cetus-title {
+                font-size: 14px; color: var(--dsw-alias-label-primary); }
+              #cetus-settings-group .cetus-desc {
+                font-size: 12px; color: var(--dsw-alias-label-tertiary); }
+              #cetus-settings-group .cetus-switch {
+                position: relative; flex: 0 0 auto; width: 40px; height: 20px;
+                border-radius: 10px; border: 1px solid var(--dsw-alias-border-l3);
+                padding: 0; cursor: pointer;
+                background: var(--dsw-alias-bg-module-platform);
+                transition: background 0.2s var(--ds-ease-in-out, ease); }
+              #cetus-settings-group .cetus-switch[aria-checked="true"] {
+                background: var(--dsw-alias-state-business-primary);
+                border-color: transparent; }
+              #cetus-settings-group .cetus-switch::after {
+                content: ''; position: absolute; top: 2px; left: 2px;
+                width: 14px; height: 14px; border-radius: 50%; background: #fff;
+                box-shadow: 0 1px 2px #0003;
+                transition: transform 0.2s var(--ds-ease-in-out, ease); }
+              #cetus-settings-group .cetus-switch[aria-checked="true"]::after {
+                transform: translateX(20px); }
+              #cetus-settings-group .cetus-pill {
+                flex: 0 0 auto; height: 36px; border: none; border-radius: 18px;
+                padding: 0 14px; font-size: 14px; display: inline-flex;
+                align-items: center; gap: 12px;
+                color: var(--dsw-alias-label-primary);
+                background: var(--dsw-alias-bg-module-platform); cursor: pointer; }
+              #cetus-settings-group .cetus-pill:hover {
+                background: var(--dsw-alias-interactive-bg-hover); }
+              @media (prefers-reduced-motion: reduce) {
+                #cetus-settings-group .cetus-switch,
+                #cetus-settings-group .cetus-switch::after { transition: none; } }
+            `;
+            document.head.appendChild(style);
+          };
+
+          const cetusRow = (title, desc, control) => {
+            const row = document.createElement('div');
+            row.className = 'cetus-row';
+            const text = document.createElement('div');
+            text.className = 'cetus-rowText';
+            const titleElement = document.createElement('div');
+            titleElement.className = 'cetus-title';
+            titleElement.textContent = title;
+            text.appendChild(titleElement);
+            if (desc) {
+              const descElement = document.createElement('div');
+              descElement.className = 'cetus-desc';
+              descElement.textContent = desc;
+              text.appendChild(descElement);
+            }
+            row.appendChild(text);
+            row.appendChild(control);
+            return row;
+          };
+
+          const cetusSwitch = (key, title) => {
+            const sw = document.createElement('button');
+            sw.type = 'button';
+            sw.className = 'cetus-switch';
+            sw.setAttribute('role', 'switch');
+            sw.setAttribute('aria-label', title);
+            sw.dataset.key = key;
+            return sw;
+          };
+
+          const bindSwitchRow = (row, sw) => {
+            const apply = () => {
+              const next = sw.getAttribute('aria-checked') !== 'true';
+              sw.setAttribute('aria-checked', String(next));
+              cetusSettingsState[sw.dataset.key] = next;
+              postCetus({
+                type: 'cetus-setting-changed',
+                key: sw.dataset.key,
+                value: String(next)
+              });
+            };
+            sw.addEventListener('click', apply);
+            row.addEventListener('click', (event) => {
+              if (event.target !== sw) apply();
+            });
+          };
+
+          const cetusPill = (id) => {
+            const pill = document.createElement('button');
+            pill.type = 'button';
+            pill.className = 'cetus-pill';
+            if (id) pill.id = id;
+            return pill;
+          };
+
+          const syncCetusSettings = () => {
+            const group = document.getElementById(settingsGroupId);
+            if (!group) return;
+            group.querySelectorAll('.cetus-switch').forEach((sw) => {
+              const key = sw.dataset.key;
+              sw.setAttribute('aria-checked', String(cetusSettingsState[key] === true || cetusSettingsState[key] === 'true'));
+            });
+            const shellPill = document.getElementById('cetus-setting-shell');
+            if (shellPill) shellPill.textContent = shellLabels[cetusSettingsState.defaultTerminalShell] || 'PowerShell 7';
+            const portPill = document.getElementById('cetus-setting-port');
+            if (portPill) portPill.textContent = String(cetusSettingsState.dshPort || '');
+          };
+
+          const installCetusSettings = () => {
+            const dialog = findCetusSettingsDialog();
+            if (!dialog) return;
+            // The general section is showing exactly when its row wrappers
+            // exist; each row gets its own wrapper, so inject after the last
+            // one (into the section element itself).
+            const container = dialog.querySelector('[data-slot="settings.general.item"]');
+            if (!container) return;
+            const section = container.parentElement;
+            if (!section || section.querySelector('#' + settingsGroupId)) return;
+            installCetusSettingsStyle();
+
+            const group = document.createElement('div');
+            group.id = settingsGroupId;
+
+            const caption = document.createElement('div');
+            caption.className = 'cetus-caption';
+            caption.textContent = 'CETUS设置';
+            group.appendChild(caption);
+
+            const checkRow = cetusRow(
+              '启动时检查更新', '启动 CETUS 时自动检测新版本',
+              cetusSwitch('checkUpdatesOnStartup', '启动时检查更新'));
+            bindSwitchRow(checkRow, checkRow.querySelector('.cetus-switch'));
+            group.appendChild(checkRow);
+
+            const checkPill = cetusPill(null);
+            checkPill.textContent = '检查更新…';
+            checkPill.addEventListener('click', () => postCetus({ type: 'cetus-check-updates' }));
+            group.appendChild(cetusRow('检查更新', '手动检测 CETUS 新版本', checkPill));
+
+            const trayRow = cetusRow(
+              '关闭按钮', '开启时点关闭按钮最小化到托盘，关闭则直接退出',
+              cetusSwitch('closeToTray', '关闭按钮'));
+            bindSwitchRow(trayRow, trayRow.querySelector('.cetus-switch'));
+            group.appendChild(trayRow);
+
+            const shellPill = cetusPill('cetus-setting-shell');
+            shellPill.addEventListener('click', () => {
+              const current = shellOrder.indexOf(cetusSettingsState.defaultTerminalShell);
+              const next = shellOrder[(current + 1 + shellOrder.length) % shellOrder.length];
+              cetusSettingsState.defaultTerminalShell = next;
+              shellPill.textContent = shellLabels[next];
+              postCetus({ type: 'cetus-setting-changed', key: 'defaultTerminalShell', value: next });
+            });
+            group.appendChild(cetusRow(
+              '终端默认 Shell', '侧栏终端使用的命令行，缺失时自动回退；点击切换',
+              shellPill));
+
+            const portPill = cetusPill('cetus-setting-port');
+            portPill.addEventListener('click', () => postCetus({ type: 'cetus-open-port-settings' }));
+            group.appendChild(cetusRow('DSH 端口', 'DSH 服务监听端口，修改后重启生效', portPill));
+
+            section.appendChild(group);
+            syncCetusSettings();
+            postCetus({ type: 'cetus-settings-request' });
+          };
+
           const install = () => {
             const root = document.documentElement;
             if (!root) return;
@@ -163,7 +355,7 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
             themeObserver.observe(root, { attributes: true, attributeFilter: ['class', 'data-theme', 'style'] });
             if (document.body) {
               themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class', 'data-theme', 'style'] });
-              const layoutObserver = new MutationObserver(installTopBar);
+              const layoutObserver = new MutationObserver(() => { installTopBar(); installCetusSettings(); });
               layoutObserver.observe(document.body, { childList: true, subtree: true });
               const modalObserver = new MutationObserver(reportModal);
               modalObserver.observe(document.body, { childList: true, subtree: true });
@@ -174,9 +366,14 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
                 rightSidebarOpen = Boolean(message.open);
                 updateRightSidebarButton();
               }
+              if (message && message.source === source && message.type === 'cetus-settings-state') {
+                cetusSettingsState = message.values || {};
+                syncCetusSettings();
+              }
             });
             window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', report);
             installTopBar();
+            installCetusSettings();
             report();
             reportModal();
           };
@@ -192,6 +389,10 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
     private readonly Action<bool> _themeChanged;
     private readonly Action _rightSidebarToggleRequested;
     private readonly Action<bool> _dshModalChanged;
+    private readonly Func<IReadOnlyDictionary<string, string>>? _cetusSettingsProvider;
+    private readonly Action<string, string>? _cetusSettingChanged;
+    private readonly Action? _openPortSettings;
+    private readonly Action? _checkForUpdates;
     private LoopbackNavigationPolicy? _navigationPolicy;
     private bool _rightSidebarOpen = true;
     private bool _initialized;
@@ -201,12 +402,20 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
         WebView2 view,
         Action<bool> themeChanged,
         Action rightSidebarToggleRequested,
-        Action<bool> dshModalChanged)
+        Action<bool> dshModalChanged,
+        Func<IReadOnlyDictionary<string, string>>? cetusSettingsProvider = null,
+        Action<string, string>? cetusSettingChanged = null,
+        Action? openPortSettings = null,
+        Action? checkForUpdates = null)
     {
         _view = view;
         _themeChanged = themeChanged;
         _rightSidebarToggleRequested = rightSidebarToggleRequested;
         _dshModalChanged = dshModalChanged;
+        _cetusSettingsProvider = cetusSettingsProvider;
+        _cetusSettingChanged = cetusSettingChanged;
+        _openPortSettings = openPortSettings;
+        _checkForUpdates = checkForUpdates;
     }
 
     public async Task NavigateAsync(Uri trustedOrigin, CancellationToken cancellationToken)
@@ -332,6 +541,7 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
         if (e.IsSuccess)
         {
             PostRightSidebarState();
+            PostCetusSettingsState();
         }
     }
 
@@ -359,6 +569,30 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
                 {
                     _dshModalChanged(open.GetBoolean());
                 }
+                else if (type.GetString() == "cetus-settings-request")
+                {
+                    PostCetusSettingsState();
+                }
+                else if (type.GetString() == "cetus-setting-changed"
+                    && root.TryGetProperty("key", out JsonElement key)
+                    && root.TryGetProperty("value", out JsonElement value))
+                {
+                    if (_cetusSettingChanged is not null)
+                    {
+                        string settingKey = key.GetString() ?? string.Empty;
+                        // The bridge always posts values as strings.
+                        _cetusSettingChanged(settingKey, value.ToString());
+                        PostCetusSettingsState();
+                    }
+                }
+                else if (type.GetString() == "cetus-open-port-settings")
+                {
+                    _openPortSettings?.Invoke();
+                }
+                else if (type.GetString() == "cetus-check-updates")
+                {
+                    _checkForUpdates?.Invoke();
+                }
             }
         }
         catch (JsonException)
@@ -379,6 +613,24 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
             source = WindowBridgeSource,
             type = "right-sidebar-state",
             open = _rightSidebarOpen,
+        }));
+    }
+
+    /// <summary>Pushes the current CETUS settings into the injected settings group.</summary>
+    public void PostCetusSettingsState()
+    {
+        if (!_initialized || _disposed || _view.CoreWebView2 is not { } core)
+        {
+            return;
+        }
+
+        IReadOnlyDictionary<string, string> values = _cetusSettingsProvider?.Invoke()
+            ?? new Dictionary<string, string>();
+        core.PostWebMessageAsJson(JsonSerializer.Serialize(new
+        {
+            source = WindowBridgeSource,
+            type = "cetus-settings-state",
+            values,
         }));
     }
 

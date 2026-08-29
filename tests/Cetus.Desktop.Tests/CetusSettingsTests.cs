@@ -88,6 +88,50 @@ public sealed class CetusSettingsTests
         Assert.Throws<ArgumentException>(() => reloaded.SetUpdateSource("example"));
     }
 
+    [Fact]
+    public void CloseToTray_PersistsAcrossLoads()
+    {
+        using var directory = new TemporaryDirectory();
+        string settingsPath = Path.Combine(directory.Path, "settings.json");
+        var settings = new CetusSettings(settingsPath);
+
+        Assert.True(settings.CloseToTray);
+        settings.SetCloseToTray(false);
+
+        var reloaded = new CetusSettings(settingsPath);
+        Assert.False(reloaded.CloseToTray);
+    }
+
+    [Fact]
+    public void DefaultTerminalShell_PersistsAndRejectsUnknownValues()
+    {
+        using var directory = new TemporaryDirectory();
+        string settingsPath = Path.Combine(directory.Path, "settings.json");
+        var settings = new CetusSettings(settingsPath);
+
+        Assert.Equal("pwsh", settings.DefaultTerminalShell);
+        settings.SetDefaultTerminalShell("cmd");
+
+        var reloaded = new CetusSettings(settingsPath);
+        Assert.Equal("cmd", reloaded.DefaultTerminalShell);
+        Assert.Throws<ArgumentException>(() => reloaded.SetDefaultTerminalShell("fish"));
+    }
+
+    [Fact]
+    public void Load_IgnoreInvalidCloseToTrayAndShell()
+    {
+        using var directory = new TemporaryDirectory();
+        string settingsPath = Path.Combine(directory.Path, "settings.json");
+        File.WriteAllText(
+            settingsPath,
+            """{ "CloseToTray": null, "DefaultTerminalShell": "zsh" }""");
+
+        var settings = new CetusSettings(settingsPath);
+
+        Assert.True(settings.CloseToTray);
+        Assert.Equal("pwsh", settings.DefaultTerminalShell);
+    }
+
     [Theory]
     [InlineData(100, 300)]
     [InlineData(300, 300)]

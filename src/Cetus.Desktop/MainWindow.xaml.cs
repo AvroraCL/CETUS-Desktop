@@ -82,12 +82,23 @@ public partial class MainWindow : Window
             Browser,
             ApplyWindowTheme,
             OnRightSidebarToggleRequested,
-            OnDshModalStateChanged);
+            OnDshModalStateChanged,
+            () => new Dictionary<string, string>
+            {
+                ["checkUpdatesOnStartup"] = _settings.CheckUpdatesOnStartup ? "true" : "false",
+                ["closeToTray"] = _settings.CloseToTray ? "true" : "false",
+                ["defaultTerminalShell"] = _settings.DefaultTerminalShell,
+                ["dshPort"] = _settings.EffectivePort.ToString(),
+            },
+            OnCetusSettingChanged,
+            () => _ = ConfigurePortAsync(),
+            () => _ = CheckForUpdatesFromSettingsAsync());
         _browserSession.SetRightSidebarOpen(_rightSidebarOpen);
         _runtime = new DesktopRuntime(_settings, _browserSession, Dispatcher);
         _runtime.StateChanged += OnRuntimeStateChanged;
         RightSidebarContent.SetDshEndpointProvider(() => _runtime.Endpoint);
         RightSidebarContent.ChatInserter = text => _browserSession.TryInsertIntoChatAsync(text);
+        RightSidebarContent.TerminalShellProvider = () => _settings.DefaultTerminalShell;
 
         if (DevModeFlag.IsActive)
         {
@@ -309,7 +320,6 @@ public partial class MainWindow : Window
         RightSidebarColumn.BeginAnimation(ColumnDefinition.WidthProperty, null);
         RightSidebarColumn.MinWidth = 0;
         RightSidebarColumn.Width = new GridLength(currentWidth, GridUnitType.Pixel);
-        RightSidebarResizeThumb.IsEnabled = false;
 
         bool shouldAnimate = animate
             && SystemParameters.ClientAreaAnimation
@@ -458,6 +468,8 @@ public partial class MainWindow : Window
             return;
         }
 
+        _browserSession.PostCetusSettingsState();
+
         if (result.IsEnvironmentOverridden)
         {
             _ = MessageBox.Show(
@@ -470,6 +482,41 @@ public partial class MainWindow : Window
         }
 
         ShowRuntimeError(result.ReconnectResult, "Cetus · 重连失败");
+    }
+
+    private void OnCetusSettingChanged(string key, string value)
+    {
+        switch (key)
+        {
+            case "checkUpdatesOnStartup":
+                _settings.SetCheckUpdatesOnStartup(value == "true");
+                break;
+            case "closeToTray":
+                _settings.SetCloseToTray(value == "true");
+                break;
+            case "defaultTerminalShell":
+                try
+                {
+                    _settings.SetDefaultTerminalShell(value);
+                }
+                catch (ArgumentException)
+                {
+                    // Unknown shell from the page — keep the current value.
+                }
+
+                break;
+        }
+    }
+
+    private async Task CheckForUpdatesFromSettingsAsync()
+    {
+        if (_isExiting)
+        {
+            return;
+        }
+
+        _updates ??= new UpdateCoordinator(this, ExitApplication, _settings);
+        await _updates.CheckForUpdatesAsync(interactive: true);
     }
 
     private void ShowRuntimeError(DesktopRuntimeResult result, string title)
@@ -546,8 +593,15 @@ public partial class MainWindow : Window
         if (!_isExiting)
         {
             e.Cancel = true;
-            Hide();
-            ShowInTaskbar = false;
+            if (_settings.CloseToTray)
+            {
+                Hide();
+                ShowInTaskbar = false;
+            }
+            else
+            {
+                ExitApplication();
+            }
         }
         base.OnClosing(e);
     }

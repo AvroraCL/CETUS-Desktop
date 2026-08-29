@@ -37,6 +37,9 @@ public partial class RightSidebarView : UserControl, IDisposable
     /// </summary>
     public Func<string, Task<bool>>? ChatInserter { get; set; }
 
+    /// <summary>Provides the configured default terminal shell key.</summary>
+    public Func<string>? TerminalShellProvider { get; set; }
+
     public RightSidebarView()
     {
         InitializeComponent();
@@ -169,7 +172,10 @@ public partial class RightSidebarView : UserControl, IDisposable
                 title = SidebarTabModel.TitleOf(kind);
                 break;
             case SidebarTabKind.Terminal:
-                var terminal = new TerminalTabContent();
+                var terminal = new TerminalTabContent
+                {
+                    ShellProvider = TerminalShellProvider,
+                };
                 terminal.ApplyTheme(_isDark);
                 content = terminal;
                 title = SidebarTabModel.TitleOf(kind);

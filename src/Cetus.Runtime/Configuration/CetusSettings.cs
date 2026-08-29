@@ -16,12 +16,19 @@ public sealed class CetusSettings
     public const int MaximumRightSidebarWidth = 1600;
     public const bool DefaultCheckUpdatesOnStartup = true;
     public const string DefaultUpdateSource = "github";
+    public const bool DefaultCloseToTray = true;
+    public const string DefaultTerminalShellKey = "pwsh";
+
+    /// <summary>Allowed terminal shells, in fallback order.</summary>
+    public static readonly IReadOnlyList<string> TerminalShells = new[] { "pwsh", "powershell", "cmd" };
 
     private readonly string _settingsPath;
     private int _configuredPort;
     private int _rightSidebarWidth;
     private bool _checkUpdatesOnStartup;
     private string _updateSource = DefaultUpdateSource;
+    private bool _closeToTray = DefaultCloseToTray;
+    private string _defaultTerminalShell = DefaultTerminalShellKey;
 
     public CetusSettings(string settingsPath)
     {
@@ -31,6 +38,8 @@ public sealed class CetusSettings
         _rightSidebarWidth = snapshot.RightSidebarWidth;
         _checkUpdatesOnStartup = snapshot.CheckUpdatesOnStartup;
         _updateSource = snapshot.UpdateSource;
+        _closeToTray = snapshot.CloseToTray;
+        _defaultTerminalShell = snapshot.DefaultTerminalShell;
     }
 
     public int ConfiguredPort => _configuredPort;
@@ -53,6 +62,12 @@ public sealed class CetusSettings
 
     /// <summary>Last update source that answered ("github" or "gitcode").</summary>
     public string UpdateSource => _updateSource;
+
+    /// <summary>Whether the window close button minimizes to the tray (true) or exits (false).</summary>
+    public bool CloseToTray => _closeToTray;
+
+    /// <summary>Preferred sidebar terminal shell ("pwsh", "powershell" or "cmd").</summary>
+    public string DefaultTerminalShell => _defaultTerminalShell;
 
     public void SetUpdateSource(string source)
     {
@@ -110,6 +125,28 @@ public sealed class CetusSettings
         Persist();
     }
 
+    public void SetCloseToTray(bool enabled)
+    {
+        _closeToTray = enabled;
+        Persist();
+    }
+
+    public void SetDefaultTerminalShell(string shell)
+    {
+        if (!TerminalShells.Contains(shell, StringComparer.Ordinal))
+        {
+            throw new ArgumentException("终端 Shell 只能是 pwsh、powershell 或 cmd。", nameof(shell));
+        }
+
+        if (_defaultTerminalShell == shell)
+        {
+            return;
+        }
+
+        _defaultTerminalShell = shell;
+        Persist();
+    }
+
     public static bool TryParsePort(string? value, out int port) =>
         int.TryParse(value, out port) && port is > 0 and <= 65535;
 
@@ -139,7 +176,9 @@ public sealed class CetusSettings
                 file.CheckUpdatesOnStartup ?? DefaultCheckUpdatesOnStartup,
                 file.UpdateSource is { } source && (source == "github" || source == "gitcode")
                     ? source
-                    : DefaultUpdateSource);
+                    : DefaultUpdateSource,
+                file.CloseToTray ?? DefaultCloseToTray,
+                NormalizeTerminalShell(file.DefaultTerminalShell));
         }
         catch (IOException)
         {
@@ -164,6 +203,11 @@ public sealed class CetusSettings
             MaximumRightSidebarWidth);
     }
 
+    private static string NormalizeTerminalShell(string? shell) =>
+        shell is not null && TerminalShells.Contains(shell, StringComparer.Ordinal)
+            ? shell
+            : DefaultTerminalShellKey;
+
     private void Persist()
     {
         string? directory = Path.GetDirectoryName(_settingsPath);
@@ -180,6 +224,8 @@ public sealed class CetusSettings
             RightSidebarWidth = _rightSidebarWidth,
             CheckUpdatesOnStartup = _checkUpdatesOnStartup,
             UpdateSource = _updateSource,
+            CloseToTray = _closeToTray,
+            DefaultTerminalShell = _defaultTerminalShell,
         },
             new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(temporaryPath, json);
@@ -192,18 +238,24 @@ public sealed class CetusSettings
         public int? RightSidebarWidth { get; set; }
         public bool? CheckUpdatesOnStartup { get; set; }
         public string? UpdateSource { get; set; }
+        public bool? CloseToTray { get; set; }
+        public string? DefaultTerminalShell { get; set; }
     }
 
     private sealed record SettingsSnapshot(
         int Port,
         int RightSidebarWidth,
         bool CheckUpdatesOnStartup,
-        string UpdateSource)
+        string UpdateSource,
+        bool CloseToTray,
+        string DefaultTerminalShell)
     {
         public static SettingsSnapshot Default { get; } = new(
             DefaultPort,
             DefaultRightSidebarWidth,
             DefaultCheckUpdatesOnStartup,
-            DefaultUpdateSource);
+            DefaultUpdateSource,
+            DefaultCloseToTray,
+            DefaultTerminalShellKey);
     }
 }

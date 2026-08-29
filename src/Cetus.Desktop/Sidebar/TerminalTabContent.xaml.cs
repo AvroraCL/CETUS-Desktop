@@ -89,6 +89,9 @@ public partial class TerminalTabContent : UserControl, IDisposable
         }
     }
 
+    /// <summary>Provides the configured default shell key ("pwsh"/"powershell"/"cmd").</summary>
+    public Func<string>? ShellProvider { get; set; }
+
     private void StartSession(short columns, short rows)
     {
         _session?.Dispose();
@@ -96,7 +99,7 @@ public partial class TerminalTabContent : UserControl, IDisposable
         // Launch the shell bare (no -NoProfile/-NoLogo): user profiles, custom
         // prompts and the version banner make the tab feel like a real terminal.
         _session = ConPtySession.Start(
-            ResolveShellCommandLine(),
+            ResolveShellCommandLine(ShellProvider?.Invoke() ?? CetusSettings.DefaultTerminalShellKey),
             columns,
             rows,
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
@@ -104,35 +107,64 @@ public partial class TerminalTabContent : UserControl, IDisposable
         _session.Exited += OnPtyExited;
     }
 
-    /// <summary>Prefers PowerShell 7 (pwsh); falls back to Windows PowerShell.</summary>
-    internal static string ResolveShellCommandLine()
+    /// <summary>
+    /// Prefers the configured shell, then falls back along
+    /// pwsh → PowerShell → cmd so a missing install never blocks the tab.
+    /// </summary>
+    internal static string ResolveShellCommandLine(string preferred)
     {
         string programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-        string[] candidates =
+        string systemRoot = Environment.GetFolderPath(Environment.SpecialFolder.System);
+        string windowsPowerShell = Path.Combine(
+            systemRoot, "WindowsPowerShell", "v1.0", "powershell.exe");
+        string cmd = Path.Combine(systemRoot, "cmd.exe");
+
+        string? Resolve(string shell)
         {
-            Path.Combine(programFiles, "PowerShell", "7", "pwsh.exe"),
-            Path.Combine(programFiles, "PowerShell", "7-preview", "pwsh.exe"),
-        };
-        foreach (string candidate in candidates)
-        {
-            if (File.Exists(candidate))
+            switch (shell)
             {
-                return QuotePath(candidate);
+                case "pwsh":
+                    string[] pwshCandidates =
+                    {
+                        Path.Combine(programFiles, "PowerShell", "7", "pwsh.exe"),
+                        Path.Combine(programFiles, "PowerShell", "7-preview", "pwsh.exe"),
+                    };
+                    string? installed = pwshCandidates.FirstOrDefault(File.Exists);
+                    if (installed is not null)
+                    {
+                        return QuotePath(installed);
+                    }
+
+                    string? fromPath = FindOnPath("pwsh.exe");
+                    return fromPath is null ? null : QuotePath(fromPath);
+                case "powershell":
+                    return File.Exists(windowsPowerShell) ? QuotePath(windowsPowerShell) : null;
+                case "cmd":
+                    return File.Exists(cmd) ? QuotePath(cmd) : null;
+                default:
+                    return null;
             }
         }
 
-        string? fromPath = FindOnPath("pwsh.exe");
-        if (fromPath is not null)
+        var order = new List<string> { preferred };
+        foreach (string shell in CetusSettings.TerminalShells)
         {
-            return QuotePath(fromPath);
+            if (!order.Contains(shell, StringComparer.Ordinal))
+            {
+                order.Add(shell);
+            }
         }
 
-        string windowsPowerShell = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.System),
-            "WindowsPowerShell",
-            "v1.0",
-            "powershell.exe");
-        return File.Exists(windowsPowerShell) ? QuotePath(windowsPowerShell) : "powershell.exe";
+        foreach (string shell in order)
+        {
+            string? resolved = Resolve(shell);
+            if (resolved is not null)
+            {
+                return resolved;
+            }
+        }
+
+        return "powershell.exe";
     }
 
     private static string? FindOnPath(string fileName)

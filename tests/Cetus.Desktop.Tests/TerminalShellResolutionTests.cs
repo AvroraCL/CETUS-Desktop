@@ -9,7 +9,7 @@ public sealed class TerminalShellResolutionTests
     [Fact]
     public void Resolver_PrefersPowerShell7AndQuotesSpaces()
     {
-        string command = TerminalTabContent.ResolveShellCommandLine();
+        string command = TerminalTabContent.ResolveShellCommandLine("pwsh");
 
         Assert.False(string.IsNullOrWhiteSpace(command));
         Assert.Contains("pwsh.exe", command, StringComparison.OrdinalIgnoreCase);
@@ -21,9 +21,29 @@ public sealed class TerminalShellResolutionTests
     }
 
     [Fact]
+    public void Resolver_HonorsPreferredShellWhenAvailable()
+    {
+        string cmd = TerminalTabContent.ResolveShellCommandLine("cmd");
+        Assert.Contains("cmd.exe", cmd, StringComparison.OrdinalIgnoreCase);
+
+        string powershell = TerminalTabContent.ResolveShellCommandLine("powershell");
+        Assert.Contains("powershell.exe", powershell, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("pwsh", powershell, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Resolver_FallsBackWhenPreferredShellIsUnknown()
+    {
+        string command = TerminalTabContent.ResolveShellCommandLine("fish");
+
+        Assert.False(string.IsNullOrWhiteSpace(command));
+        Assert.DoesNotContain("fish", command, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task ResolvedShell_ShowsPwshVersionBanner()
     {
-        string command = TerminalTabContent.ResolveShellCommandLine();
+        string command = TerminalTabContent.ResolveShellCommandLine("pwsh");
         var output = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
         using var terminal = ConPtySession.Start(
