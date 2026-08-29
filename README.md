@@ -29,12 +29,12 @@ CETUS 把官方 Web UI、Agent 能力和插件生态装进一个开箱即用的 
 - 完整复用 DeepSeek Harness 的 Agent 能力与插件生态
 - 内置可调宽度的右侧工具栏：标签页式浏览网页（可选中网页元素一键加入聊天）、使用 ConPTY 与 xterm.js 运行完整 PowerShell 终端（优先 PowerShell 7 并加载用户配置，未安装时回退 Windows PowerShell）、查看本地文件；标签可拖拽排序，每个终端标签页拥有独立会话，并支持多开、下拉管理与最近关闭恢复
 
-### 下载 v0.2.0
+### 下载 v0.2.1
 
 | 文件 | 说明 |
 |---|---|
-| [Cetus-Setup-0.2.0.exe](https://github.com/AvroraCL/CETUS-Desktop/releases/download/v0.2.0/Cetus-Setup-0.2.0.exe) | 中文安装向导，按当前用户安装，无需管理员权限 |
-| [Cetus-0.2.0-win-x64-portable.zip](https://github.com/AvroraCL/CETUS-Desktop/releases/download/v0.2.0/Cetus-0.2.0-win-x64-portable.zip) | 便携版，解压后直接运行 |
+| [Cetus-Setup-0.2.1.exe](https://github.com/AvroraCL/CETUS-Desktop/releases/download/v0.2.1/Cetus-Setup-0.2.1.exe) | 中文安装向导，按当前用户安装，无需管理员权限 |
+| [Cetus-0.2.1-win-x64-portable.zip](https://github.com/AvroraCL/CETUS-Desktop/releases/download/v0.2.1/Cetus-0.2.1-win-x64-portable.zip) | 便携版，解压后直接运行 |
 
 历史版本与更新日志见 [Releases](https://github.com/AvroraCL/CETUS-Desktop/releases)。
 
