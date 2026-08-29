@@ -102,15 +102,17 @@ public partial class MainWindow : Window
     {
         base.OnSourceInitialized(e);
         // EnsureHandle() raises this before the HwndSource is registered, so
-        // attachment goes through the retrying helper below — still long
+        // attachment goes through the retrying helpers below — still long
         // before the first frame. The DWM blend only engages when the
         // transparent render target + blur accent exist before the window is
         // ever presented; attaching after Show() bakes an opaque surface
         // (solid title bar).
-        AttachWindowComposition();
+        Dispatcher.BeginInvoke(
+            TryAttachWindowComposition,
+            System.Windows.Threading.DispatcherPriority.Send);
     }
 
-    private void AttachWindowComposition()
+    private void TryAttachWindowComposition()
     {
         if (_windowComposition is not null || _isExiting)
         {
@@ -119,10 +121,8 @@ public partial class MainWindow : Window
 
         if (PresentationSource.FromVisual(this) is null)
         {
-            // The source registers a beat after EnsureHandle(); retry.
-            Dispatcher.BeginInvoke(
-                AttachWindowComposition,
-                System.Windows.Threading.DispatcherPriority.Background);
+            // The source registers a beat after EnsureHandle(); the callers
+            // re-queue this attempt.
             return;
         }
 
@@ -136,6 +136,25 @@ public partial class MainWindow : Window
                 }
             });
         _windowComposition.SetDarkMode(IsSystemDarkMode());
+    }
+
+    /// <summary>
+    /// Blocks (bounded) until composition is attached. Send priority runs
+    /// ahead of Normal-priority continuations, so a fast DSH connect can never
+    /// win the race against the attach retries before Show().
+    /// </summary>
+    private void EnsureWindowCompositionBeforeFirstFrame()
+    {
+        for (int attempts = 0; _windowComposition is null && attempts < 200 && !_isExiting; attempts++)
+        {
+            Dispatcher.Invoke(
+                TryAttachWindowComposition,
+                System.Windows.Threading.DispatcherPriority.Send);
+            if (_windowComposition is null)
+            {
+                Thread.Sleep(10);
+            }
+        }
     }
 
     /// <summary>
@@ -173,6 +192,10 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Deterministic guard: attach must exist before the first frame. When
+        // DSH is already running, StartAsync returns almost immediately and
+        // Show() (Normal priority) would otherwise beat a queued retry.
+        EnsureWindowCompositionBeforeFirstFrame();
         SplashDismissRequested?.Invoke(this, EventArgs.Empty);
         Show();
         ShowRuntimeError(result, "Cetus · 启动失败");
