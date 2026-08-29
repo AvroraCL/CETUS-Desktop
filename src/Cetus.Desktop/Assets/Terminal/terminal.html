@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="xterm.css">
+  <style>
+    html, body { margin: 0; height: 100%; background: #101011; overflow: hidden; }
+    #term { height: 100%; padding: 4px 0 0 6px; }
+  </style>
+  <script src="xterm.js"></script>
+  <script src="xterm-addon-fit.js"></script>
+</head>
+<body>
+  <div id="term"></div>
+  <script>
+    const term = new Terminal({
+      fontFamily: 'Cascadia Mono, Consolas, "Microsoft YaHei Mono", monospace',
+      fontSize: 12,
+      cursorBlink: true,
+      scrollback: 4000,
+      allowProposedApi: true,
+      theme: {
+        background: '#101011',
+        foreground: '#E5E7EB',
+        cursor: '#9CA3AF',
+        cursorAccent: '#101011',
+        selectionBackground: '#374151'
+      }
+    });
+    const fit = new FitAddon.FitAddon();
+    term.loadAddon(fit);
+    term.open(document.getElementById('term'));
+
+    const send = message => window.chrome.webview.postMessage(message);
+
+    term.onData(data => send({ type: 'pty-input', data }));
+
+    let ready = false;
+    const fitNow = () => {
+      try {
+        fit.fit();
+        send({
+          type: ready ? 'pty-resize' : 'pty-ready',
+          cols: term.cols,
+          rows: term.rows
+        });
+        ready = true;
+      } catch (_) { /* container not measured yet */ }
+    };
+    new ResizeObserver(fitNow).observe(document.getElementById('term'));
+    window.addEventListener('resize', fitNow);
+
+    window.chrome.webview.addEventListener('message', event => {
+      const message = event.data;
+      if (message && message.type === 'pty-output') {
+        term.write(message.data);
+      }
+    });
+
+    fitNow();
+    term.focus();
+  </script>
+</body>
+</html>

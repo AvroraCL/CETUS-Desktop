@@ -40,4 +40,9 @@
     <Resource Include="Assets\cetus-splash.png" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Terminal renderer assets served to the WebView2 via a virtual host. -->
+    <Content Include="Assets\Terminal\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

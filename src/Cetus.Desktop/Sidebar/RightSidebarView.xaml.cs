@@ -10,9 +10,9 @@ namespace Cetus.Sidebar;
 
 /// <summary>
 /// Edge-style tabbed side panel: a pill tab strip with new-tab and dropdown
-/// management, an empty-state picker and per-kind tab contents. Browser tabs
-/// each own a WebView2; terminal tabs share one PowerShell session; file tabs
-/// carry independent tree state.
+/// management, an empty-state picker and per-kind tab contents. Browser and
+/// terminal tabs each own an isolated live session; file tabs carry independent
+/// tree state.
 /// </summary>
 public partial class RightSidebarView : UserControl, IDisposable
 {
@@ -20,7 +20,6 @@ public partial class RightSidebarView : UserControl, IDisposable
 
     private readonly List<SidebarTab> _tabs = new();
     private readonly List<ClosedTab> _closed = new();
-    private readonly SidebarTerminalSession _terminal = new();
     private SidebarTab? _activeTab;
     private Func<Uri>? _dshEndpointProvider;
     private bool _isDark = true;
@@ -43,9 +42,14 @@ public partial class RightSidebarView : UserControl, IDisposable
         _isDark = isDark;
         foreach (SidebarTab tab in _tabs)
         {
-            if (tab.Content is BrowserTabContent browser)
+            switch (tab.Content)
             {
-                browser.ApplyTheme(isDark);
+                case BrowserTabContent browser:
+                    browser.ApplyTheme(isDark);
+                    break;
+                case TerminalTabContent terminal:
+                    terminal.ApplyTheme(isDark);
+                    break;
             }
         }
     }
@@ -164,7 +168,9 @@ public partial class RightSidebarView : UserControl, IDisposable
                 title = SidebarTabModel.TitleOf(kind);
                 break;
             case SidebarTabKind.Terminal:
-                content = new TerminalTabContent(_terminal);
+                var terminal = new TerminalTabContent();
+                terminal.ApplyTheme(_isDark);
+                content = terminal;
                 title = SidebarTabModel.TitleOf(kind);
                 break;
             case SidebarTabKind.Status:
@@ -261,7 +267,7 @@ public partial class RightSidebarView : UserControl, IDisposable
                 browser.Dispose();
                 break;
             case TerminalTabContent terminal:
-                terminal.Detach();
+                terminal.Dispose();
                 break;
             case StatusTabContent status:
                 status.Dispose();
@@ -516,7 +522,6 @@ public partial class RightSidebarView : UserControl, IDisposable
 
         _tabs.Clear();
         _activeTab = null;
-        _terminal.Dispose();
     }
 }
 
