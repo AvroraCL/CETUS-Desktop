@@ -5,6 +5,48 @@
              Background="Transparent"
              Foreground="{DynamicResource SidebarPanelForegroundBrush}">
     <UserControl.Resources>
+        <!-- DSH-style slim scrollbar for every panel tab (files, status,
+             popups): 8px invisible track, rounded translucent thumb. -->
+        <Style TargetType="ScrollBar">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Width" Value="8" />
+            <Setter Property="MinWidth" Value="8" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Grid Background="Transparent">
+                            <Track x:Name="PART_Track"
+                                   IsDirectionReversed="True">
+                                <Track.Thumb>
+                                    <Thumb Focusable="False">
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Border x:Name="ThumbBorder"
+                                                        CornerRadius="4"
+                                                        Background="#2EFFFFFF" />
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="ThumbBorder"
+                                                                Property="Background"
+                                                                Value="#55FFFFFF" />
+                                                    </Trigger>
+                                                    <Trigger Property="IsDragging" Value="True">
+                                                        <Setter TargetName="ThumbBorder"
+                                                                Property="Background"
+                                                                Value="#80FFFFFF" />
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="SidebarTabTypeCard" TargetType="Button">
             <Setter Property="Width" Value="148" />
             <Setter Property="Height" Value="88" />
@@ -45,7 +87,7 @@
 
         <Style x:Key="SidebarMenuRow" TargetType="Button">
             <Setter Property="Height" Value="36" />
-            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="Padding" Value="14,0" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="{DynamicResource SidebarPanelForegroundBrush}" />
@@ -159,13 +201,14 @@
                AllowsTransparency="True"
                PopupAnimation="Fade"
                Closed="OnNewTabMenuPopupClosed">
-            <Border Background="{DynamicResource SidebarPanelInputBrush}"
-                    BorderBrush="{DynamicResource SidebarBorderBrush}"
-                    BorderThickness="1"
-                    CornerRadius="8"
-                    Padding="4"
-                    Margin="0,4,8,0"
-                    MinWidth="150">
+                    <Border Background="{DynamicResource SidebarPanelInputBrush}"
+                            BorderBrush="{DynamicResource SidebarBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="6"
+                            Margin="0,4,8,0"
+                            MinWidth="170">
+
                 <StackPanel>
                     <Button Style="{StaticResource SidebarMenuRow}" Click="OnMenuBrowserClicked">
                         <StackPanel Orientation="Horizontal">

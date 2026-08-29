@@ -41,7 +41,7 @@
             </Button>
             <!-- Rounded address pill; Enter navigates (no separate Go button). -->
             <Border Grid.Column="3"
-                    Margin="4,0"
+                    Margin="4,6"
                     CornerRadius="8"
                     Background="{DynamicResource SidebarPanelInputBrush}"
                     BorderBrush="{DynamicResource SidebarBorderBrush}"
@@ -53,6 +53,8 @@
                              BorderThickness="0"
                              Padding="8,5"
                              VerticalContentAlignment="Center"
+                             Foreground="{DynamicResource SidebarPanelForegroundBrush}"
+                             CaretBrush="{DynamicResource SidebarPanelForegroundBrush}"
                              ToolTip="输入网址或搜索内容"
                              TextChanged="OnAddressChanged"
                              KeyDown="OnAddressKeyDown" />

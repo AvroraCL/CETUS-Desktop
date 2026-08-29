@@ -1,6 +1,7 @@
 <UserControl x:Class="Cetus.Sidebar.FilesTabContent"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Cetus.Controls">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="42" />
@@ -22,13 +23,13 @@
                     Style="{StaticResource SidebarIconButton}"
                     ToolTip="选择目录"
                     Click="OnChooseFolderClicked">
-                <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="14" Text="&#xE838;" />
+                <controls:FluentIcon Kind="Folder" IconSize="14" />
             </Button>
             <Button Grid.Column="2"
                     Style="{StaticResource SidebarIconButton}"
                     ToolTip="刷新"
                     Click="OnRefreshClicked">
-                <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="13" Text="&#xE72C;" />
+                <controls:FluentIcon Kind="ArrowClockwise" IconSize="14" />
             </Button>
         </Grid>
         <TreeView x:Name="FilesTree"
@@ -37,6 +38,7 @@
                   Padding="4"
                   Background="Transparent"
                   BorderThickness="0"
+                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                   Foreground="{DynamicResource SidebarPanelForegroundBrush}"
                   TreeViewItem.Expanded="OnFileNodeExpanded"
                   MouseDoubleClick="OnFileNodeDoubleClicked">
@@ -50,13 +52,14 @@
             <TreeView.ItemTemplate>
                 <HierarchicalDataTemplate ItemsSource="{Binding Children}">
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock Width="20"
-                                   VerticalAlignment="Center"
-                                   FontFamily="Segoe MDL2 Assets"
-                                   FontSize="13"
-                                   Foreground="{DynamicResource SidebarPanelSecondaryBrush}"
-                                   Text="{Binding Glyph}" />
+                        <controls:FluentIcon Width="20"
+                                             Height="18"
+                                             VerticalAlignment="Center"
+                                             Kind="{Binding IconKind}"
+                                             IconSize="14"
+                                             Foreground="{DynamicResource SidebarPanelSecondaryBrush}" />
                         <TextBlock VerticalAlignment="Center"
+                                   Margin="4,0,0,0"
                                    Foreground="{DynamicResource SidebarPanelForegroundBrush}"
                                    Text="{Binding Name}"
                                    ToolTip="{Binding FullPath}" />

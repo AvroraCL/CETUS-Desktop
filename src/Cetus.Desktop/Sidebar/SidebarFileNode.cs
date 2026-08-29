@@ -38,7 +38,32 @@ internal sealed class SidebarFileNode
 
     public bool IsPlaceholder => ReferenceEquals(this, Placeholder);
 
-    public string Glyph => IsDirectory ? "\uE8B7" : "\uE7C3";
+    /// <summary>Fluent icon kind reflecting the file type (folder/file group).</summary>
+    public string IconKind
+    {
+        get
+        {
+            if (IsDirectory)
+            {
+                return "Folder";
+            }
+
+            return Path.GetExtension(FullPath).ToLowerInvariant() switch
+            {
+                ".png" or ".jpg" or ".jpeg" or ".gif" or ".bmp" or ".webp" or ".svg" or ".ico" => "Image",
+                ".mp3" or ".wav" or ".flac" or ".ogg" or ".m4a" or ".aac" => "MusicNote",
+                ".mp4" or ".mkv" or ".avi" or ".mov" or ".webm" => "Video",
+                ".zip" or ".7z" or ".rar" or ".gz" or ".tar" => "FolderZip",
+                ".csv" or ".xlsx" or ".xls" => "Table",
+                ".txt" or ".md" or ".log" or ".ini" or ".cfg" => "TextDescription",
+                ".json" or ".xml" or ".yml" or ".yaml" => "Braces",
+                ".js" or ".ts" or ".jsx" or ".tsx" or ".py" or ".cs" or ".cpp" or ".c"
+                    or ".h" or ".java" or ".rs" or ".go" or ".rb" or ".php" or ".html"
+                    or ".htm" or ".css" or ".sql" or ".ps1" or ".bat" or ".sh" => "Code",
+                _ => "Document",
+            };
+        }
+    }
 
     public ObservableCollection<SidebarFileNode> Children { get; } = [];
 

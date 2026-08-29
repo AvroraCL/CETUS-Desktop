@@ -226,14 +226,14 @@
                     <sidebar:RightSidebarView x:Name="RightSidebarContent" />
                 </Border>
 
-                <!-- DSH-style handle: an 8px transparent strip straddling the
-                     divider (4px over the DSH surface, 4px over the sidebar);
-                     its only affordance is the col-resize cursor. -->
+                <!-- DSH-style handle: a transparent strip on the sidebar's left
+                     edge. It sits fully inside the sidebar because the WebView2
+                     HWND airspace would swallow any overlap onto the DSH side;
+                     12px keeps the grab zone comfortable. -->
                 <Thumb x:Name="RightSidebarResizeThumb"
                        Grid.Column="1"
                        Panel.ZIndex="2"
-                       Width="8"
-                       Margin="-4,0,0,0"
+                       Width="12"
                        HorizontalAlignment="Left"
                        VerticalAlignment="Stretch"
                        Background="Transparent"
