@@ -92,9 +92,6 @@ public partial class MainWindow : Window
         {
             Title = "CETUS鲸鱼座 · DEV";
             TitleText.Text = "CETUS DEV";
-            WindowStartupLocation = WindowStartupLocation.Manual;
-            Left = 40;
-            Top = 40;
         }
 
         ApplyWindowTheme(IsSystemDarkMode());
