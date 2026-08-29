@@ -100,10 +100,42 @@ public partial class MainWindow : Window
 
     protected override void OnSourceInitialized(EventArgs e)
     {
-        // Composition attaches at Loaded — EnsureHandle() raises this event
-        // before an HwndSource exists, and the splash flow keeps the window
-        // hidden until after startup anyway.
         base.OnSourceInitialized(e);
+        // EnsureHandle() raises this before the HwndSource is registered, so
+        // attachment goes through the retrying helper below — still long
+        // before the first frame. The DWM blend only engages when the
+        // transparent render target + blur accent exist before the window is
+        // ever presented; attaching after Show() bakes an opaque surface
+        // (solid title bar).
+        AttachWindowComposition();
+    }
+
+    private void AttachWindowComposition()
+    {
+        if (_windowComposition is not null || _isExiting)
+        {
+            return;
+        }
+
+        if (PresentationSource.FromVisual(this) is null)
+        {
+            // The source registers a beat after EnsureHandle(); retry.
+            Dispatcher.BeginInvoke(
+                AttachWindowComposition,
+                System.Windows.Threading.DispatcherPriority.Background);
+            return;
+        }
+
+        _windowComposition = WindowComposition.Attach(
+            this,
+            () =>
+            {
+                if (!_isExiting)
+                {
+                    _tray?.RestoreAfterExplorerRestart();
+                }
+            });
+        _windowComposition.SetDarkMode(IsSystemDarkMode());
     }
 
     /// <summary>
