@@ -93,14 +93,70 @@ public partial class TerminalTabContent : UserControl, IDisposable
     {
         _session?.Dispose();
         _sessionEnded = false;
+        // Launch the shell bare (no -NoProfile/-NoLogo): user profiles, custom
+        // prompts and the version banner make the tab feel like a real terminal.
         _session = ConPtySession.Start(
-            "powershell.exe -NoLogo -NoProfile -NoExit -Command \"chcp 65001 > $null | Out-Null\"",
+            ResolveShellCommandLine(),
             columns,
             rows,
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             OnPtyOutput);
         _session.Exited += OnPtyExited;
     }
+
+    /// <summary>Prefers PowerShell 7 (pwsh); falls back to Windows PowerShell.</summary>
+    internal static string ResolveShellCommandLine()
+    {
+        string programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        string[] candidates =
+        {
+            Path.Combine(programFiles, "PowerShell", "7", "pwsh.exe"),
+            Path.Combine(programFiles, "PowerShell", "7-preview", "pwsh.exe"),
+        };
+        foreach (string candidate in candidates)
+        {
+            if (File.Exists(candidate))
+            {
+                return QuotePath(candidate);
+            }
+        }
+
+        string? fromPath = FindOnPath("pwsh.exe");
+        if (fromPath is not null)
+        {
+            return QuotePath(fromPath);
+        }
+
+        string windowsPowerShell = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.System),
+            "WindowsPowerShell",
+            "v1.0",
+            "powershell.exe");
+        return File.Exists(windowsPowerShell) ? QuotePath(windowsPowerShell) : "powershell.exe";
+    }
+
+    private static string? FindOnPath(string fileName)
+    {
+        string? pathVariable = Environment.GetEnvironmentVariable("PATH");
+        if (string.IsNullOrEmpty(pathVariable))
+        {
+            return null;
+        }
+
+        foreach (string directory in pathVariable.Split(';', StringSplitOptions.RemoveEmptyEntries))
+        {
+            string candidate = Path.Combine(directory.Trim(), fileName);
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private static string QuotePath(string path) =>
+        path.Contains(' ') ? $"\"{path}\"" : path;
 
     private void OnPtyOutput(string chunk)
     {
