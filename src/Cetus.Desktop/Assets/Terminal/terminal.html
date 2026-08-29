@@ -6,6 +6,9 @@
   <style>
     html, body { margin: 0; height: 100%; background: #101011; overflow: hidden; }
     #term { height: 100%; padding: 4px 0 0 6px; }
+    /* Hide the xterm.js viewport scrollbar; wheel scrolling still works. */
+    .xterm-viewport { scrollbar-width: none; }
+    .xterm-viewport::-webkit-scrollbar { width: 0; height: 0; display: none; }
   </style>
   <script src="xterm.js"></script>
   <script src="xterm-addon-fit.js"></script>
