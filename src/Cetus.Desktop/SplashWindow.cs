@@ -26,18 +26,18 @@ public sealed class SplashWindow : Window
         AllowsTransparency = true;
         Background = Brushes.Transparent;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        Width = 320;
-        Height = 320;
+        Width = 160;
+        Height = 160;
 
         var icon = new Image
         {
-            Width = 240,
-            Height = 240,
+            Width = 120,
+            Height = 120,
             Source = new BitmapImage(new Uri("pack://application:,,,/Assets/cetus-splash.png")),
         };
         icon.Effect = new DropShadowEffect
         {
-            BlurRadius = 28,
+            BlurRadius = 14,
             ShadowDepth = 0,
             Opacity = 0.45,
         };
