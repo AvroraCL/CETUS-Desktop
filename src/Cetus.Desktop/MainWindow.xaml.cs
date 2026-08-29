@@ -98,65 +98,6 @@ public partial class MainWindow : Window
         ApplyWindowTheme(IsSystemDarkMode());
     }
 
-    protected override void OnSourceInitialized(EventArgs e)
-    {
-        base.OnSourceInitialized(e);
-        // EnsureHandle() raises this before the HwndSource is registered, so
-        // attachment goes through the retrying helpers below — still long
-        // before the first frame. The DWM blend only engages when the
-        // transparent render target + blur accent exist before the window is
-        // ever presented; attaching after Show() bakes an opaque surface
-        // (solid title bar).
-        Dispatcher.BeginInvoke(
-            TryAttachWindowComposition,
-            System.Windows.Threading.DispatcherPriority.Send);
-    }
-
-    private void TryAttachWindowComposition()
-    {
-        if (_windowComposition is not null || _isExiting)
-        {
-            return;
-        }
-
-        if (PresentationSource.FromVisual(this) is null)
-        {
-            // The source registers a beat after EnsureHandle(); the callers
-            // re-queue this attempt.
-            return;
-        }
-
-        _windowComposition = WindowComposition.Attach(
-            this,
-            () =>
-            {
-                if (!_isExiting)
-                {
-                    _tray?.RestoreAfterExplorerRestart();
-                }
-            });
-        _windowComposition.SetDarkMode(IsSystemDarkMode());
-    }
-
-    /// <summary>
-    /// Blocks (bounded) until composition is attached. Send priority runs
-    /// ahead of Normal-priority continuations, so a fast DSH connect can never
-    /// win the race against the attach retries before Show().
-    /// </summary>
-    private void EnsureWindowCompositionBeforeFirstFrame()
-    {
-        for (int attempts = 0; _windowComposition is null && attempts < 200 && !_isExiting; attempts++)
-        {
-            Dispatcher.Invoke(
-                TryAttachWindowComposition,
-                System.Windows.Threading.DispatcherPriority.Send);
-            if (_windowComposition is null)
-            {
-                Thread.Sleep(10);
-            }
-        }
-    }
-
     /// <summary>
     /// Begins startup while the brand splash is showing; the main window
     /// appears only after the runtime settles.
@@ -173,7 +114,27 @@ public partial class MainWindow : Window
         // Create the native HWND (and the WebView2 host surface) without
         // showing the window — EnsureCoreWebView2Async would otherwise wait
         // forever for a parent handle while the splash is up.
-        new System.Windows.Interop.WindowInteropHelper(this).EnsureHandle();
+        var interopHelper = new System.Windows.Interop.WindowInteropHelper(this);
+        interopHelper.EnsureHandle();
+        // Attach composition from the raw HwndSource before anything can
+        // present a frame. PresentationSource.FromVisual only registers
+        // later, and a post-first-frame attach bakes an opaque surface
+        // (solid title bar); the raw source is available immediately.
+        if (System.Windows.Interop.HwndSource.FromHwnd(interopHelper.Handle)
+            is { } source)
+        {
+            _windowComposition = WindowComposition.AttachSource(
+                source,
+                () =>
+                {
+                    if (!_isExiting)
+                    {
+                        _tray?.RestoreAfterExplorerRestart();
+                    }
+                });
+            _windowComposition.SetDarkMode(IsSystemDarkMode());
+        }
+
         _ = RunStartupAsync();
         if (_settings.CheckUpdatesOnStartup)
         {
@@ -192,10 +153,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        // Deterministic guard: attach must exist before the first frame. When
-        // DSH is already running, StartAsync returns almost immediately and
-        // Show() (Normal priority) would otherwise beat a queued retry.
-        EnsureWindowCompositionBeforeFirstFrame();
+        // Composition was attached right after EnsureHandle above — before
+        // any frame can be presented — so nothing races Show() here.
         SplashDismissRequested?.Invoke(this, EventArgs.Empty);
         Show();
         ShowRuntimeError(result, "Cetus · 启动失败");

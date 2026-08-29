@@ -50,6 +50,18 @@ internal sealed class WindowComposition : IDisposable
         ArgumentNullException.ThrowIfNull(window);
         HwndSource source = PresentationSource.FromVisual(window) as HwndSource
             ?? throw new InvalidOperationException("窗口 HWND 尚未初始化。");
+        return AttachSource(source, taskbarRecreated);
+    }
+
+    /// <summary>
+    /// Attaches from the raw HwndSource so callers can run this right after
+    /// EnsureHandle(), before the window is ever presented. The visual-based
+    /// lookup (PresentationSource.FromVisual) only registers later, which
+    /// loses the race against the first frame and bakes an opaque surface.
+    /// </summary>
+    public static WindowComposition AttachSource(HwndSource source, Action taskbarRecreated)
+    {
+        ArgumentNullException.ThrowIfNull(source);
         return new WindowComposition(source, taskbarRecreated);
     }
 
