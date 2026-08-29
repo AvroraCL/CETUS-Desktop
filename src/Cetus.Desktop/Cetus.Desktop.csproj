@@ -37,6 +37,7 @@
   <ItemGroup>
     <!-- Package the native application icon. -->
     <Resource Include="Assets\cetus.ico" />
+    <Resource Include="Assets\cetus-splash.png" />
   </ItemGroup>
 
 </Project>

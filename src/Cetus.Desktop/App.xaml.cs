@@ -5,12 +5,15 @@ using Cetus.Platform;
 namespace Cetus;
 
 /// <summary>
-/// Application entry: single-instance guard, then the normal StartupUri window.
+/// Application entry: single-instance guard, then a centered brand splash
+/// while the DSH host starts; the main window appears once it settles.
 /// </summary>
 public partial class App : System.Windows.Application
 {
     private SingleInstanceGuard? _singleInstance;
     private CrashReporter? _crashReporter;
+    private SplashWindow? _splash;
+    private MainWindow? _mainWindow;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -26,7 +29,27 @@ public partial class App : System.Windows.Application
             Shutdown();
             return;
         }
+
         base.OnStartup(e);
+
+        _splash = new SplashWindow();
+        _splash.Show();
+
+        _mainWindow = new MainWindow();
+        MainWindow = _mainWindow;
+        _mainWindow.SplashDismissRequested += (_, _) => DismissSplash();
+        _mainWindow.StartStartup();
+    }
+
+    private void DismissSplash()
+    {
+        if (_splash is null)
+        {
+            return;
+        }
+
+        _splash.Close();
+        _splash = null;
     }
 
     protected override void OnExit(ExitEventArgs e)

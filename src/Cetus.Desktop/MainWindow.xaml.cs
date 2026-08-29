@@ -63,6 +63,13 @@ public partial class MainWindow : Window
     private bool _isExiting;
     private bool _rightSidebarOpen;
     private int _rightSidebarAnimationGeneration;
+    private bool _startupStarted;
+
+    /// <summary>
+    /// Raised when the splash screen should go away: either the runtime
+    /// settled (ready or failed) or the user asked for the window early.
+    /// </summary>
+    public event EventHandler? SplashDismissRequested;
 
     public MainWindow()
     {
@@ -95,21 +102,89 @@ public partial class MainWindow : Window
 
     protected override void OnSourceInitialized(EventArgs e)
     {
+        // Composition attaches at Loaded — EnsureHandle() raises this event
+        // before an HwndSource exists, and the splash flow keeps the window
+        // hidden until after startup anyway.
         base.OnSourceInitialized(e);
-        _windowComposition = WindowComposition.Attach(
-            this,
-            () =>
-            {
-                if (!_isExiting)
-                {
-                    _tray?.RestoreAfterExplorerRestart();
-                }
-            });
-        _windowComposition.SetDarkMode(IsSystemDarkMode());
+    }
+
+    /// <summary>
+    /// Begins startup while the brand splash is showing; the main window
+    /// appears only after the runtime settles.
+    /// </summary>
+    public void StartStartup()
+    {
+        if (_startupStarted || _isExiting)
+        {
+            return;
+        }
+
+        _startupStarted = true;
+        SetupTray();
+        // Create the native HWND (and the WebView2 host surface) without
+        // showing the window — EnsureCoreWebView2Async would otherwise wait
+        // forever for a parent handle while the splash is up.
+        new System.Windows.Interop.WindowInteropHelper(this).EnsureHandle();
+        _ = RunStartupAsync();
+        if (_settings.CheckUpdatesOnStartup)
+        {
+            _updates ??= new UpdateCoordinator(this, ExitApplication, _settings);
+            _ = CheckForUpdatesSilentlyAsync();
+        }
+    }
+
+    private async Task RunStartupAsync()
+    {
+        // Splash phase: bring the DSH host up with the window still hidden —
+        // WebView2 cannot initialize on a window that was never shown.
+        DesktopRuntimeResult result = await _runtime.StartAsync(navigateWithUi: false);
+        if (_isExiting)
+        {
+            return;
+        }
+
+        SplashDismissRequested?.Invoke(this, EventArgs.Empty);
+        Show();
+        ShowRuntimeError(result, "Cetus · 启动失败");
+        if (!result.Succeeded)
+        {
+            return;
+        }
+
+        // Visible phase: load the DSH page with the status line showing.
+        try
+        {
+            await _runtime.NavigateHomeAsync();
+        }
+        catch (Exception error)
+        {
+            ShowRuntimeError(DesktopRuntimeResult.Failed(error), "Cetus · 启动失败");
+        }
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        if (_windowComposition is null)
+        {
+            _windowComposition = WindowComposition.Attach(
+                this,
+                () =>
+                {
+                    if (!_isExiting)
+                    {
+                        _tray?.RestoreAfterExplorerRestart();
+                    }
+                });
+            _windowComposition.SetDarkMode(IsSystemDarkMode());
+        }
+
+        // The splash flow starts the runtime before the window is shown; this
+        // only fires on the legacy path where the window appears unprompted.
+        if (_startupStarted)
+        {
+            return;
+        }
+
         SetupTray();
         DesktopRuntimeResult result = await _runtime.StartAsync();
         ShowRuntimeError(result, "Cetus · 启动失败");
@@ -325,6 +400,7 @@ public partial class MainWindow : Window
 
     private void ShowWindow()
     {
+        SplashDismissRequested?.Invoke(this, EventArgs.Empty);
         Show();
         ShowInTaskbar = true;
         WindowState = WindowState.Normal;

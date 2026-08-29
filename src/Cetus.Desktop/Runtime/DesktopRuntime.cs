@@ -109,7 +109,11 @@ internal sealed class DesktopRuntime
 
     public Uri Endpoint => new($"http://127.0.0.1:{_settings.EffectivePort}/");
 
-    public async Task<DesktopRuntimeResult> StartAsync()
+    /// <summary>
+    /// Starts the DSH host and (unless the window is still hidden behind the
+    /// splash) navigates the embedded browser to it.
+    /// </summary>
+    public async Task<DesktopRuntimeResult> StartAsync(bool navigateWithUi = true)
     {
         if (_isStarting || _isExiting)
         {
@@ -127,8 +131,10 @@ internal sealed class DesktopRuntime
             IDshHost host = _host ??= CreateHost();
             await host.StartAsync(cancellation.Token);
 
-            Transition(DesktopRuntimePhase.LoadingBrowser, "正在加载界面…", canRetry: false);
-            await _browser.NavigateAsync(Endpoint, cancellation.Token);
+            if (navigateWithUi)
+            {
+                await NavigateHomeCoreAsync(cancellation.Token);
+            }
 
             _lastReadyAt = _timeProvider.GetUtcNow();
             Transition(DesktopRuntimePhase.Ready, string.Empty, canRetry: true);
@@ -174,6 +180,28 @@ internal sealed class DesktopRuntime
                 BeginAutomaticRecovery(failure);
             }
         }
+    }
+
+    /// <summary>
+    /// Navigates the embedded browser to the DSH endpoint — the visible phase
+    /// that runs after the splash dismisses and the main window shows.
+    /// No-op while a startup is still in flight.
+    /// </summary>
+    public async Task NavigateHomeAsync(CancellationToken cancellationToken = default)
+    {
+        if (_isStarting || _isExiting)
+        {
+            return;
+        }
+
+        await NavigateHomeCoreAsync(cancellationToken);
+    }
+
+    private async Task NavigateHomeCoreAsync(CancellationToken cancellationToken)
+    {
+        Transition(DesktopRuntimePhase.LoadingBrowser, "正在加载界面…", canRetry: false);
+        await _browser.NavigateAsync(Endpoint, cancellationToken);
+        _lastReadyAt = _timeProvider.GetUtcNow();
     }
 
     public async Task<DesktopRuntimeResult> RetryAsync(
