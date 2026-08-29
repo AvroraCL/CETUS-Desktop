@@ -8,8 +8,8 @@
     <AssemblyName>Cetus</AssemblyName>
     <RootNamespace>Cetus</RootNamespace>
     <ApplicationIcon>Assets\cetus.ico</ApplicationIcon>
-    <Version>0.2.1</Version>
-    <FileVersion>0.0.2.1</FileVersion>
+    <Version>0.2.2</Version>
+    <FileVersion>0.0.2.2</FileVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Product>CETUS鲸鱼座</Product>
     <Copyright>AvroraCL</Copyright>

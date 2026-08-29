@@ -30,12 +30,12 @@ CETUS 把官方 Web UI、Agent 能力和插件生态装进一个开箱即用的 
 - 内置可调宽度的右侧工具栏：标签页式浏览网页（可选中网页元素一键加入聊天，标签显示网站图标）、使用 ConPTY 与 xterm.js 运行完整终端（默认 PowerShell 7 并加载用户配置，可切换 Shell，缺失自动回退）、查看本地文件（按类型区分图标）、代码变更审查器（列出 Agent 改动的文件并逐文件查看 diff）；标签可拖拽排序，并支持多开、下拉管理与最近关闭恢复
 - DSH 设置页内建「CETUS设置」：启动检查更新、手动检查更新、关闭按钮行为（托盘/退出）、终端默认 Shell、DSH 端口，改动实时保存
 
-### 下载 v0.2.1
+### 下载 v0.2.2
 
 | 文件 | 说明 |
 |---|---|
-| [Cetus-Setup-0.2.1.exe](https://github.com/AvroraCL/CETUS-Desktop/releases/download/v0.2.1/Cetus-Setup-0.2.1.exe) | 中文安装向导，按当前用户安装，无需管理员权限 |
-| [Cetus-0.2.1-win-x64-portable.zip](https://github.com/AvroraCL/CETUS-Desktop/releases/download/v0.2.1/Cetus-0.2.1-win-x64-portable.zip) | 便携版，解压后直接运行 |
+| [Cetus-Setup-0.2.2.exe](https://github.com/AvroraCL/CETUS-Desktop/releases/download/v0.2.2/Cetus-Setup-0.2.2.exe) | 中文安装向导，按当前用户安装，无需管理员权限 |
+| [Cetus-0.2.2-win-x64-portable.zip](https://github.com/AvroraCL/CETUS-Desktop/releases/download/v0.2.2/Cetus-0.2.2-win-x64-portable.zip) | 便携版，解压后直接运行 |
 
 历史版本与更新日志见 [Releases](https://github.com/AvroraCL/CETUS-Desktop/releases)。
 

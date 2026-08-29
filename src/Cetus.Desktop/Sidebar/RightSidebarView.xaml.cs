@@ -337,16 +337,18 @@ public partial class RightSidebarView : UserControl, IDisposable
             Cursor = Cursors.Hand,
         };
 
-        var close = new Controls.FluentIcon
+        // DSH-style close chip: a comfortable 22px rounded button instead of
+        // a tiny glyph, so closing a tab never needs pixel hunting.
+        var close = new System.Windows.Controls.Button
         {
-            Kind = "Dismiss",
-            IconSize = 10,
-            Opacity = 0.75,
-            Margin = new Thickness(8, 0, 2, 0),
+            Style = (Style)FindResource("SidebarCloseChip"),
+            HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(6, 0, 0, 0),
             ToolTip = "关闭标签页",
+            Content = new Controls.FluentIcon { Kind = "Dismiss", IconSize = 10 },
         };
-        close.MouseLeftButtonUp += (_, e) =>
+        close.Click += (_, e) =>
         {
             e.Handled = true;
             CloseTab(tab);
@@ -403,7 +405,7 @@ public partial class RightSidebarView : UserControl, IDisposable
         };
         pill.MouseLeftButtonDown += (_, e) =>
         {
-            if (ReferenceEquals(e.OriginalSource, close))
+            if (close.IsAncestorOf(e.OriginalSource as DependencyObject ?? close))
             {
                 return;
             }

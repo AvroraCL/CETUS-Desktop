@@ -5,6 +5,38 @@
              Background="Transparent"
              Foreground="{DynamicResource SidebarPanelForegroundBrush}">
     <UserControl.Resources>
+        <!-- Close chip on tab pills: a comfortable 22px rounded button. -->
+        <Style x:Key="SidebarCloseChip" TargetType="Button">
+            <Setter Property="Width" Value="22" />
+            <Setter Property="Height" Value="22" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Background" Value="{DynamicResource SidebarPanelInputBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource SidebarPanelForegroundBrush}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome"
+                                CornerRadius="6"
+                                Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome"
+                                        Property="Background"
+                                        Value="{DynamicResource SidebarPanelSelectedBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Opacity" Value="0.75" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- DSH-style slim scrollbar for every panel tab (files, status,
              popups): 8px invisible track, rounded translucent thumb. -->
         <Style TargetType="ScrollBar">
@@ -140,9 +172,10 @@
                     <StackPanel x:Name="TabStripPanel" Orientation="Horizontal">
                         <Button x:Name="NewTabButton"
                                 Style="{StaticResource SidebarIconButton}"
+                                Background="{DynamicResource SidebarPanelInputBrush}"
                                 ToolTip="新建标签页"
                                 Click="OnNewTabClicked">
-                            <controls:FluentIcon Kind="Add" IconSize="13" />
+                            <controls:FluentIcon Kind="Add" IconSize="14" />
                         </Button>
                     </StackPanel>
                 </ScrollViewer>
