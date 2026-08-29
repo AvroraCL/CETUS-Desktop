@@ -34,8 +34,6 @@ public sealed class SplashWindow : Window
             Width = 240,
             Height = 240,
             Source = new BitmapImage(new Uri("pack://application:,,,/Assets/cetus-splash.png")),
-            RenderTransformOrigin = new Point(0.5, 0.5),
-            RenderTransform = new ScaleTransform(1, 1),
         };
         icon.Effect = new DropShadowEffect
         {
@@ -44,19 +42,5 @@ public sealed class SplashWindow : Window
             Opacity = 0.45,
         };
         Content = icon;
-
-        // Gentle breathing pulse so the splash reads as "loading", not frozen.
-        var pulse = new DoubleAnimation
-        {
-            From = 0.96,
-            To = 1.06,
-            Duration = TimeSpan.FromMilliseconds(900),
-            AutoReverse = true,
-            RepeatBehavior = RepeatBehavior.Forever,
-            EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut },
-        };
-        var transform = (ScaleTransform)icon.RenderTransform;
-        transform.BeginAnimation(ScaleTransform.ScaleXProperty, pulse);
-        transform.BeginAnimation(ScaleTransform.ScaleYProperty, pulse.Clone());
     }
 }
