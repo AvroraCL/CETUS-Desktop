@@ -4,7 +4,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using Brush = System.Windows.Media.Brush;
 using Brushes = System.Windows.Media.Brushes;
-using FontFamily = System.Windows.Media.FontFamily;
+using Point = System.Windows.Point;
 
 namespace Cetus.Sidebar;
 
@@ -12,22 +12,30 @@ namespace Cetus.Sidebar;
 /// Edge-style tabbed side panel: a pill tab strip with new-tab and dropdown
 /// management, an empty-state picker and per-kind tab contents. Browser and
 /// terminal tabs each own an isolated live session; file tabs carry independent
-/// tree state.
+/// tree state. Pills reorder by dragging.
 /// </summary>
 public partial class RightSidebarView : UserControl, IDisposable
 {
-    private static readonly FontFamily GlyphFont = new("Segoe MDL2 Assets");
-
     private readonly List<SidebarTab> _tabs = new();
     private readonly List<ClosedTab> _closed = new();
     private SidebarTab? _activeTab;
     private Func<Uri>? _dshEndpointProvider;
     private bool _isDark = true;
-    private bool _disposed;
     // When an auto-closing popup swallows the click that re-targets its anchor
     // button, the button's Click fires after the close; suppress the reopen.
     private DateTime _newTabMenuSuppressedUntil;
     private DateTime _tabsMenuSuppressedUntil;
+
+    // Pill drag-to-reorder state.
+    private SidebarTab? _dragTab;
+    private Point _dragOrigin;
+    private bool _dragMoved;
+
+    /// <summary>
+    /// Receives text captured by the browser element picker; returns true when
+    /// it landed in the chat composer (false falls back to the clipboard).
+    /// </summary>
+    public Func<string, Task<bool>>? ChatInserter { get; set; }
 
     public RightSidebarView()
     {
@@ -61,11 +69,6 @@ public partial class RightSidebarView : UserControl, IDisposable
     /// </summary>
     public void SetModalDim(bool visible)
     {
-        if (_disposed)
-        {
-            return;
-        }
-
         ModalDim.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -153,17 +156,15 @@ public partial class RightSidebarView : UserControl, IDisposable
 
     private void OpenTab(SidebarTabKind kind, string? initialUrl = null)
     {
-        if (_disposed)
-        {
-            return;
-        }
-
         FrameworkElement content;
         string title;
         switch (kind)
         {
             case SidebarTabKind.Browser:
-                var browser = new BrowserTabContent(initialUrl);
+                var browser = new BrowserTabContent(initialUrl)
+                {
+                    ChatInserter = ChatInserter,
+                };
                 content = browser;
                 title = SidebarTabModel.TitleOf(kind);
                 break;
@@ -186,7 +187,7 @@ public partial class RightSidebarView : UserControl, IDisposable
                 break;
         }
 
-        var tab = new SidebarTab(kind, title, SidebarTabModel.GlyphOf(kind), content);
+        var tab = new SidebarTab(kind, title, SidebarTabModel.IconKindOf(kind), content);
         if (content is BrowserTabContent browserContent)
         {
             browserContent.TitleChanged += (_, documentTitle) =>
@@ -206,11 +207,6 @@ public partial class RightSidebarView : UserControl, IDisposable
 
     private void ActivateTab(SidebarTab tab)
     {
-        if (_disposed)
-        {
-            return;
-        }
-
         _activeTab = tab;
         ActiveTabHost.Content = tab.Content;
         UpdateEmptyState();
@@ -226,7 +222,7 @@ public partial class RightSidebarView : UserControl, IDisposable
         }
 
         string? url = tab.Content is BrowserTabContent browser ? browser.CurrentAddress : null;
-        _closed.Insert(0, new ClosedTab(tab.Kind, tab.Title, tab.Glyph, DateTime.Now, url));
+        _closed.Insert(0, new ClosedTab(tab.Kind, tab.Title, tab.Icon, DateTime.Now, url));
         if (_closed.Count > SidebarTabModel.MaxRecentlyClosed)
         {
             _closed.RemoveAt(_closed.Count - 1);
@@ -290,6 +286,9 @@ public partial class RightSidebarView : UserControl, IDisposable
         {
             TabStripPanel.Children.Add(CreatePill(tab));
         }
+
+        // The new-tab button always follows the last pill.
+        TabStripPanel.Children.Add(NewTabButton);
     }
 
     private Border CreatePill(SidebarTab tab)
@@ -297,22 +296,23 @@ public partial class RightSidebarView : UserControl, IDisposable
         bool active = ReferenceEquals(tab, _activeTab);
         var pill = new Border
         {
-            CornerRadius = new CornerRadius(6),
+            CornerRadius = new CornerRadius(8),
             Margin = new Thickness(0, 0, 4, 0),
-            Padding = new Thickness(8, 4, 4, 4),
+            Padding = new Thickness(12, 5, 6, 5),
+            MinWidth = 84,
+            MaxWidth = 180,
             Background = active
                 ? (Brush)FindResource("SidebarPanelSelectedBrush")
                 : Brushes.Transparent,
             Cursor = Cursors.Hand,
         };
 
-        var close = new TextBlock
+        var close = new Controls.FluentIcon
         {
-            Text = "\uE8BB",
-            FontFamily = GlyphFont,
-            FontSize = 10,
+            Kind = "Dismiss",
+            IconSize = 10,
             Opacity = 0.75,
-            Margin = new Thickness(8, 0, 0, 0),
+            Margin = new Thickness(8, 0, 2, 0),
             VerticalAlignment = VerticalAlignment.Center,
             ToolTip = "关闭标签页",
         };
@@ -330,18 +330,17 @@ public partial class RightSidebarView : UserControl, IDisposable
             Orientation = Orientation.Horizontal,
             Children =
             {
-                new TextBlock
+                new Controls.FluentIcon
                 {
-                    Text = tab.Glyph,
-                    FontFamily = GlyphFont,
-                    FontSize = 13,
+                    Kind = tab.Icon,
+                    IconSize = 14,
                     VerticalAlignment = VerticalAlignment.Center,
                 },
                 new TextBlock
                 {
                     Text = tab.Title,
                     Margin = new Thickness(6, 0, 0, 0),
-                    MaxWidth = 110,
+                    MaxWidth = 130,
                     VerticalAlignment = VerticalAlignment.Center,
                     TextTrimming = TextTrimming.CharacterEllipsis,
                 },
@@ -363,9 +362,98 @@ public partial class RightSidebarView : UserControl, IDisposable
                 pill.Background = Brushes.Transparent;
             }
         };
-        pill.MouseLeftButtonUp += (_, _) => ActivateTab(tab);
+        pill.MouseLeftButtonDown += (_, e) =>
+        {
+            if (ReferenceEquals(e.OriginalSource, close))
+            {
+                return;
+            }
+
+            _dragTab = tab;
+            _dragOrigin = e.GetPosition(TabStripPanel);
+            _dragMoved = false;
+            pill.CaptureMouse();
+        };
+        pill.MouseMove += (_, e) =>
+        {
+            if (!ReferenceEquals(_dragTab, tab)
+                || !pill.IsMouseCaptured
+                || e.LeftButton != MouseButtonState.Pressed)
+            {
+                return;
+            }
+
+            Point position = e.GetPosition(TabStripPanel);
+            if (!_dragMoved && Math.Abs(position.X - _dragOrigin.X) < 4)
+            {
+                return;
+            }
+
+            _dragMoved = true;
+            ReorderPill(tab, pill, position.X);
+        };
+        pill.MouseLeftButtonUp += (_, _) =>
+        {
+            bool wasDrag = _dragMoved;
+            if (pill.IsMouseCaptured)
+            {
+                pill.ReleaseMouseCapture();
+            }
+
+            ClearDragState();
+            if (!wasDrag)
+            {
+                ActivateTab(tab);
+            }
+        };
+        pill.LostMouseCapture += (_, _) => ClearDragState();
         ToolTipService.SetToolTip(pill, tab.Title);
         return pill;
+    }
+
+    /// <summary>
+    /// Moves the dragged pill to the slot implied by the cursor: the number of
+    /// sibling pills whose midpoint is left of the cursor. Both the visual
+    /// children and the tab list are reordered in step.
+    /// </summary>
+    private void ReorderPill(SidebarTab tab, Border pill, double mouseX)
+    {
+        int currentIndex = _tabs.IndexOf(tab);
+        if (currentIndex < 0)
+        {
+            return;
+        }
+
+        int target = 0;
+        foreach (object child in TabStripPanel.Children)
+        {
+            if (child is not Border { } sibling || ReferenceEquals(sibling, pill))
+            {
+                continue;
+            }
+
+            Point midpoint = sibling.TranslatePoint(new Point(sibling.ActualWidth / 2, 0), TabStripPanel);
+            if (mouseX > midpoint.X)
+            {
+                target++;
+            }
+        }
+
+        if (target == currentIndex)
+        {
+            return;
+        }
+
+        _tabs.RemoveAt(currentIndex);
+        _tabs.Insert(target, tab);
+        TabStripPanel.Children.Remove(pill);
+        TabStripPanel.Children.Insert(Math.Min(target, TabStripPanel.Children.Count), pill);
+    }
+
+    private void ClearDragState()
+    {
+        _dragTab = null;
+        _dragMoved = false;
     }
 
     private void RebuildPopupLists()
@@ -405,11 +493,10 @@ public partial class RightSidebarView : UserControl, IDisposable
 
     private Border CreateOpenTabRow(SidebarTab tab)
     {
-        var close = new TextBlock
+        var close = new Controls.FluentIcon
         {
-            Text = "\uE8BB",
-            FontFamily = GlyphFont,
-            FontSize = 11,
+            Kind = "Dismiss",
+            IconSize = 11,
             Opacity = 0.75,
             VerticalAlignment = VerticalAlignment.Center,
             ToolTip = "关闭",
@@ -420,7 +507,7 @@ public partial class RightSidebarView : UserControl, IDisposable
             CloseTab(tab);
         };
 
-        var row = CreateRow(tab.Glyph, tab.Title, "刚刚", close);
+        var row = CreateRow(tab.Icon, tab.Title, "刚刚", close);
         row.MouseLeftButtonUp += (_, e) =>
         {
             e.Handled = true;
@@ -433,7 +520,7 @@ public partial class RightSidebarView : UserControl, IDisposable
     private Border CreateClosedRow(ClosedTab entry)
     {
         var row = CreateRow(
-            entry.Glyph,
+            entry.Icon,
             entry.Title,
             SidebarTabModel.RelativeTime(entry.ClosedAt, DateTime.Now),
             trailing: null);
@@ -445,7 +532,7 @@ public partial class RightSidebarView : UserControl, IDisposable
         return row;
     }
 
-    private Border CreateRow(string glyph, string title, string timeText, TextBlock? trailing)
+    private Border CreateRow(string iconKind, string title, string timeText, Controls.FluentIcon? trailing)
     {
         var row = new Border
         {
@@ -477,11 +564,10 @@ public partial class RightSidebarView : UserControl, IDisposable
             Orientation = Orientation.Horizontal,
             Children =
             {
-                new TextBlock
+                new Controls.FluentIcon
                 {
-                    Text = glyph,
-                    FontFamily = GlyphFont,
-                    FontSize = 13,
+                    Kind = iconKind,
+                    IconSize = 14,
                     VerticalAlignment = VerticalAlignment.Center,
                 },
                 new TextBlock
@@ -507,12 +593,6 @@ public partial class RightSidebarView : UserControl, IDisposable
 
     public void Dispose()
     {
-        if (_disposed)
-        {
-            return;
-        }
-
-        _disposed = true;
         NewTabMenuPopup.IsOpen = false;
         TabsMenuPopup.IsOpen = false;
         foreach (SidebarTab tab in _tabs)
@@ -522,17 +602,18 @@ public partial class RightSidebarView : UserControl, IDisposable
 
         _tabs.Clear();
         _activeTab = null;
+        ChatInserter = null;
     }
 }
 
 /// <summary>View-layer tab entry pairing the model data with its live content.</summary>
 public sealed class SidebarTab
 {
-    public SidebarTab(SidebarTabKind kind, string title, string glyph, FrameworkElement content)
+    public SidebarTab(SidebarTabKind kind, string title, string icon, FrameworkElement content)
     {
         Kind = kind;
         Title = title;
-        Glyph = glyph;
+        Icon = icon;
         Content = content;
     }
 
@@ -540,7 +621,7 @@ public sealed class SidebarTab
 
     public string Title { get; set; }
 
-    public string Glyph { get; }
+    public string Icon { get; }
 
     public FrameworkElement Content { get; }
 

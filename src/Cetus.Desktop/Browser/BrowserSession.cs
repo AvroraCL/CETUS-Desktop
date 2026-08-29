@@ -254,6 +254,46 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
         }
     }
 
+    /// <summary>
+    /// Inserts text into the DSH chat composer without sending it. Returns
+    /// false when the page (or its composer) is not available yet; the caller
+    /// should fall back to the clipboard in that case.
+    /// </summary>
+    public async Task<bool> TryInsertIntoChatAsync(string text)
+    {
+        if (!_initialized || _disposed || _view.CoreWebView2 is not { } core)
+        {
+            return false;
+        }
+
+        string encoded = System.Web.HttpUtility.JavaScriptStringEncode(text);
+        const string script = """
+            (() => {
+              const composer = document.querySelector('textarea')
+                || Array.from(document.querySelectorAll('[contenteditable="true"]'))
+                    .find((el) => !el.getAttribute('aria-hidden'));
+              if (!composer) return 'false';
+              const text = "__CETUS_TEXT__";
+              if (composer instanceof HTMLTextAreaElement) {
+                const setter = Object.getOwnPropertyDescriptor(
+                  window.HTMLTextAreaElement.prototype, 'value').set;
+                setter.call(composer, composer.value ? composer.value + '\n\n' + text : text);
+                composer.dispatchEvent(new Event('input', { bubbles: true }));
+              } else {
+                composer.focus();
+                document.execCommand('insertText', false, text);
+                composer.dispatchEvent(new Event('input', { bubbles: true }));
+              }
+              composer.focus();
+              return 'true';
+            })()
+            """;
+        // ExecuteScriptAsync returns the JSON-encoded value, so a JS 'true'
+        // arrives as "true" (with quotes).
+        string result = await core.ExecuteScriptAsync(script.Replace("__CETUS_TEXT__", encoded));
+        return result == "\"true\"";
+    }
+
     private void OnTopLevelNavigationStarting(
         object? sender,
         CoreWebView2NavigationStartingEventArgs e)

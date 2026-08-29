@@ -27,7 +27,7 @@ public sealed class SidebarTabModelTests
         {
             list = SidebarTabModel.PushClosed(
                 list,
-                new ClosedTab(SidebarTabKind.Browser, $"tab-{i}", "\uE774", DateTime.Now, $"https://example.com/{i}"));
+                new ClosedTab(SidebarTabKind.Browser, $"tab-{i}", "Globe", DateTime.Now, $"https://example.com/{i}"));
         }
 
         Assert.Equal(SidebarTabModel.MaxRecentlyClosed, list.Count);
@@ -48,10 +48,11 @@ public sealed class SidebarTabModelTests
     }
 
     [Fact]
-    public void GlyphOf_MapsEveryKind()
+    public void IconKindOf_MapsEveryKind()
     {
-        Assert.False(string.IsNullOrEmpty(SidebarTabModel.GlyphOf(SidebarTabKind.Browser)));
-        Assert.False(string.IsNullOrEmpty(SidebarTabModel.GlyphOf(SidebarTabKind.Terminal)));
-        Assert.False(string.IsNullOrEmpty(SidebarTabModel.GlyphOf(SidebarTabKind.Files)));
+        Assert.Equal("Globe", SidebarTabModel.IconKindOf(SidebarTabKind.Browser));
+        Assert.Equal("Code", SidebarTabModel.IconKindOf(SidebarTabKind.Terminal));
+        Assert.Equal("Folder", SidebarTabModel.IconKindOf(SidebarTabKind.Files));
+        Assert.Equal("DataUsage", SidebarTabModel.IconKindOf(SidebarTabKind.Status));
     }
 }

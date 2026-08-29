@@ -87,6 +87,7 @@ public partial class MainWindow : Window
         _runtime = new DesktopRuntime(_settings, _browserSession, Dispatcher);
         _runtime.StateChanged += OnRuntimeStateChanged;
         RightSidebarContent.SetDshEndpointProvider(() => _runtime.Endpoint);
+        RightSidebarContent.ChatInserter = text => _browserSession.TryInsertIntoChatAsync(text);
 
         if (DevModeFlag.IsActive)
         {

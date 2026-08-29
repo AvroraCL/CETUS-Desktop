@@ -27,7 +27,7 @@ CETUS 把官方 Web UI、Agent 能力和插件生态装进一个开箱即用的 
 - 退出 CETUS 时自动回收由它启动的 Node 子进程
 - 启动时自动检查新版本，一键下载安装器并静默升级（GitHub Releases 主源，不可达时自动回退 GitCode 镜像）
 - 完整复用 DeepSeek Harness 的 Agent 能力与插件生态
-- 内置可调宽度的右侧工具栏：标签页式浏览网页、使用 ConPTY 与 xterm.js 运行完整 PowerShell 终端（优先 PowerShell 7 并加载用户配置，未安装时回退 Windows PowerShell）、查看本地文件；每个终端标签页拥有独立会话，并支持多开、下拉管理与最近关闭恢复
+- 内置可调宽度的右侧工具栏：标签页式浏览网页（可选中网页元素一键加入聊天）、使用 ConPTY 与 xterm.js 运行完整 PowerShell 终端（优先 PowerShell 7 并加载用户配置，未安装时回退 Windows PowerShell）、查看本地文件；标签可拖拽排序，每个终端标签页拥有独立会话，并支持多开、下拉管理与最近关闭恢复
 
 ### 下载 v0.2.0
 

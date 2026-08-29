@@ -12,7 +12,7 @@ public enum SidebarTabKind
 public sealed record ClosedTab(
     SidebarTabKind Kind,
     string Title,
-    string Glyph,
+    string Icon,
     DateTime ClosedAt,
     string? Url);
 
@@ -25,12 +25,13 @@ public static class SidebarTabModel
 {
     public const int MaxRecentlyClosed = 10;
 
-    public static string GlyphOf(SidebarTabKind kind) => kind switch
+    /// <summary>Fluent UI icon kind shown for each tab type.</summary>
+    public static string IconKindOf(SidebarTabKind kind) => kind switch
     {
-        SidebarTabKind.Browser => "\uE774",
-        SidebarTabKind.Terminal => "\uE756",
-        SidebarTabKind.Status => "\uE946",
-        _ => "\uE8B7",
+        SidebarTabKind.Browser => "Globe",
+        SidebarTabKind.Terminal => "Code",
+        SidebarTabKind.Status => "DataUsage",
+        _ => "Folder",
     };
 
     public static string TitleOf(SidebarTabKind kind) => kind switch
