@@ -54,5 +54,6 @@ public sealed class SidebarTabModelTests
         Assert.Equal("Code", SidebarTabModel.IconKindOf(SidebarTabKind.Terminal));
         Assert.Equal("Folder", SidebarTabModel.IconKindOf(SidebarTabKind.Files));
         Assert.Equal("DataUsage", SidebarTabModel.IconKindOf(SidebarTabKind.Status));
+        Assert.Equal("ClipboardTask", SidebarTabModel.IconKindOf(SidebarTabKind.Review));
     }
 }

@@ -6,6 +6,7 @@ public enum SidebarTabKind
     Terminal,
     Files,
     Status,
+    Review,
 }
 
 /// <summary>Immutable snapshot of a closed tab, kept for the restore list.</summary>
@@ -31,6 +32,7 @@ public static class SidebarTabModel
         SidebarTabKind.Browser => "Globe",
         SidebarTabKind.Terminal => "Code",
         SidebarTabKind.Status => "DataUsage",
+        SidebarTabKind.Review => "ClipboardTask",
         _ => "Folder",
     };
 
@@ -39,6 +41,7 @@ public static class SidebarTabModel
         SidebarTabKind.Browser => "浏览器",
         SidebarTabKind.Terminal => "终端",
         SidebarTabKind.Status => "状态",
+        SidebarTabKind.Review => "审查",
         _ => "文件",
     };
 

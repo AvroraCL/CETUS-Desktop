@@ -1,0 +1,123 @@
+<UserControl x:Class="Cetus.Sidebar.ReviewTabContent"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Cetus.Controls">
+    <UserControl.Resources>
+        <Style x:Key="ReviewerPill" TargetType="Button">
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="{DynamicResource SidebarPanelInputBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource SidebarPanelForegroundBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome"
+                                CornerRadius="15"
+                                Background="{TemplateBinding Background}">
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome"
+                                        Property="Background"
+                                        Value="{DynamicResource SidebarPanelSelectedBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="42" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <Grid Grid.Row="0" Margin="6,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="30" />
+            </Grid.ColumnDefinitions>
+            <Button x:Name="SessionButton"
+                    Grid.Column="0"
+                    Margin="0,0,4,0"
+                    Style="{StaticResource ReviewerPill}"
+                    ToolTip="切换要审查的工作目录（点击循环切换）"
+                    Click="OnSessionClicked">
+                <TextBlock Text="选择工作目录…"
+                           FontSize="12"
+                           TextTrimming="CharacterEllipsis" />
+            </Button>
+            <Button Grid.Column="1"
+                    Style="{StaticResource SidebarIconButton}"
+                    ToolTip="刷新改动"
+                    Click="OnRefreshClicked">
+                <controls:FluentIcon Kind="ArrowClockwise" IconSize="14" />
+            </Button>
+        </Grid>
+        <ListBox x:Name="FilesList"
+                 Grid.Row="1"
+                 MaxHeight="148"
+                 Margin="6,4,6,4"
+                 BorderThickness="0"
+                 Background="Transparent"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 SelectionChanged="OnFileSelected">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <StackPanel Orientation="Horizontal">
+                        <Border CornerRadius="4"
+                                Padding="4,1"
+                                Margin="0,0,8,0"
+                                Background="{Binding StatusColor}">
+                            <TextBlock Text="{Binding StatusBadge}"
+                                       FontSize="11"
+                                       FontWeight="Bold"
+                                       Foreground="#101011" />
+                        </Border>
+                        <TextBlock Text="{Binding Path}"
+                                   FontSize="12"
+                                   TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource SidebarPanelForegroundBrush}"
+                                   ToolTip="{Binding Path}" />
+                    </StackPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+        <ListBox x:Name="DiffList"
+                 Grid.Row="2"
+                 Margin="6,0,6,6"
+                 BorderThickness="0"
+                 Background="{DynamicResource SidebarPanelInputBrush}"
+                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                 VirtualizingPanel.ScrollUnit="Pixel">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <TextBlock x:Name="Line"
+                               Text="{Binding Text}"
+                               FontFamily="Consolas, 'Cascadia Mono', monospace"
+                               FontSize="11"
+                               TextTrimming="CharacterEllipsis" />
+                    <DataTemplate.Triggers>
+                        <DataTrigger Binding="{Binding Kind}" Value="add">
+                            <Setter TargetName="Line" Property="Foreground" Value="#7BC97B" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding Kind}" Value="del">
+                            <Setter TargetName="Line" Property="Foreground" Value="#E57373" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding Kind}" Value="hunk">
+                            <Setter TargetName="Line" Property="Foreground" Value="#6FB3E0" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding Kind}" Value="info">
+                            <Setter TargetName="Line" Property="Foreground" Value="{DynamicResource SidebarPanelSecondaryBrush}" />
+                        </DataTrigger>
+                    </DataTemplate.Triggers>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+    </Grid>
+</UserControl>

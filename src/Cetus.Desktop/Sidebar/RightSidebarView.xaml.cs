@@ -115,6 +115,12 @@ public partial class RightSidebarView : UserControl, IDisposable
         OpenTab(SidebarTabKind.Files);
     }
 
+    private void OnMenuReviewClicked(object sender, RoutedEventArgs e)
+    {
+        NewTabMenuPopup.IsOpen = false;
+        OpenTab(SidebarTabKind.Review);
+    }
+
     private void OnEmptyBrowserClicked(object sender, RoutedEventArgs e) =>
         OpenTab(SidebarTabKind.Browser);
 
@@ -123,6 +129,9 @@ public partial class RightSidebarView : UserControl, IDisposable
 
     private void OnEmptyFilesClicked(object sender, RoutedEventArgs e) =>
         OpenTab(SidebarTabKind.Files);
+
+    private void OnEmptyReviewClicked(object sender, RoutedEventArgs e) =>
+        OpenTab(SidebarTabKind.Review);
 
     private void OnEmptyStatusClicked(object sender, RoutedEventArgs e) =>
         OpenTab(SidebarTabKind.Status);
@@ -187,6 +196,13 @@ public partial class RightSidebarView : UserControl, IDisposable
                 content = status;
                 title = SidebarTabModel.TitleOf(kind);
                 break;
+            case SidebarTabKind.Review:
+                var review = new ReviewTabContent();
+                review.SetEndpointProvider(() => _dshEndpointProvider?.Invoke()
+                    ?? new Uri("http://127.0.0.1:3080/"));
+                content = review;
+                title = SidebarTabModel.TitleOf(kind);
+                break;
             default:
                 content = new FilesTabContent();
                 title = SidebarTabModel.TitleOf(kind);
@@ -204,6 +220,11 @@ public partial class RightSidebarView : UserControl, IDisposable
                 {
                     RebuildPopupLists();
                 }
+            };
+            browserContent.FaviconChanged += (_, favicon) =>
+            {
+                tab.Favicon = favicon;
+                RefreshTabStrip();
             };
         }
 
@@ -274,6 +295,9 @@ public partial class RightSidebarView : UserControl, IDisposable
             case StatusTabContent status:
                 status.Dispose();
                 break;
+            case ReviewTabContent review:
+                review.Dispose();
+                break;
         }
     }
 
@@ -331,17 +355,26 @@ public partial class RightSidebarView : UserControl, IDisposable
         var layout = new DockPanel();
         DockPanel.SetDock(close, Dock.Right);
         layout.Children.Add(close);
+        FrameworkElement kindIcon = tab.Favicon is ImageSource favicon
+            ? new System.Windows.Controls.Image
+            {
+                Source = favicon,
+                Width = 16,
+                Height = 16,
+                VerticalAlignment = VerticalAlignment.Center,
+            }
+            : new Controls.FluentIcon
+            {
+                Kind = tab.Icon,
+                IconSize = 14,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
         layout.Children.Add(new StackPanel
         {
             Orientation = Orientation.Horizontal,
             Children =
             {
-                new Controls.FluentIcon
-                {
-                    Kind = tab.Icon,
-                    IconSize = 14,
-                    VerticalAlignment = VerticalAlignment.Center,
-                },
+                kindIcon,
                 new TextBlock
                 {
                     Text = tab.Title,
@@ -628,6 +661,9 @@ public sealed class SidebarTab
     public string Title { get; set; }
 
     public string Icon { get; }
+
+    /// <summary>Site favicon for browser tabs; null falls back to the kind icon.</summary>
+    public ImageSource? Favicon { get; set; }
 
     public FrameworkElement Content { get; }
 

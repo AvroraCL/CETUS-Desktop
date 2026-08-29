@@ -150,7 +150,10 @@
         </Border>
 
         <Grid Grid.Row="1">
-            <ContentControl x:Name="ActiveTabHost" />
+            <!-- 12px left gutter keeps this strip WPF-only: WebView2 tab
+                 content is HWND airspace and would swallow the resize
+                 handle's mouse input in browser/terminal tabs. -->
+            <ContentControl x:Name="ActiveTabHost" Margin="12,0,0,0" />
             <StackPanel x:Name="EmptyStatePanel" Visibility="Collapsed">
                 <TextBlock Text="打开标签页"
                            FontSize="20"
@@ -180,6 +183,10 @@
                             Tag="DataUsage"
                             Content="状态"
                             Click="OnEmptyStatusClicked" />
+                    <Button Style="{StaticResource SidebarTabTypeCard}"
+                            Tag="ClipboardTask"
+                            Content="审查"
+                            Click="OnEmptyReviewClicked" />
                 </WrapPanel>
             </StackPanel>
             <!-- Mirrors the DSH in-page modal mask: when a real modal
@@ -226,6 +233,12 @@
                         <StackPanel Orientation="Horizontal">
                             <controls:FluentIcon Kind="Folder" IconSize="14" />
                             <TextBlock Text="文件" Margin="10,0,0,0" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource SidebarMenuRow}" Click="OnMenuReviewClicked">
+                        <StackPanel Orientation="Horizontal">
+                            <controls:FluentIcon Kind="ClipboardTask" IconSize="14" />
+                            <TextBlock Text="审查" Margin="10,0,0,0" />
                         </StackPanel>
                     </Button>
                 </StackPanel>

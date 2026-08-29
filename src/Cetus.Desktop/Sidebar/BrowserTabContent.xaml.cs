@@ -1,10 +1,13 @@
 using System.IO;
+using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using Cetus.Configuration;
 using Microsoft.Web.WebView2.Core;
 
@@ -80,6 +83,14 @@ public partial class BrowserTabContent : UserControl, IDisposable
 
     /// <summary>Raised whenever the page document title changes.</summary>
     public event EventHandler<string>? TitleChanged;
+
+    /// <summary>Raised with the site favicon (null = fall back to the globe icon).</summary>
+    public event EventHandler<ImageSource?>? FaviconChanged;
+
+    private static readonly HttpClient FaviconClient = new()
+    {
+        Timeout = TimeSpan.FromSeconds(6),
+    };
 
     /// <summary>
     /// Receives the picked element summary; true means it landed in the chat
@@ -193,6 +204,81 @@ public partial class BrowserTabContent : UserControl, IDisposable
         else if (TabWeb.Source is { } source && source.AbsoluteUri != "about:blank")
         {
             AddressBox.Text = source.AbsoluteUri;
+            _ = LoadFaviconAsync(source);
+        }
+    }
+
+    /// <summary>
+    /// Resolves the site favicon: icon links declared by the page first, then
+    /// origin/favicon.ico. Failures quietly keep the globe icon.
+    /// </summary>
+    private async Task LoadFaviconAsync(Uri pageUri)
+    {
+        FaviconChanged?.Invoke(this, null);
+        try
+        {
+            var candidates = new List<string>();
+            if (TabWeb.CoreWebView2 is { } core)
+            {
+                string raw = await core.ExecuteScriptAsync(
+                    """
+                    (() => JSON.stringify(
+                      Array.from(document.querySelectorAll('link[rel*="icon"]'))
+                        .map((link) => link.href)
+                        .filter(Boolean)))()
+                    """);
+                using JsonDocument document = JsonDocument.Parse(raw);
+                if (document.RootElement.ValueKind == JsonValueKind.String)
+                {
+                    using JsonDocument links = JsonDocument.Parse(
+                        document.RootElement.GetString() ?? "[]");
+                    candidates.AddRange(links.RootElement.EnumerateArray()
+                        .Select(item => item.GetString() ?? string.Empty)
+                        .Where(item => item.Length > 0));
+                }
+            }
+
+            candidates.Add(new Uri(pageUri, "/favicon.ico").AbsoluteUri);
+
+            foreach (string candidate in candidates)
+            {
+                if (!Uri.TryCreate(candidate, UriKind.Absolute, out Uri? iconUri)
+                    || iconUri.Scheme is not ("http" or "https"))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    byte[] bytes = await FaviconClient.GetByteArrayAsync(iconUri);
+                    if (bytes.Length == 0)
+                    {
+                        continue;
+                    }
+
+                    var icon = new BitmapImage();
+                    icon.BeginInit();
+                    icon.DecodePixelWidth = 32;
+                    icon.StreamSource = new MemoryStream(bytes);
+                    icon.CacheOption = BitmapCacheOption.OnLoad;
+                    icon.EndInit();
+                    icon.Freeze();
+                    if (!_disposed)
+                    {
+                        FaviconChanged?.Invoke(this, icon);
+                    }
+
+                    return;
+                }
+                catch (Exception error) when (error is HttpRequestException or InvalidOperationException or IOException)
+                {
+                    // Try the next candidate.
+                }
+            }
+        }
+        catch (Exception error) when (error is HttpRequestException or InvalidOperationException or JsonException or IOException or TaskCanceledException)
+        {
+            // No favicon — the globe stays.
         }
     }
 
