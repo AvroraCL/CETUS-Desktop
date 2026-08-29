@@ -25,7 +25,7 @@ CETUS 把官方 Web UI、Agent 能力和插件生态装进一个开箱即用的 
 - 关闭窗口后驻留系统托盘，随时重新打开
 - 保证应用单实例运行，避免重复启动多个 Harness
 - 退出 CETUS 时自动回收由它启动的 Node 子进程
-- 启动时自动检查新版本，一键下载安装器并静默升级（GitHub Releases 更新通道）
+- 启动时自动检查新版本，一键下载安装器并静默升级（GitHub Releases 主源，不可达时自动回退 GitCode 镜像）
 - 完整复用 DeepSeek Harness 的 Agent 能力与插件生态
 - 内置可调宽度的右侧工具栏：标签页式浏览网页、运行 PowerShell、查看本地文件，支持多开、下拉管理与最近关闭恢复
 

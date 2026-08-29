@@ -115,7 +115,7 @@ public partial class MainWindow : Window
         ShowRuntimeError(result, "Cetus · 启动失败");
         if (_settings.CheckUpdatesOnStartup)
         {
-            _updates ??= new UpdateCoordinator(this, ExitApplication);
+            _updates ??= new UpdateCoordinator(this, ExitApplication, _settings);
             _ = CheckForUpdatesSilentlyAsync();
         }
     }
@@ -157,7 +157,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        _updates ??= new UpdateCoordinator(this, ExitApplication);
+        _updates ??= new UpdateCoordinator(this, ExitApplication, _settings);
         _tray = new TrayIconController(new TrayCommands(
             ShowWindow,
             RetryDshAsync,

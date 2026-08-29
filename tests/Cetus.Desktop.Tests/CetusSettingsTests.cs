@@ -73,6 +73,21 @@ public sealed class CetusSettingsTests
         Assert.False(reloaded.CheckUpdatesOnStartup);
     }
 
+    [Fact]
+    public void UpdateSource_PersistsAndRejectsUnknownValues()
+    {
+        using var directory = new TemporaryDirectory();
+        string settingsPath = Path.Combine(directory.Path, "settings.json");
+        var settings = new CetusSettings(settingsPath);
+
+        Assert.Equal("github", settings.UpdateSource);
+        settings.SetUpdateSource("gitcode");
+
+        var reloaded = new CetusSettings(settingsPath);
+        Assert.Equal("gitcode", reloaded.UpdateSource);
+        Assert.Throws<ArgumentException>(() => reloaded.SetUpdateSource("example"));
+    }
+
     [Theory]
     [InlineData(100, 300)]
     [InlineData(300, 300)]

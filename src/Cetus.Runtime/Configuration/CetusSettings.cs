@@ -15,11 +15,13 @@ public sealed class CetusSettings
     public const int MinimumRightSidebarWidth = 300;
     public const int MaximumRightSidebarWidth = 1600;
     public const bool DefaultCheckUpdatesOnStartup = true;
+    public const string DefaultUpdateSource = "github";
 
     private readonly string _settingsPath;
     private int _configuredPort;
     private int _rightSidebarWidth;
     private bool _checkUpdatesOnStartup;
+    private string _updateSource = DefaultUpdateSource;
 
     public CetusSettings(string settingsPath)
     {
@@ -28,6 +30,7 @@ public sealed class CetusSettings
         _configuredPort = snapshot.Port;
         _rightSidebarWidth = snapshot.RightSidebarWidth;
         _checkUpdatesOnStartup = snapshot.CheckUpdatesOnStartup;
+        _updateSource = snapshot.UpdateSource;
     }
 
     public int ConfiguredPort => _configuredPort;
@@ -47,6 +50,25 @@ public sealed class CetusSettings
     public int RightSidebarWidth => _rightSidebarWidth;
 
     public bool CheckUpdatesOnStartup => _checkUpdatesOnStartup;
+
+    /// <summary>Last update source that answered ("github" or "gitcode").</summary>
+    public string UpdateSource => _updateSource;
+
+    public void SetUpdateSource(string source)
+    {
+        if (source is not ("github" or "gitcode"))
+        {
+            throw new ArgumentException("更新源只能是 github 或 gitcode。", nameof(source));
+        }
+
+        if (_updateSource == source)
+        {
+            return;
+        }
+
+        _updateSource = source;
+        Persist();
+    }
 
     /// <summary>
     /// Cetus shares the inherited/default DSH_HOME by default. This optional
@@ -114,7 +136,10 @@ public sealed class CetusSettings
                 file.RightSidebarWidth is { } width
                     ? NormalizeRightSidebarWidth(width)
                     : DefaultRightSidebarWidth,
-                file.CheckUpdatesOnStartup ?? DefaultCheckUpdatesOnStartup);
+                file.CheckUpdatesOnStartup ?? DefaultCheckUpdatesOnStartup,
+                file.UpdateSource is { } source && (source == "github" || source == "gitcode")
+                    ? source
+                    : DefaultUpdateSource);
         }
         catch (IOException)
         {
@@ -154,6 +179,7 @@ public sealed class CetusSettings
             Port = _configuredPort,
             RightSidebarWidth = _rightSidebarWidth,
             CheckUpdatesOnStartup = _checkUpdatesOnStartup,
+            UpdateSource = _updateSource,
         },
             new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(temporaryPath, json);
@@ -165,16 +191,19 @@ public sealed class CetusSettings
         public int? Port { get; set; }
         public int? RightSidebarWidth { get; set; }
         public bool? CheckUpdatesOnStartup { get; set; }
+        public string? UpdateSource { get; set; }
     }
 
     private sealed record SettingsSnapshot(
         int Port,
         int RightSidebarWidth,
-        bool CheckUpdatesOnStartup)
+        bool CheckUpdatesOnStartup,
+        string UpdateSource)
     {
         public static SettingsSnapshot Default { get; } = new(
             DefaultPort,
             DefaultRightSidebarWidth,
-            DefaultCheckUpdatesOnStartup);
+            DefaultCheckUpdatesOnStartup,
+            DefaultUpdateSource);
     }
 }

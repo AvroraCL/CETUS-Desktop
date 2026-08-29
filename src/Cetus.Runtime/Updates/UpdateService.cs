@@ -1,87 +1,138 @@
 using System.IO;
 using System.Net.Http;
+using System.Text.Json;
 using Cetus.Configuration;
 
 namespace Cetus.Updates;
 
-internal sealed record UpdateCheckResult(bool UpdateAvailable, ReleaseInfo? Release, string? Error)
+public enum UpdateFeedSource
 {
-    public static UpdateCheckResult UpToDate { get; } = new(false, null, null);
+    GitHub,
+    GitCode,
+}
 
-    public static UpdateCheckResult Failed(string error) => new(false, null, error);
+public sealed record UpdateCheckResult(
+    bool UpdateAvailable,
+    ReleaseInfo? Release,
+    string? Error,
+    UpdateFeedSource Source,
+    string ReleasesPageUrl)
+{
+    public static UpdateCheckResult UpToDate(UpdateFeedSource source) =>
+        new(false, null, null, source, ReleasesPageFor(source));
+
+    public static UpdateCheckResult Failed(string error) =>
+        new(false, null, error, UpdateFeedSource.GitHub, ReleasesPageFor(UpdateFeedSource.GitHub));
+
+    public static string ReleasesPageFor(UpdateFeedSource source) => source switch
+    {
+        UpdateFeedSource.GitCode => GitCodeReleasesPage,
+        _ => GitHubReleasesPage,
+    };
+
+    public const string GitHubReleasesPage = "https://github.com/AvroraCL/CETUS-Desktop/releases";
+    public const string GitCodeReleasesPage = "https://gitcode.com/HelenaSG/CETUS-Desktop/releases";
 }
 
 /// <summary>
-/// Talks to the GitHub Releases update feed: checking for a newer version and
-/// downloading the installer with progress and optional checksum verification.
-/// Every network failure is normalized into a result instead of an exception.
+/// Multi-source update feed: GitHub first, GitCode as the fallback when
+/// GitHub is unreachable. The last source that answered is remembered in
+/// settings so later checks try it first. Every network failure degrades to
+/// the next source instead of aborting.
 /// </summary>
-internal sealed class UpdateService : IDisposable
+public sealed class UpdateService : IDisposable
 {
-    public const string DefaultFeedUrl =
+    public const string DefaultGitHubFeed =
         "https://api.github.com/repos/AvroraCL/CETUS-Desktop/releases/latest";
+
+    public const string DefaultGitCodeTags =
+        "https://gitcode.com/api/v5/repos/HelenaSG/CETUS-Desktop/tags";
+
+    public const string DefaultGitCodeReleases =
+        "https://gitcode.com/api/v5/repos/HelenaSG/CETUS-Desktop/releases";
 
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(10);
 
     private readonly HttpClient _client;
-    private readonly string _feedUrl;
+    private readonly string _githubFeed;
+    private readonly string _gitCodeTags;
+    private readonly string _gitCodeReleases;
 
-    public UpdateService(HttpMessageHandler? handler = null, string? feedUrl = null)
+    public UpdateService(HttpMessageHandler? handler = null, string? githubFeed = null)
     {
-        _feedUrl = feedUrl
+        _githubFeed = githubFeed
             ?? ReadEnvironmentFeed()
-            ?? DefaultFeedUrl;
+            ?? DefaultGitHubFeed;
+        _gitCodeTags = DefaultGitCodeTags;
+        _gitCodeReleases = DefaultGitCodeReleases;
         _client = handler is null ? new HttpClient() : new HttpClient(handler);
         _client.Timeout = RequestTimeout;
         _client.DefaultRequestHeaders.UserAgent.ParseAdd("cetus-desktop-update-check");
         _client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
     }
 
-    /// <summary>The configured feed; CETUS_UPDATE_FEED overrides the GitHub default.</summary>
-    public string FeedUrl => _feedUrl;
+    /// <summary>The configured GitHub feed; CETUS_UPDATE_FEED overrides it.</summary>
+    public string FeedUrl => _githubFeed;
 
-    public async Task<UpdateCheckResult> CheckAsync(Version currentVersion, CancellationToken cancellationToken)
+    public async Task<UpdateCheckResult> CheckAsync(
+        Version currentVersion,
+        string preferredSource,
+        CancellationToken cancellationToken)
     {
-        try
+        string? lastError = null;
+        foreach (UpdateFeedSource source in OrderedSources(preferredSource))
         {
-            using HttpResponseMessage response = await _client.GetAsync(_feedUrl, cancellationToken);
-            if (!response.IsSuccessStatusCode)
+            cancellationToken.ThrowIfCancellationRequested();
+            try
             {
-                return UpdateCheckResult.Failed($"更新服务器返回 {(int)response.StatusCode}。");
-            }
+                ReleaseInfo? release = source switch
+                {
+                    UpdateFeedSource.GitHub => await GetGitHubLatestAsync(cancellationToken),
+                    _ => await GetGitCodeLatestAsync(cancellationToken),
+                };
 
-            string json = await response.Content.ReadAsStringAsync(cancellationToken);
-            ReleaseInfo? release = UpdateFeed.Parse(json);
-            if (release is null)
+                if (release is null)
+                {
+                    lastError = "更新源没有可用版本。";
+                    continue;
+                }
+
+                if (release.Version <= currentVersion)
+                {
+                    return UpdateCheckResult.UpToDate(source);
+                }
+
+                return new UpdateCheckResult(true, release, null, source, UpdateCheckResult.ReleasesPageFor(source));
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                return UpdateCheckResult.Failed("更新源返回了无法解析的数据。");
+                throw;
             }
+            catch (Exception error)
+            {
+                lastError = error.Message;
+            }
+        }
 
-            return release.Version > currentVersion
-                ? new UpdateCheckResult(true, release, null)
-                : UpdateCheckResult.UpToDate;
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception error)
-        {
-            return UpdateCheckResult.Failed(error.Message);
-        }
+        return UpdateCheckResult.Failed(lastError ?? "更新源不可用。");
     }
 
     /// <summary>
     /// Downloads the release's installer into the update cache directory and
-    /// verifies its SHA-256 against SHA256SUMS.txt when that asset exists.
+    /// verifies its SHA-256 against SHA256SUMS when that asset exists.
     /// Returns the local installer path.
     /// </summary>
     public async Task<string> DownloadInstallerAsync(
         ReleaseInfo release,
+        UpdateFeedSource source,
         IProgress<double>? progress,
         CancellationToken cancellationToken)
     {
-        ReleaseAsset? installer = UpdateFeed.SelectInstallerAsset(release)
+        ReleaseInfo effective = source == UpdateFeedSource.GitCode
+            ? await ResolveGitCodeAssetsAsync(release, cancellationToken) ?? release
+            : release;
+
+        ReleaseAsset? installer = UpdateFeed.SelectInstallerAsset(effective)
             ?? throw new InvalidOperationException("发布中没有找到安装器文件。");
 
         Directory.CreateDirectory(CetusPaths.UpdateCacheDirectory);
@@ -89,7 +140,7 @@ internal sealed class UpdateService : IDisposable
         try
         {
             await DownloadToFileAsync(installer, targetPath, progress, cancellationToken);
-            await VerifyDownloadAsync(release, installer.Name, targetPath, cancellationToken);
+            await VerifyDownloadAsync(effective, installer.Name, targetPath, cancellationToken);
             return targetPath;
         }
         catch
@@ -97,6 +148,106 @@ internal sealed class UpdateService : IDisposable
             TryDelete(targetPath);
             throw;
         }
+    }
+
+    private async Task<ReleaseInfo?> GetGitHubLatestAsync(CancellationToken cancellationToken)
+    {
+        using HttpResponseMessage response = await _client.GetAsync(_githubFeed, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException($"更新服务器返回 {(int)response.StatusCode}。");
+        }
+
+        return UpdateFeed.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+    }
+
+    /// <summary>
+    /// GitCode does not mirror GitHub's releases/latest: the newest known
+    /// version comes from the tag list, and release assets are resolved from
+    /// the releases list only when a download is actually requested.
+    /// </summary>
+    private async Task<ReleaseInfo?> GetGitCodeLatestAsync(CancellationToken cancellationToken)
+    {
+        using HttpResponseMessage response = await _client.GetAsync(_gitCodeTags, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException($"更新服务器返回 {(int)response.StatusCode}。");
+        }
+
+        using JsonDocument document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        Version? best = null;
+        string? bestTag = null;
+        if (document.RootElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement tag in document.RootElement.EnumerateArray())
+            {
+                if (tag.ValueKind == JsonValueKind.Object
+                    && tag.TryGetProperty("name", out var nameElement)
+                    && UpdateFeed.TryParseTag(nameElement.GetString(), out Version version)
+                    && (best is null || version > best))
+                {
+                    best = version;
+                    bestTag = nameElement.GetString();
+                }
+            }
+        }
+
+        return bestTag is null ? null : new ReleaseInfo(bestTag, best!, null, Array.Empty<ReleaseAsset>());
+    }
+
+    private async Task<ReleaseInfo?> ResolveGitCodeAssetsAsync(ReleaseInfo release, CancellationToken cancellationToken)
+    {
+        using HttpResponseMessage response = await _client.GetAsync(_gitCodeReleases, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            return release;
+        }
+
+        using JsonDocument document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        if (document.RootElement.ValueKind != JsonValueKind.Array)
+        {
+            return release;
+        }
+
+        foreach (JsonElement releaseElement in document.RootElement.EnumerateArray())
+        {
+            if (releaseElement.ValueKind != JsonValueKind.Object
+                || !releaseElement.TryGetProperty("tag_name", out var tagElement)
+                || !UpdateFeed.TryParseTag(tagElement.GetString(), out Version version)
+                || version != release.Version)
+            {
+                continue;
+            }
+
+            var assets = new List<ReleaseAsset>();
+            if (releaseElement.TryGetProperty("assets", out var assetsElement)
+                && assetsElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (JsonElement asset in assetsElement.EnumerateArray())
+                {
+                    string? name = asset.ValueKind == JsonValueKind.Object
+                        && asset.TryGetProperty("name", out var nameElement)
+                            ? nameElement.GetString()
+                            : null;
+                    string? url = asset.ValueKind == JsonValueKind.Object
+                        && asset.TryGetProperty("browser_download_url", out var urlElement)
+                            ? urlElement.GetString()
+                            : null;
+                    if (name is not null && url is not null)
+                    {
+                        assets.Add(new ReleaseAsset(name, url, 0));
+                    }
+                }
+            }
+
+            string? notes = releaseElement.TryGetProperty("body", out var bodyElement)
+                && bodyElement.ValueKind == JsonValueKind.String
+                ? bodyElement.GetString()
+                : release.Notes;
+            return new ReleaseInfo(release.TagName, release.Version, notes, assets);
+        }
+
+        return release;
     }
 
     private async Task DownloadToFileAsync(
@@ -155,6 +306,21 @@ internal sealed class UpdateService : IDisposable
     {
         string? value = Environment.GetEnvironmentVariable("CETUS_UPDATE_FEED");
         return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    private static IEnumerable<UpdateFeedSource> OrderedSources(string preferred)
+    {
+        bool gitCodeFirst = preferred.Equals("gitcode", StringComparison.OrdinalIgnoreCase);
+        if (gitCodeFirst)
+        {
+            yield return UpdateFeedSource.GitCode;
+        }
+
+        yield return UpdateFeedSource.GitHub;
+        if (!gitCodeFirst)
+        {
+            yield return UpdateFeedSource.GitCode;
+        }
     }
 
     private static void TryDelete(string path)

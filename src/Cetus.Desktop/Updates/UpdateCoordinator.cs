@@ -14,47 +14,69 @@ namespace Cetus.Updates;
 /// </summary>
 internal sealed class UpdateCoordinator
 {
-    private const string ReleasesUrl = "https://github.com/AvroraCL/CETUS-Desktop/releases/latest";
-
     private readonly Window _owner;
     private readonly Action _exitApplication;
     private readonly UpdateService _service;
+    private readonly CetusSettings _settings;
     private readonly Version _currentVersion;
+    private string _releasesPageUrl = UpdateCheckResult.Failed("x").ReleasesPageUrl;
 
-    public UpdateCoordinator(Window owner, Action exitApplication)
-        : this(owner, exitApplication, new UpdateService(), ReadCurrentVersion())
+    public UpdateCoordinator(Window owner, Action exitApplication, CetusSettings settings)
+        : this(owner, exitApplication, new UpdateService(), settings, ReadCurrentVersion())
     {
     }
 
-    internal UpdateCoordinator(Window owner, Action exitApplication, UpdateService service, Version currentVersion)
+    internal UpdateCoordinator(
+        Window owner,
+        Action exitApplication,
+        UpdateService service,
+        CetusSettings settings,
+        Version currentVersion)
     {
         _owner = owner;
         _exitApplication = exitApplication;
         _service = service;
+        _settings = settings;
         _currentVersion = currentVersion;
     }
 
     public async Task CheckForUpdatesAsync(bool interactive)
     {
-        UpdateCheckResult result = await _service.CheckAsync(_currentVersion, CancellationToken.None);
-        if (!result.UpdateAvailable || result.Release is not { } release)
-        {
-            if (interactive)
-            {
-                ShowInfo(
-                    result.Error is null ? "当前已是最新版本。" : $"检查更新失败：{result.Error}",
-                    result.Error is null ? MessageBoxImage.Information : MessageBoxImage.Warning);
-            }
+        UpdateCheckResult result = await _service.CheckAsync(
+            _currentVersion,
+            _settings.UpdateSource,
+            CancellationToken.None);
+        _releasesPageUrl = result.ReleasesPageUrl;
 
+        if (result.UpdateAvailable && result.Release is { } found)
+        {
+            // Remember the source that answered so later checks try it first.
+            _settings.SetUpdateSource(result.Source switch
+            {
+                UpdateFeedSource.GitCode => "gitcode",
+                _ => "github",
+            });
+            await PresentAsync(found, InstalledEdition.IsInstalled(), result.Source);
             return;
         }
 
-        bool installed = InstalledEdition.IsInstalled();
-        var prompt = new UpdatePromptDialog(_currentVersion.ToString(), release, installed)
+        if (!interactive)
+        {
+            return;
+        }
+
+        ShowInfo(
+            result.Error is null ? "当前已是最新版本。" : $"检查更新失败：{result.Error}",
+            result.Error is null ? MessageBoxImage.Information : MessageBoxImage.Warning);
+    }
+
+    private async Task PresentAsync(ReleaseInfo release, bool installedEdition, UpdateFeedSource source)
+    {
+        var prompt = new UpdatePromptDialog(_currentVersion.ToString(), release, installedEdition)
         {
             Owner = _owner,
         };
-        prompt.InstallClicked += () => _ = RunInstallAsync(prompt, release);
+        prompt.InstallClicked += () => _ = RunInstallAsync(prompt, release, source);
         prompt.OpenReleasesClicked += () =>
         {
             OpenReleasesPage();
@@ -63,7 +85,7 @@ internal sealed class UpdateCoordinator
         prompt.ShowDialog();
     }
 
-    private async Task RunInstallAsync(UpdatePromptDialog prompt, ReleaseInfo release)
+    private async Task RunInstallAsync(UpdatePromptDialog prompt, ReleaseInfo release, UpdateFeedSource source)
     {
         var cancellation = new CancellationTokenSource();
         prompt.CancelClicked += cancellation.Cancel;
@@ -71,7 +93,11 @@ internal sealed class UpdateCoordinator
         var progress = new Progress<double>(prompt.ReportProgress);
         try
         {
-            string installerPath = await _service.DownloadInstallerAsync(release, progress, cancellation.Token);
+            string installerPath = await _service.DownloadInstallerAsync(
+                release,
+                source,
+                progress,
+                cancellation.Token);
             Process.Start(new ProcessStartInfo(installerPath)
             {
                 UseShellExecute = true,
@@ -94,11 +120,11 @@ internal sealed class UpdateCoordinator
     private void ShowInfo(string message, MessageBoxImage image) =>
         _ = MessageBox.Show(_owner, message, "CETUS · 更新", MessageBoxButton.OK, image);
 
-    private static void OpenReleasesPage()
+    private void OpenReleasesPage()
     {
         try
         {
-            Process.Start(new ProcessStartInfo(ReleasesUrl) { UseShellExecute = true });
+            Process.Start(new ProcessStartInfo(_releasesPageUrl) { UseShellExecute = true });
         }
         catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception)
         {
