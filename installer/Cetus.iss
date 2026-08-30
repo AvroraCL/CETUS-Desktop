@@ -53,7 +53,9 @@ Name: "{userprograms}\Cetus 鲸鱼座"; Filename: "{app}\Cetus.exe"; WorkingDir:
 Name: "{userdesktop}\Cetus 鲸鱼座"; Filename: "{app}\Cetus.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\Cetus.exe"; Description: "启动 Cetus 鲸鱼座"; Flags: nowait postinstall skipifsilent
+; No skipifsilent: the auto-update flow relies on the silent install
+; relaunching CETUS so the new build can show the announcement page.
+Filename: "{app}\Cetus.exe"; Description: "启动 Cetus 鲸鱼座"; Flags: nowait postinstall
 
 [UninstallDelete]
 ; Legacy WebView2 default profile location (pre-0.1.0 installs wrote it next to the exe).

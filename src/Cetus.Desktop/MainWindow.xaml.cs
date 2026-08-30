@@ -65,6 +65,7 @@ public partial class MainWindow : Window
     private bool _rightSidebarOpen;
     private int _rightSidebarAnimationGeneration;
     private bool _startupStarted;
+    private bool _announcementShown;
 
     /// <summary>
     /// Raised when the splash screen should go away: either the runtime
@@ -155,7 +156,7 @@ public partial class MainWindow : Window
         _ = RunStartupAsync();
         if (_settings.CheckUpdatesOnStartup)
         {
-            _updates ??= new UpdateCoordinator(this, ExitApplication, _settings);
+            EnsureUpdateCoordinator();
             _ = CheckForUpdatesSilentlyAsync();
         }
     }
@@ -189,6 +190,8 @@ public partial class MainWindow : Window
         {
             ShowRuntimeError(DesktopRuntimeResult.Failed(error), "Cetus · 启动失败");
         }
+
+        ShowUpdateAnnouncementIfDue();
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
@@ -217,9 +220,10 @@ public partial class MainWindow : Window
         SetupTray();
         DesktopRuntimeResult result = await _runtime.StartAsync();
         ShowRuntimeError(result, "Cetus · 启动失败");
+        ShowUpdateAnnouncementIfDue();
         if (_settings.CheckUpdatesOnStartup)
         {
-            _updates ??= new UpdateCoordinator(this, ExitApplication, _settings);
+            EnsureUpdateCoordinator();
             _ = CheckForUpdatesSilentlyAsync();
         }
     }
@@ -233,6 +237,60 @@ public partial class MainWindow : Window
         catch
         {
             // Startup update checks must never surface as errors.
+        }
+    }
+
+    private UpdateCoordinator EnsureUpdateCoordinator()
+    {
+        if (_updates is null)
+        {
+            _updates = new UpdateCoordinator(
+                this,
+                ExitApplication,
+                _settings,
+                notify: (title, message, onClick) => _tray?.ShowBalloonTip(title, message, onClick),
+                openAnnouncement: OpenUpdateAnnouncement);
+        }
+
+        return _updates;
+    }
+
+    /// <summary>
+    /// Shows the GitHub Pages announcement page in the in-app browser after a
+    /// completed update: the running version is higher than the version
+    /// recorded at the previous launch. First launches and downgrades stay
+    /// quiet; the recorded version is refreshed on every launch.
+    /// </summary>
+    private void ShowUpdateAnnouncementIfDue()
+    {
+        if (_announcementShown)
+        {
+            return;
+        }
+
+        _announcementShown = true;
+        string current = UpdateCoordinator.ReadCurrentVersion().ToString();
+        string? previous = _settings.LastLaunchVersion;
+        if (UpdateAnnouncement.ShouldAnnounce(previous, current))
+        {
+            OpenUpdateAnnouncement(UpdateAnnouncement.BuildPageUrl(previous, current));
+        }
+
+        _settings.SetLastLaunchVersion(current);
+    }
+
+    private void OpenUpdateAnnouncement(string url)
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(() => OpenUpdateAnnouncement(url));
+            return;
+        }
+
+        RightSidebarContent.OpenWebPage(url);
+        if (!_rightSidebarOpen)
+        {
+            SetRightSidebarOpen(true, animate: true);
         }
     }
 
@@ -261,12 +319,12 @@ public partial class MainWindow : Window
             return;
         }
 
-        _updates ??= new UpdateCoordinator(this, ExitApplication, _settings);
+        UpdateCoordinator updates = EnsureUpdateCoordinator();
         _tray = new TrayIconController(new TrayCommands(
             ShowWindow,
             RetryDshAsync,
             ConfigurePortAsync,
-            () => _updates.CheckForUpdatesAsync(interactive: true),
+            () => updates.CheckForUpdatesAsync(interactive: true),
             ExitApplication));
         _tray.SetRetryEnabled(_runtime.State.CanRetry);
     }

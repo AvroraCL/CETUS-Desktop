@@ -29,6 +29,7 @@ public sealed class CetusSettings
     private string _updateSource = DefaultUpdateSource;
     private bool _closeToTray = DefaultCloseToTray;
     private string _defaultTerminalShell = DefaultTerminalShellKey;
+    private string? _lastLaunchVersion;
 
     public CetusSettings(string settingsPath)
     {
@@ -40,6 +41,7 @@ public sealed class CetusSettings
         _updateSource = snapshot.UpdateSource;
         _closeToTray = snapshot.CloseToTray;
         _defaultTerminalShell = snapshot.DefaultTerminalShell;
+        _lastLaunchVersion = snapshot.LastLaunchVersion;
     }
 
     public int ConfiguredPort => _configuredPort;
@@ -68,6 +70,20 @@ public sealed class CetusSettings
 
     /// <summary>Preferred sidebar terminal shell ("pwsh", "powershell" or "cmd").</summary>
     public string DefaultTerminalShell => _defaultTerminalShell;
+
+    /// <summary>Version string recorded at the previous launch, used to detect that CETUS just updated itself.</summary>
+    public string? LastLaunchVersion => _lastLaunchVersion;
+
+    public void SetLastLaunchVersion(string? version)
+    {
+        if (_lastLaunchVersion == version)
+        {
+            return;
+        }
+
+        _lastLaunchVersion = version;
+        Persist();
+    }
 
     public void SetUpdateSource(string source)
     {
@@ -178,7 +194,8 @@ public sealed class CetusSettings
                     ? source
                     : DefaultUpdateSource,
                 file.CloseToTray ?? DefaultCloseToTray,
-                NormalizeTerminalShell(file.DefaultTerminalShell));
+                NormalizeTerminalShell(file.DefaultTerminalShell),
+                string.IsNullOrWhiteSpace(file.LastLaunchVersion) ? null : file.LastLaunchVersion.Trim());
         }
         catch (IOException)
         {
@@ -226,6 +243,7 @@ public sealed class CetusSettings
             UpdateSource = _updateSource,
             CloseToTray = _closeToTray,
             DefaultTerminalShell = _defaultTerminalShell,
+            LastLaunchVersion = _lastLaunchVersion,
         },
             new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(temporaryPath, json);
@@ -240,6 +258,7 @@ public sealed class CetusSettings
         public string? UpdateSource { get; set; }
         public bool? CloseToTray { get; set; }
         public string? DefaultTerminalShell { get; set; }
+        public string? LastLaunchVersion { get; set; }
     }
 
     private sealed record SettingsSnapshot(
@@ -248,7 +267,8 @@ public sealed class CetusSettings
         bool CheckUpdatesOnStartup,
         string UpdateSource,
         bool CloseToTray,
-        string DefaultTerminalShell)
+        string DefaultTerminalShell,
+        string? LastLaunchVersion)
     {
         public static SettingsSnapshot Default { get; } = new(
             DefaultPort,
@@ -256,6 +276,7 @@ public sealed class CetusSettings
             DefaultCheckUpdatesOnStartup,
             DefaultUpdateSource,
             DefaultCloseToTray,
-            DefaultTerminalShellKey);
+            DefaultTerminalShellKey,
+            null);
     }
 }

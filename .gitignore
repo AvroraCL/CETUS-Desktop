@@ -14,6 +14,8 @@ tools/
 docs/*
 !docs/CETUS-ico.png
 !docs/README 品牌横幅.png
+# the update announcement site ships to GitHub Pages
+!docs/site/
 
 # --- isolated development checks ---
 .dev/

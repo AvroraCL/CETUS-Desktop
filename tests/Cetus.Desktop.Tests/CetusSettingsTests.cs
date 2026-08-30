@@ -194,6 +194,38 @@ public sealed class CetusSettingsTests
         }
     }
 
+    [Fact]
+    public void LastLaunchVersion_PersistsAcrossLoads()
+    {
+        using var directory = new TemporaryDirectory();
+        string settingsPath = Path.Combine(directory.Path, "settings.json");
+        var settings = new CetusSettings(settingsPath);
+
+        Assert.Null(settings.LastLaunchVersion);
+        settings.SetConfiguredPort(4312);
+        settings.SetLastLaunchVersion("0.2.3");
+
+        var reloaded = new CetusSettings(settingsPath);
+        Assert.Equal("0.2.3", reloaded.LastLaunchVersion);
+        Assert.Equal(4312, reloaded.ConfiguredPort);
+
+        reloaded.SetLastLaunchVersion("0.2.4");
+        var third = new CetusSettings(settingsPath);
+        Assert.Equal("0.2.4", third.LastLaunchVersion);
+    }
+
+    [Fact]
+    public void Load_LegacySettingsWithoutLastLaunchVersion_YieldsNull()
+    {
+        using var directory = new TemporaryDirectory();
+        string settingsPath = Path.Combine(directory.Path, "settings.json");
+        File.WriteAllText(settingsPath, """{ "Port": 4312, "LastLaunchVersion": "  " }""");
+
+        var settings = new CetusSettings(settingsPath);
+
+        Assert.Null(settings.LastLaunchVersion);
+    }
+
     [Theory]
     [InlineData("0")]
     [InlineData("65536")]

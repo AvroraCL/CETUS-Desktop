@@ -19,6 +19,7 @@ internal sealed class TrayIconController : IDisposable
     private readonly ContextMenuStrip _menu;
     private readonly NotifyIcon _tray;
     private readonly ToolStripMenuItem _retryItem;
+    private Action? _balloonClick;
     private bool _disposed;
 
     public TrayIconController(TrayCommands commands)
@@ -50,6 +51,25 @@ internal sealed class TrayIconController : IDisposable
             Visible = true,
         };
         _tray.DoubleClick += (_, _) => commands.ShowWindow();
+        _tray.BalloonTipClicked += (_, _) => _balloonClick?.Invoke();
+    }
+
+    /// <summary>
+    /// Shows a notification-area balloon; the optional click action replaces
+    /// whatever a previous balloon registered (balloons stack, the click
+    /// target must always match the newest message).
+    /// </summary>
+    public void ShowBalloonTip(string title, string message, Action? onClick = null)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _balloonClick = onClick;
+        _tray.BalloonTipTitle = title;
+        _tray.BalloonTipText = message;
+        _tray.ShowBalloonTip(8000);
     }
 
     public void SetRetryEnabled(bool enabled)

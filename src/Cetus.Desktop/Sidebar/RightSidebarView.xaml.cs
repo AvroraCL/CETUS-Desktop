@@ -78,6 +78,30 @@ public partial class RightSidebarView : UserControl, IDisposable
         ModalDim.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
     }
 
+    /// <summary>
+    /// Opens a browser tab for the given URL (used for the post-update
+    /// announcement page); a tab already showing the address is activated
+    /// instead of duplicated.
+    /// </summary>
+    public void OpenWebPage(string url)
+    {
+        foreach (SidebarTab tab in _tabs)
+        {
+            if (tab.Content is BrowserTabContent existing
+                && Uri.TryCreate(url, UriKind.Absolute, out Uri? target)
+                && Uri.TryCreate(existing.CurrentAddress, UriKind.Absolute, out Uri? current)
+                && current.GetLeftPart(UriPartial.Path).Equals(
+                    target.GetLeftPart(UriPartial.Path),
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                ActivateTab(tab);
+                return;
+            }
+        }
+
+        OpenTab(SidebarTabKind.Browser, url);
+    }
+
     private void OnNewTabClicked(object sender, RoutedEventArgs e)
     {
         if (DateTime.Now < _newTabMenuSuppressedUntil)
