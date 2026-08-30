@@ -226,39 +226,29 @@
                     <sidebar:RightSidebarView x:Name="RightSidebarContent" />
                 </Border>
 
-                <!-- DSH-style handle: a transparent 12px strip on the sidebar's
-                     left edge. It lives in its own Popup HWND because tab
-                     content WebView2s are airspace and would swallow WPF
-                     hit-testing underneath — a Popup floats above them, so
-                     the grab zone keeps working over the web surface while
-                     the tab content itself stays flush with the divider. -->
-                <Popup x:Name="RightSidebarResizePopup"
-                       PlacementTarget="{Binding ElementName=RightSidebar}"
-                       Placement="RelativePoint"
-                       HorizontalOffset="0"
-                       VerticalOffset="0"
-                       StaysOpen="True"
-                       AllowsTransparency="False"
+                <!-- DSH-style handle: a transparent strip on the sidebar's left
+                     edge. It sits fully inside the sidebar because the WebView2
+                     HWND airspace would swallow any overlap onto the DSH side;
+                     12px keeps the grab zone comfortable. -->
+                <Thumb x:Name="RightSidebarResizeThumb"
+                       Grid.Column="1"
+                       Panel.ZIndex="2"
+                       Width="12"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Stretch"
+                       Background="Transparent"
+                       Cursor="SizeWE"
                        Focusable="False"
-                       IsOpen="False">
-                    <Thumb x:Name="RightSidebarResizeThumb"
-                           Width="12"
-                           Height="{Binding ActualHeight, ElementName=RightSidebar}"
-                           Background="Transparent"
-                           Cursor="SizeWE"
-                           Focusable="False"
-                           DragDelta="OnRightSidebarResizeDelta"
-                           DragCompleted="OnRightSidebarResizeCompleted">
-                        <Thumb.Template>
-                            <!-- Explicit empty template: the default Thumb
-                                 chrome would render a light band over the
-                                 divider. -->
-                            <ControlTemplate TargetType="Thumb">
-                                <Grid Background="Transparent" />
-                            </ControlTemplate>
-                        </Thumb.Template>
-                    </Thumb>
-                </Popup>
+                       DragDelta="OnRightSidebarResizeDelta"
+                       DragCompleted="OnRightSidebarResizeCompleted">
+                    <Thumb.Template>
+                        <!-- Explicit empty template: the default Thumb chrome
+                             would render a light band over the divider. -->
+                        <ControlTemplate TargetType="Thumb">
+                            <Grid Background="Transparent" />
+                        </ControlTemplate>
+                    </Thumb.Template>
+                </Thumb>
             </Grid>
         </Border>
     </Grid>

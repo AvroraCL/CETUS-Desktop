@@ -371,9 +371,6 @@ public partial class MainWindow : Window
     {
         _rightSidebarOpen = isOpen;
         _browserSession.SetRightSidebarOpen(isOpen);
-        // The floating resize strip must never linger over the DSH surface
-        // while the panel collapses.
-        RightSidebarResizePopup.IsOpen = isOpen;
 
         double currentWidth = Math.Clamp(
             RightSidebarColumn.ActualWidth,
