@@ -5,9 +5,7 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="42" />
-            <RowDefinition Height="*" MinHeight="110" />
-            <RowDefinition Height="6" />
-            <RowDefinition Height="*" MinHeight="90" />
+            <RowDefinition Height="*" />
         </Grid.RowDefinitions>
         <Grid Grid.Row="0" Margin="4,0">
             <Grid.ColumnDefinitions>
@@ -34,116 +32,124 @@
                 <controls:FluentIcon Kind="ArrowClockwise" IconSize="14" />
             </Button>
         </Grid>
-        <TreeView x:Name="FilesTree"
-                  Grid.Row="1"
-                  Margin="6,0,6,0"
-                  Padding="4"
-                  Background="Transparent"
-                  BorderThickness="0"
-                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                  Foreground="{DynamicResource SidebarPanelForegroundBrush}"
-                  TreeViewItem.Expanded="OnFileNodeExpanded"
-                  SelectedItemChanged="OnFileSelected"
-                  MouseDoubleClick="OnFileNodeDoubleClicked">
-            <TreeView.ItemContainerStyle>
-                <Style TargetType="TreeViewItem"
-                       BasedOn="{StaticResource {x:Type TreeViewItem}}">
-                    <Setter Property="Foreground"
-                            Value="{DynamicResource SidebarPanelForegroundBrush}" />
-                    <Setter Property="Background" Value="Transparent" />
-                    <Setter Property="IsExpanded"
-                            Value="{Binding IsExpanded, Mode=TwoWay}" />
-                </Style>
-            </TreeView.ItemContainerStyle>
-            <TreeView.ItemTemplate>
-                <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                    <StackPanel Orientation="Horizontal">
-                        <controls:FluentIcon Width="20"
-                                             Height="18"
-                                             VerticalAlignment="Center"
-                                             Kind="{Binding IconKind}"
-                                             IconSize="14"
+        <Grid Grid.Row="1" Margin="6,0,6,6">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MinWidth="110" />
+                <ColumnDefinition Width="6" />
+                <ColumnDefinition Width="128" MinWidth="88" MaxWidth="280" />
+            </Grid.ColumnDefinitions>
+            <!-- Preview pane (left) -->
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <TextBlock x:Name="PreviewHeader"
+                           Grid.Row="0"
+                           Margin="2,2,2,4"
+                           FontSize="11"
+                           TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource SidebarPanelSecondaryBrush}" />
+                <Grid Grid.Row="1"
+                      Background="{DynamicResource SidebarPanelInputBrush}">
+                    <ListBox x:Name="PreviewLines"
+                             BorderThickness="0"
+                             Background="Transparent"
+                             ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                             VirtualizingPanel.ScrollUnit="Pixel"
+                             Visibility="Collapsed">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock x:Name="Line"
+                                           Text="{Binding Text}"
+                                           FontFamily="Consolas, 'Cascadia Mono', monospace"
+                                           FontSize="11"
+                                           TextTrimming="CharacterEllipsis"
+                                           Foreground="{DynamicResource SidebarPanelForegroundBrush}" />
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding IsNotice}" Value="True">
+                                        <Setter TargetName="Line"
+                                                Property="Foreground"
+                                                Value="{DynamicResource SidebarPanelSecondaryBrush}" />
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <ScrollViewer x:Name="PreviewImageHost"
+                                  Visibility="Collapsed"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Auto"
+                                  Background="Transparent">
+                        <Image x:Name="PreviewImage"
+                               Stretch="Uniform"
+                               StretchDirection="DownOnly"
+                               HorizontalAlignment="Left"
+                               VerticalAlignment="Top"
+                               Margin="8" />
+                    </ScrollViewer>
+                    <StackPanel x:Name="PreviewNoticePanel"
+                                Visibility="Visible"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Center">
+                        <controls:FluentIcon Kind="Document"
+                                             IconSize="20"
+                                             HorizontalAlignment="Center"
                                              Foreground="{DynamicResource SidebarPanelSecondaryBrush}" />
-                        <TextBlock VerticalAlignment="Center"
-                                   Margin="4,0,0,0"
-                                   Foreground="{DynamicResource SidebarPanelForegroundBrush}"
-                                   Text="{Binding Name}"
-                                   ToolTip="{Binding FullPath}" />
+                        <TextBlock x:Name="PreviewNoticeText"
+                                   Margin="12,8,12,0"
+                                   FontSize="12"
+                                   TextWrapping="Wrap"
+                                   TextAlignment="Center"
+                                   Foreground="{DynamicResource SidebarPanelSecondaryBrush}" />
                     </StackPanel>
-                </HierarchicalDataTemplate>
-            </TreeView.ItemTemplate>
-        </TreeView>
-        <GridSplitter Grid.Row="2"
-                      HorizontalAlignment="Stretch"
-                      ResizeBehavior="PreviousAndNext"
-                      ResizeDirection="Rows"
-                      Background="Transparent"
-                      Focusable="False" />
-        <Grid Grid.Row="3" Margin="6,0,6,6">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-            </Grid.RowDefinitions>
-            <TextBlock x:Name="PreviewHeader"
-                       Grid.Row="0"
-                       Margin="2,2,2,4"
-                       FontSize="11"
-                       TextTrimming="CharacterEllipsis"
-                       Foreground="{DynamicResource SidebarPanelSecondaryBrush}" />
-            <Grid Grid.Row="1"
-                  Background="{DynamicResource SidebarPanelInputBrush}">
-                <ListBox x:Name="PreviewLines"
-                         BorderThickness="0"
-                         Background="Transparent"
-                         ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                         VirtualizingPanel.ScrollUnit="Pixel"
-                         Visibility="Collapsed">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock x:Name="Line"
-                                       Text="{Binding Text}"
-                                       FontFamily="Consolas, 'Cascadia Mono', monospace"
-                                       FontSize="11"
-                                       TextTrimming="CharacterEllipsis"
-                                       Foreground="{DynamicResource SidebarPanelForegroundBrush}" />
-                            <DataTemplate.Triggers>
-                                <DataTrigger Binding="{Binding IsNotice}" Value="True">
-                                    <Setter TargetName="Line"
-                                            Property="Foreground"
-                                            Value="{DynamicResource SidebarPanelSecondaryBrush}" />
-                                </DataTrigger>
-                            </DataTemplate.Triggers>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-                <ScrollViewer x:Name="PreviewImageHost"
-                              Visibility="Collapsed"
-                              VerticalScrollBarVisibility="Auto"
-                              HorizontalScrollBarVisibility="Auto"
-                              Background="Transparent">
-                    <Image x:Name="PreviewImage"
-                           Stretch="Uniform"
-                           StretchDirection="DownOnly"
-                           HorizontalAlignment="Left"
-                           VerticalAlignment="Top"
-                           Margin="8" />
-                </ScrollViewer>
-                <StackPanel x:Name="PreviewNoticePanel"
-                            Visibility="Visible"
-                            VerticalAlignment="Center"
-                            HorizontalAlignment="Center">
-                    <controls:FluentIcon Kind="Document"
-                                         IconSize="20"
-                                         HorizontalAlignment="Center"
-                                         Foreground="{DynamicResource SidebarPanelSecondaryBrush}" />
-                    <TextBlock x:Name="PreviewNoticeText"
-                               Margin="12,8,12,0"
-                               FontSize="12"
-                               TextWrapping="Wrap"
-                               TextAlignment="Center"
-                               Foreground="{DynamicResource SidebarPanelSecondaryBrush}" />
-                </StackPanel>
+                </Grid>
             </Grid>
+            <GridSplitter Grid.Column="1"
+                          ResizeBehavior="PreviousAndNext"
+                          ResizeDirection="Columns"
+                          Background="Transparent"
+                          Focusable="False" />
+            <!-- File tree (right, narrow) -->
+            <TreeView x:Name="FilesTree"
+                      Grid.Column="2"
+                      Padding="2"
+                      Background="Transparent"
+                      BorderThickness="0"
+                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                      Foreground="{DynamicResource SidebarPanelForegroundBrush}"
+                      TreeViewItem.Expanded="OnFileNodeExpanded"
+                      SelectedItemChanged="OnFileSelected"
+                      MouseDoubleClick="OnFileNodeDoubleClicked">
+                <TreeView.ItemContainerStyle>
+                    <Style TargetType="TreeViewItem"
+                           BasedOn="{StaticResource {x:Type TreeViewItem}}">
+                        <Setter Property="Foreground"
+                                Value="{DynamicResource SidebarPanelForegroundBrush}" />
+                        <Setter Property="Background" Value="Transparent" />
+                        <Setter Property="IsExpanded"
+                                Value="{Binding IsExpanded, Mode=TwoWay}" />
+                    </Style>
+                </TreeView.ItemContainerStyle>
+                <TreeView.ItemTemplate>
+                    <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                        <StackPanel Orientation="Horizontal">
+                            <controls:FluentIcon Width="20"
+                                                 Height="18"
+                                                 VerticalAlignment="Center"
+                                                 Kind="{Binding IconKind}"
+                                                 IconSize="14"
+                                                 Foreground="{DynamicResource SidebarPanelSecondaryBrush}" />
+                            <TextBlock VerticalAlignment="Center"
+                                       Margin="4,0,0,0"
+                                       Foreground="{DynamicResource SidebarPanelForegroundBrush}"
+                                       Text="{Binding Name}"
+                                       TextTrimming="CharacterEllipsis"
+                                       ToolTip="{Binding FullPath}" />
+                        </StackPanel>
+                    </HierarchicalDataTemplate>
+                </TreeView.ItemTemplate>
+            </TreeView>
         </Grid>
     </Grid>
 </UserControl>
