@@ -8,15 +8,13 @@ namespace Cetus.Sidebar;
 
 /// <summary>
 /// Workspace file browser: the tree root follows the DSH session the user
-/// currently has open (a manual folder pick overrides it), and selecting a
-/// file shows an inline text/image preview; double-click still opens the
-/// system-associated application.
+/// currently has open, and selecting a file shows an inline text/image
+/// preview; double-click still opens the system-associated application.
 /// </summary>
 public sealed partial class FilesTabContent : UserControl, IDisposable
 {
     private string _filesRoot = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     private bool _initialized;
-    private bool _manualRoot;
     private int _previewGeneration;
     private CancellationTokenSource? _previewCts;
     private bool _disposed;
@@ -25,6 +23,13 @@ public sealed partial class FilesTabContent : UserControl, IDisposable
     {
         InitializeComponent();
         Loaded += OnLoaded;
+        // Keep the preview image inside the pane; Stretch=Uniform then scales
+        // it up or down to fit while preserving the aspect ratio.
+        PreviewImageHost.SizeChanged += (_, e) =>
+        {
+            PreviewImage.MaxWidth = Math.Max(0, e.NewSize.Width - 16);
+            PreviewImage.MaxHeight = Math.Max(0, e.NewSize.Height - 16);
+        };
     }
 
     /// <summary>Resolves the DSH workspace root; null keeps the current root.</summary>
@@ -48,10 +53,10 @@ public sealed partial class FilesTabContent : UserControl, IDisposable
         await FollowWorkspaceAsync();
     }
 
-    /// <summary>Re-resolves the DSH workspace; manual folder picks are kept.</summary>
+    /// <summary>Re-resolves the DSH workspace and follows the new root.</summary>
     public async Task RefreshWorkspaceAsync()
     {
-        if (_manualRoot || _disposed)
+        if (_disposed)
         {
             return;
         }
@@ -59,29 +64,9 @@ public sealed partial class FilesTabContent : UserControl, IDisposable
         await FollowWorkspaceAsync();
     }
 
-    private void OnChooseFolderClicked(object sender, RoutedEventArgs e)
-    {
-        using var dialog = new System.Windows.Forms.FolderBrowserDialog
-        {
-            Description = "选择文件面板的根目录",
-            InitialDirectory = _filesRoot,
-            UseDescriptionForTitle = true,
-            ShowNewFolderButton = false,
-        };
-        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-        {
-            _manualRoot = true;
-            LoadFilesRoot(dialog.SelectedPath);
-        }
-    }
-
     private async void OnRefreshClicked(object sender, RoutedEventArgs e)
     {
-        if (!_manualRoot && WorkspaceResolver is not null)
-        {
-            await FollowWorkspaceAsync();
-        }
-
+        await FollowWorkspaceAsync();
         if (!_disposed)
         {
             LoadFilesRoot(_filesRoot);
@@ -109,7 +94,7 @@ public sealed partial class FilesTabContent : UserControl, IDisposable
             return;
         }
 
-            if (root is not null && IsRenderableDirectory(root) && !SamePath(root, _filesRoot))
+        if (root is not null && IsRenderableDirectory(root) && !SamePath(root, _filesRoot))
         {
             LoadFilesRoot(root);
         }
