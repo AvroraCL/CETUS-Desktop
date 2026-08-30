@@ -13,12 +13,23 @@
                 <ColumnDefinition Width="30" />
                 <ColumnDefinition Width="30" />
             </Grid.ColumnDefinitions>
-            <TextBox x:Name="PathBox"
-                     Grid.Column="0"
-                     Margin="0,0,4,0"
-                     Style="{StaticResource SidebarTextBox}"
-                     FontSize="12"
-                     IsReadOnly="True" />
+            <!-- Same rounded pill as the browser address bar. -->
+            <Border Grid.Column="0"
+                    Margin="0,6,4,6"
+                    CornerRadius="8"
+                    Background="{DynamicResource SidebarPanelInputBrush}"
+                    BorderBrush="{DynamicResource SidebarBorderBrush}"
+                    BorderThickness="1">
+                <TextBox x:Name="PathBox"
+                         FontSize="12"
+                         IsReadOnly="True"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         Padding="8,5"
+                         VerticalContentAlignment="Center"
+                         Foreground="{DynamicResource SidebarPanelForegroundBrush}"
+                         CaretBrush="{DynamicResource SidebarPanelForegroundBrush}" />
+            </Border>
             <Button Grid.Column="1"
                     Style="{StaticResource SidebarIconButton}"
                     ToolTip="手动选择目录（此后不再自动跟随工作区）"
