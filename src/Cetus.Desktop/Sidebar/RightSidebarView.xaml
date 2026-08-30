@@ -183,10 +183,10 @@
         </Border>
 
         <Grid Grid.Row="1">
-            <!-- 12px left gutter keeps this strip WPF-only: WebView2 tab
-                 content is HWND airspace and would swallow the resize
-                 handle's mouse input in browser/terminal tabs. -->
-            <ContentControl x:Name="ActiveTabHost" Margin="12,0,0,0" />
+            <!-- Tab content is flush with the divider; the resize grab zone
+                 floats above it from MainWindow (Popup HWND), so WebView2
+                 airspace no longer dictates a visual gutter here. -->
+            <ContentControl x:Name="ActiveTabHost" Margin="0" />
             <StackPanel x:Name="EmptyStatePanel" Visibility="Collapsed">
                 <TextBlock Text="打开标签页"
                            FontSize="20"
