@@ -1,63 +1,80 @@
 <UserControl x:Class="Cetus.Sidebar.StatusTabContent"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Cetus.Controls">
     <UserControl.Resources>
         <Style x:Key="StatusCard" TargetType="Border">
             <Setter Property="Background" Value="{DynamicResource SidebarPanelInputBrush}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource SidebarBorderBrush}" />
-            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderThickness" Value="0" />
             <Setter Property="CornerRadius" Value="8" />
             <Setter Property="Padding" Value="12,10" />
-            <Setter Property="Margin" Value="8,8,8,0" />
+            <Setter Property="Margin" Value="6,6,6,0" />
         </Style>
         <Style x:Key="StatusLabel" TargetType="TextBlock">
             <Setter Property="FontSize" Value="11" />
             <Setter Property="Foreground" Value="{DynamicResource SidebarPanelSecondaryBrush}" />
             <Setter Property="Margin" Value="0,8,0,2" />
         </Style>
+        <Style x:Key="StatusSectionTitle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource SidebarPanelSecondaryBrush}" />
+        </Style>
         <Style x:Key="StatusValue" TargetType="TextBlock">
             <Setter Property="FontSize" Value="13" />
             <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Foreground" Value="{DynamicResource SidebarPanelForegroundBrush}" />
         </Style>
         <Style x:Key="StatusBigValue" TargetType="TextBlock">
             <Setter Property="FontSize" Value="18" />
             <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Foreground" Value="{DynamicResource SidebarPanelForegroundBrush}" />
+        </Style>
+        <Style x:Key="StatusCountValue" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="Foreground" Value="{DynamicResource SidebarPanelForegroundBrush}" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
         </Style>
         <Style x:Key="LegendDot" TargetType="Border">
             <Setter Property="Width" Value="8" />
             <Setter Property="Height" Value="8" />
-            <Setter Property="CornerRadius" Value="2" />
+            <Setter Property="CornerRadius" Value="4" />
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="Margin" Value="0,0,5,0" />
         </Style>
         <Style x:Key="ScopePill" TargetType="RadioButton">
+            <Setter Property="Height" Value="30" />
             <Setter Property="Foreground" Value="{DynamicResource SidebarPanelSecondaryBrush}" />
-            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Background" Value="{DynamicResource SidebarPanelInputBrush}" />
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="Padding" Value="8,0" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Focusable" Value="False" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="RadioButton">
                         <Border x:Name="Chrome"
-                                CornerRadius="6"
+                                CornerRadius="15"
                                 Padding="{TemplateBinding Padding}"
                                 Background="{TemplateBinding Background}">
                             <ContentPresenter VerticalAlignment="Center"
                                               HorizontalAlignment="Center" />
                         </Border>
                         <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background"
+                                        Value="{DynamicResource SidebarPanelSelectedBrush}" />
+                            </Trigger>
                             <Trigger Property="IsChecked" Value="True">
                                 <Setter TargetName="Chrome" Property="Background"
                                         Value="{DynamicResource SidebarPanelSelectedBrush}" />
                                 <Setter Property="Foreground"
                                         Value="{DynamicResource SidebarPanelForegroundBrush}" />
-                            </Trigger>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Chrome" Property="Background"
-                                        Value="{DynamicResource CaptionHoverBrush}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -65,15 +82,40 @@
             </Setter>
         </Style>
         <Style x:Key="InsightActionButton" TargetType="Button">
-            <Setter Property="Padding" Value="10,3" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Padding" Value="12,0" />
             <Setter Property="FontSize" Value="11" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="BorderBrush" Value="{DynamicResource SidebarBorderBrush}" />
+            <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Background" Value="{DynamicResource SidebarPanelSelectedBrush}" />
             <Setter Property="Foreground" Value="{DynamicResource SidebarPanelForegroundBrush}" />
             <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="Margin" Value="0,6,0,0" />
+            <Setter Property="Margin" Value="0,7,0,0" />
             <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome"
+                                CornerRadius="15"
+                                Padding="{TemplateBinding Padding}"
+                                Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome"
+                                        Property="Background"
+                                        Value="{DynamicResource CaptionHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome"
+                                        Property="Opacity"
+                                        Value="0.72" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
     </UserControl.Resources>
     <Grid>
@@ -91,68 +133,131 @@
                        Text="状态"
                        VerticalAlignment="Center"
                        FontSize="13"
-                       FontWeight="SemiBold" />
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource SidebarPanelForegroundBrush}" />
             <Button Grid.Column="1"
                     Style="{StaticResource SidebarIconButton}"
                     ToolTip="刷新"
                     x:Name="RefreshButton"
                     Click="OnRefreshClicked">
-                <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="13" Text="&#xE72C;" />
+                <controls:FluentIcon Kind="ArrowClockwise" IconSize="14" />
             </Button>
         </Grid>
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="10,4,10,6">
-            <RadioButton x:Name="ScopeSessionButton" Style="{StaticResource ScopePill}" GroupName="StatusScope"
-                         Content="当前会话" IsChecked="True" Checked="OnScopeChanged" />
-            <RadioButton x:Name="ScopeProjectButton" Style="{StaticResource ScopePill}" GroupName="StatusScope"
-                         Content="当前项目" Margin="4,0,0,0" Checked="OnScopeChanged" />
-            <RadioButton x:Name="ScopeAllButton" Style="{StaticResource ScopePill}" GroupName="StatusScope"
-                         Content="全部历史" Margin="4,0,0,0" Checked="OnScopeChanged" />
-        </StackPanel>
-        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+        <Grid Grid.Row="1" Margin="6,4,6,4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="4" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="4" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <RadioButton x:Name="ScopeSessionButton"
+                         Grid.Column="0"
+                         Style="{StaticResource ScopePill}"
+                         GroupName="StatusScope"
+                         Content="当前会话"
+                         IsChecked="True"
+                         Checked="OnScopeChanged" />
+            <RadioButton x:Name="ScopeProjectButton"
+                         Grid.Column="2"
+                         Style="{StaticResource ScopePill}"
+                         GroupName="StatusScope"
+                         Content="当前项目"
+                         Checked="OnScopeChanged" />
+            <RadioButton x:Name="ScopeAllButton"
+                         Grid.Column="4"
+                         Style="{StaticResource ScopePill}"
+                         GroupName="StatusScope"
+                         Content="全部历史"
+                         Checked="OnScopeChanged" />
+        </Grid>
+        <ScrollViewer Grid.Row="2"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
             <StackPanel Margin="0,0,0,10">
                 <Border Style="{StaticResource StatusCard}">
                     <StackPanel>
-                        <TextBlock Text="洞察" Style="{StaticResource StatusLabel}" Margin="0,0,0,6" />
+                        <TextBlock Text="洞察"
+                                   Style="{StaticResource StatusSectionTitle}"
+                                   Margin="0,0,0,6" />
                         <StackPanel x:Name="InsightsHost" />
                     </StackPanel>
                 </Border>
 
                 <Border Style="{StaticResource StatusCard}">
                     <StackPanel>
-                        <TextBlock Text="当前项目" Style="{StaticResource StatusLabel}" Margin="0,0,0,6" />
-                        <TextBlock x:Name="WorkspaceTitleText" Style="{StaticResource StatusBigValue}" Text="—" />
+                        <TextBlock Text="当前项目"
+                                   Style="{StaticResource StatusSectionTitle}"
+                                   Margin="0,0,0,6" />
+                        <TextBlock x:Name="WorkspaceTitleText"
+                                   Style="{StaticResource StatusBigValue}"
+                                   Text="—" />
                         <TextBlock x:Name="WorkspacePathText"
                                    FontSize="11"
-                                   FontFamily="Cascadia Mono, Consolas"
+                                   FontFamily="Consolas, 'Cascadia Mono', monospace"
                                    TextWrapping="Wrap"
                                    Foreground="{DynamicResource SidebarPanelSecondaryBrush}"
                                    Margin="0,4,0,0" />
                         <TextBlock x:Name="WorkspaceMetaText"
                                    FontSize="11"
+                                   TextWrapping="Wrap"
                                    Foreground="{DynamicResource SidebarPanelSecondaryBrush}"
                                    Margin="0,4,0,0" />
-                        <TextBlock Text="模型" Style="{StaticResource StatusLabel}" />
-                        <TextBlock x:Name="ModelText" Style="{StaticResource StatusValue}" Text="—" />
+                        <Grid Margin="0,8,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="模型"
+                                       Style="{StaticResource StatusLabel}"
+                                       Margin="0,0,8,0" />
+                            <TextBlock x:Name="ModelText"
+                                       Grid.Column="1"
+                                       Style="{StaticResource StatusValue}"
+                                       Text="—" />
+                        </Grid>
                     </StackPanel>
                 </Border>
 
                 <Border Style="{StaticResource StatusCard}">
                     <StackPanel>
-                        <TextBlock Text="上下文占用（焦点会话）" Style="{StaticResource StatusLabel}" Margin="0,0,0,6" />
+                        <Grid Margin="0,0,0,7">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="上下文占用"
+                                       Style="{StaticResource StatusSectionTitle}"
+                                       TextTrimming="CharacterEllipsis" />
+                            <TextBlock Grid.Column="1"
+                                       Text="焦点会话"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource SidebarPanelSecondaryBrush}" />
+                        </Grid>
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <Border Grid.Column="0" Height="8" CornerRadius="4"
+                            <Border x:Name="ContextTrack"
+                                    Grid.Column="0"
+                                    Height="8"
+                                    CornerRadius="4"
+                                    ClipToBounds="True"
                                     Background="{DynamicResource SidebarPanelSelectedBrush}">
-                                <Border x:Name="ContextBar" Height="8" CornerRadius="4"
+                                <Border x:Name="ContextBar"
+                                        Height="8"
                                         HorizontalAlignment="Left"
                                         Background="#34D399" />
                             </Border>
-                            <TextBlock Grid.Column="1" x:Name="ContextPercentText"
-                                       Margin="8,0,0,0" FontSize="13" FontWeight="SemiBold"
-                                       VerticalAlignment="Center" Text="—" />
+                            <TextBlock Grid.Column="1"
+                                       x:Name="ContextPercentText"
+                                       Margin="8,0,0,0"
+                                       FontSize="13"
+                                       FontWeight="SemiBold"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SidebarPanelForegroundBrush}"
+                                       Text="—" />
                         </Grid>
                         <TextBlock x:Name="ContextDetailText"
                                    FontSize="11"
@@ -164,10 +269,13 @@
 
                 <Border Style="{StaticResource StatusCard}">
                     <StackPanel>
-                        <TextBlock Text="核心指标" Style="{StaticResource StatusLabel}" Margin="0,0,0,6" />
+                        <TextBlock Text="核心指标"
+                                   Style="{StaticResource StatusSectionTitle}"
+                                   Margin="0,0,0,8" />
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="10" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
@@ -178,15 +286,20 @@
                                 <TextBlock Text="缓存命中率" Style="{StaticResource StatusLabel}" Margin="0" />
                                 <TextBlock x:Name="CacheHitText" Style="{StaticResource StatusBigValue}" Text="—" />
                             </StackPanel>
-                            <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,0,10">
+                            <StackPanel Grid.Row="0" Grid.Column="2" Margin="0,0,0,10">
                                 <TextBlock Text="消耗速度" Style="{StaticResource StatusLabel}" Margin="0" />
-                                <TextBlock x:Name="RateText" Style="{StaticResource StatusBigValue}" Text="—" />
+                                <TextBlock x:Name="RateText"
+                                           FontSize="15"
+                                           FontWeight="SemiBold"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource SidebarPanelForegroundBrush}"
+                                           Text="—" />
                             </StackPanel>
                             <StackPanel Grid.Row="1" Grid.Column="0">
                                 <TextBlock Text="LLM 耗时" Style="{StaticResource StatusLabel}" Margin="0" />
                                 <TextBlock x:Name="LlmTimeText" Style="{StaticResource StatusValue}" Text="—" />
                             </StackPanel>
-                            <StackPanel Grid.Row="1" Grid.Column="1">
+                            <StackPanel Grid.Row="1" Grid.Column="2">
                                 <TextBlock Text="工具耗时" Style="{StaticResource StatusLabel}" Margin="0" />
                                 <TextBlock x:Name="ToolTimeText" Style="{StaticResource StatusValue}" Text="—" />
                             </StackPanel>
@@ -196,8 +309,12 @@
 
                 <Border Style="{StaticResource StatusCard}">
                     <StackPanel>
-                        <TextBlock Text="任务进度" Style="{StaticResource StatusLabel}" Margin="0,0,0,6" />
-                        <TextBlock x:Name="TaskProgressText" Style="{StaticResource StatusValue}" Text="无任务清单" />
+                        <TextBlock Text="任务进度"
+                                   Style="{StaticResource StatusSectionTitle}"
+                                   Margin="0,0,0,6" />
+                        <TextBlock x:Name="TaskProgressText"
+                                   Style="{StaticResource StatusValue}"
+                                   Text="无任务清单" />
                         <TextBlock x:Name="TaskCurrentText"
                                    FontSize="11"
                                    TextWrapping="Wrap"
@@ -210,17 +327,27 @@
                 <Border Style="{StaticResource StatusCard}">
                     <StackPanel>
                         <Grid Margin="0,0,0,8">
-                            <TextBlock Text="Token 用量" Style="{StaticResource StatusLabel}" Margin="0" />
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Token 用量"
+                                       Style="{StaticResource StatusSectionTitle}"
+                                       TextTrimming="CharacterEllipsis" />
                             <TextBlock x:Name="TotalTokensText"
-                                       HorizontalAlignment="Right"
+                                       Grid.Column="1"
+                                       Margin="8,0,0,0"
                                        FontSize="12"
-                                       FontWeight="SemiBold" />
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource SidebarPanelForegroundBrush}" />
                         </Grid>
-                        <Grid x:Name="UsageBarHost" Height="10">
-                            <Grid.Clip>
-                                <RectangleGeometry Rect="0,0,1000,10" RadiusX="5" RadiusY="5" />
-                            </Grid.Clip>
-                        </Grid>
+                        <Border x:Name="UsageBarFrame"
+                                Height="10"
+                                CornerRadius="5"
+                                ClipToBounds="True"
+                                Background="{DynamicResource SidebarPanelSelectedBrush}">
+                            <Grid x:Name="UsageBarHost" Height="10" />
+                        </Border>
                         <TextBlock x:Name="UsageEmptyText"
                                    Text="暂无会话数据"
                                    FontSize="12"
@@ -233,13 +360,22 @@
                 <Border Style="{StaticResource StatusCard}">
                     <StackPanel>
                         <Grid Margin="0,0,0,8">
-                            <TextBlock Text="最近会话 · 输出 Token" Style="{StaticResource StatusLabel}" Margin="0" />
-                            <TextBlock Text="悬停查看详情"
-                                       HorizontalAlignment="Right"
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="最近会话 · 输出 Token"
+                                       Style="{StaticResource StatusSectionTitle}"
+                                       TextTrimming="CharacterEllipsis" />
+                            <TextBlock Grid.Column="1"
+                                       Text="悬停查看详情"
+                                       Margin="8,0,0,0"
                                        FontSize="11"
                                        Foreground="{DynamicResource SidebarPanelSecondaryBrush}" />
                         </Grid>
-                        <Grid x:Name="SessionBarsHost" Height="90" VerticalAlignment="Bottom" />
+                        <Grid x:Name="SessionBarsHost"
+                              Height="90"
+                              VerticalAlignment="Bottom" />
                         <TextBlock x:Name="SessionBarsEmptyText"
                                    Text="暂无会话数据"
                                    FontSize="12"
@@ -250,24 +386,34 @@
 
                 <Border Style="{StaticResource StatusCard}">
                     <StackPanel>
-                        <TextBlock Text="累计调用" Style="{StaticResource StatusLabel}" Margin="0,0,0,6" />
+                        <TextBlock Text="累计调用"
+                                   Style="{StaticResource StatusSectionTitle}"
+                                   Margin="0,0,0,8" />
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="1" />
                                 <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="1" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0">
+                            <Border Grid.Column="1"
+                                    Background="{DynamicResource SidebarBorderBrush}"
+                                    Opacity="0.55" />
+                            <Border Grid.Column="3"
+                                    Background="{DynamicResource SidebarBorderBrush}"
+                                    Opacity="0.55" />
+                            <StackPanel Grid.Column="0" Margin="2,0,6,0">
                                 <TextBlock Text="会话" Style="{StaticResource StatusLabel}" Margin="0" HorizontalAlignment="Center" />
-                                <TextBlock x:Name="SessionsText" Style="{StaticResource StatusBigValue}" Text="0" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="SessionsText" Style="{StaticResource StatusCountValue}" Text="0" ToolTip="会话总数" />
                             </StackPanel>
-                            <StackPanel Grid.Column="1">
+                            <StackPanel Grid.Column="2" Margin="6,0">
                                 <TextBlock Text="轮次" Style="{StaticResource StatusLabel}" Margin="0" HorizontalAlignment="Center" />
-                                <TextBlock x:Name="TurnsText" Style="{StaticResource StatusBigValue}" Text="0" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="TurnsText" Style="{StaticResource StatusCountValue}" Text="0" ToolTip="累计轮次" />
                             </StackPanel>
-                            <StackPanel Grid.Column="2">
+                            <StackPanel Grid.Column="4" Margin="6,0,2,0">
                                 <TextBlock Text="步骤" Style="{StaticResource StatusLabel}" Margin="0" HorizontalAlignment="Center" />
-                                <TextBlock x:Name="StepsText" Style="{StaticResource StatusBigValue}" Text="0" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="StepsText" Style="{StaticResource StatusCountValue}" Text="0" ToolTip="累计步骤" />
                             </StackPanel>
                         </Grid>
                     </StackPanel>
@@ -275,23 +421,32 @@
 
                 <Border Style="{StaticResource StatusCard}">
                     <StackPanel>
-                        <TextBlock Text="DeepSeek 余额" Style="{StaticResource StatusLabel}" Margin="0" />
-                        <TextBlock x:Name="BalanceText" Style="{StaticResource StatusBigValue}" Text="—" />
-                        <Grid x:Name="BalanceBarHost" Height="8" Margin="0,8,0,0" Visibility="Collapsed">
-                            <Grid.Clip>
-                                <RectangleGeometry Rect="0,0,1000,8" RadiusX="4" RadiusY="4" />
-                            </Grid.Clip>
-                        </Grid>
+                        <TextBlock Text="DeepSeek 余额"
+                                   Style="{StaticResource StatusSectionTitle}" />
+                        <TextBlock x:Name="BalanceText"
+                                   Style="{StaticResource StatusBigValue}"
+                                   Text="—" />
+                        <Border x:Name="BalanceBarFrame"
+                                Height="8"
+                                Margin="0,8,0,0"
+                                CornerRadius="4"
+                                ClipToBounds="True"
+                                Visibility="Collapsed"
+                                Background="{DynamicResource SidebarPanelSelectedBrush}">
+                            <Grid x:Name="BalanceBarHost" Height="8" />
+                        </Border>
                         <TextBlock x:Name="BalanceDetailText"
                                    FontSize="11"
+                                   TextWrapping="Wrap"
                                    Foreground="{DynamicResource SidebarPanelSecondaryBrush}"
                                    Margin="0,6,0,0"
                                    Visibility="Collapsed" />
                     </StackPanel>
                 </Border>
                 <TextBlock x:Name="UpdatedText"
-                           Margin="10,8,10,0"
+                           Margin="8,8,8,0"
                            FontSize="11"
+                           TextWrapping="Wrap"
                            Foreground="{DynamicResource SidebarPanelSecondaryBrush}" />
             </StackPanel>
         </ScrollViewer>

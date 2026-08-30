@@ -46,6 +46,7 @@ public partial class StatusTabContent : UserControl
     private (long Tokens, DateTime At)? _lastRateSample;
     private string? _focusSessionId;
     private string? _focusWorkspaceId;
+    private double _contextPercent;
     private bool _refreshing;
     private bool _disposed;
 
@@ -58,6 +59,7 @@ public partial class StatusTabContent : UserControl
             StartPolling();
         };
         Unloaded += (_, _) => _pollTimer?.Stop();
+        ContextTrack.SizeChanged += (_, _) => UpdateContextBarWidth();
     }
 
     /// <summary>Provides the live DSH endpoint (follows port changes).</summary>
@@ -73,19 +75,18 @@ public partial class StatusTabContent : UserControl
 
     private void StartPolling()
     {
-        if (_pollTimer is not null)
+        if (_pollTimer is null)
         {
-            return;
+            _pollTimer = new DispatcherTimer { Interval = PollInterval };
+            _pollTimer.Tick += (_, _) =>
+            {
+                if (IsVisible)
+                {
+                    _ = RefreshAsync(includeBalance: false);
+                }
+            };
         }
 
-        _pollTimer = new DispatcherTimer { Interval = PollInterval };
-        _pollTimer.Tick += (_, _) =>
-        {
-            if (IsVisible)
-            {
-                _ = RefreshAsync(includeBalance: false);
-            }
-        };
         _pollTimer.Start();
     }
 
@@ -236,15 +237,16 @@ public partial class StatusTabContent : UserControl
         double? occupancy = focus?.Pressure?.OccupancyPercent;
         if (focus is null || occupancy is null)
         {
-            ContextBar.Width = 0;
+            _contextPercent = 0;
+            UpdateContextBarWidth();
             ContextPercentText.Text = "—";
             ContextDetailText.Text = "该会话尚未报告上下文压力。";
             return;
         }
 
         double percent = Math.Clamp(occupancy.Value, 0, 100);
-        double trackWidth = (ContextBar.Parent as Border)?.ActualWidth ?? 0;
-        ContextBar.Width = trackWidth > 0 ? trackWidth * percent / 100 : 0;
+        _contextPercent = percent;
+        UpdateContextBarWidth();
         ContextPercentText.Text = $"{percent:0}%";
 
         Brush bar = percent >= DshInsights.ContextCriticalPercent
@@ -261,6 +263,13 @@ public partial class StatusTabContent : UserControl
             : "压力数据不完整。";
     }
 
+    private void UpdateContextBarWidth()
+    {
+        ContextBar.Width = ContextTrack.ActualWidth > 0
+            ? ContextTrack.ActualWidth * _contextPercent / 100
+            : 0;
+    }
+
     private void RenderKpis(DshStatusSnapshot snapshot, DshUsageSummary usage, DshSessionDetail? focus, double outputRate)
     {
         long denominator = usage.CacheReadTokens + usage.InputTokens;
@@ -275,6 +284,12 @@ public partial class StatusTabContent : UserControl
 
         LlmTimeText.Text = FormatDuration(usage.LlmMilliseconds);
         ToolTimeText.Text = FormatDuration(usage.ToolMilliseconds);
+        SessionsText.Text = usage.SessionCount.ToString("N0");
+        TurnsText.Text = usage.Turns.ToString("N0");
+        StepsText.Text = usage.Steps.ToString("N0");
+        SessionsText.ToolTip = $"会话总数 {usage.SessionCount:N0}";
+        TurnsText.ToolTip = $"累计轮次 {usage.Turns:N0}";
+        StepsText.ToolTip = $"累计步骤 {usage.Steps:N0}";
     }
 
     /// <summary>
@@ -336,22 +351,25 @@ public partial class StatusTabContent : UserControl
 
     private FrameworkElement CreateInsightRow(DshInsight insight)
     {
-        (string glyph, Brush color) = insight.Severity switch
+        Brush color = insight.Severity switch
         {
-            InsightSeverity.Critical => ("\uEA39", ContextCriticalBrush),
-            InsightSeverity.Warn => ("\uE7BA", ContextWarnBrush),
-            _ => ("\uE946", TokenInputBrush),
+            InsightSeverity.Critical => ContextCriticalBrush,
+            InsightSeverity.Warn => ContextWarnBrush,
+            _ => TokenInputBrush,
         };
 
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 2) };
-        row.Children.Add(new TextBlock
+        var row = new Grid { Margin = new Thickness(0, 3, 0, 3) };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.Children.Add(new Border
         {
-            Text = glyph,
-            FontFamily = new FontFamily("Segoe MDL2 Assets"),
-            FontSize = 13,
-            Foreground = color,
+            Width = 7,
+            Height = 7,
+            CornerRadius = new CornerRadius(3.5),
+            Background = color,
+            HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(0, 1, 8, 0),
+            Margin = new Thickness(0, 5, 0, 0),
         });
 
         var messageColumn = new StackPanel();
@@ -360,6 +378,7 @@ public partial class StatusTabContent : UserControl
             Text = insight.Message,
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
+            Foreground = (Brush)FindResource("SidebarPanelForegroundBrush"),
         });
 
         if (insight.Action == InsightAction.NewSession && _focusWorkspaceId is { } workspaceId)
@@ -378,11 +397,13 @@ public partial class StatusTabContent : UserControl
             {
                 Content = "中断会话",
                 Style = (Style)FindResource("InsightActionButton"),
+                Foreground = ContextCriticalBrush,
             };
             cancel.Click += (_, _) => _ = RunInsightActionAsync(InsightAction.CancelSession, sessionId);
             messageColumn.Children.Add(cancel);
         }
 
+        Grid.SetColumn(messageColumn, 1);
         row.Children.Add(messageColumn);
         return row;
     }
@@ -458,12 +479,12 @@ public partial class StatusTabContent : UserControl
         if (total <= 0)
         {
             UsageEmptyText.Visibility = Visibility.Visible;
-            UsageBarHost.Visibility = Visibility.Collapsed;
+            UsageBarFrame.Visibility = Visibility.Collapsed;
             return;
         }
 
         UsageEmptyText.Visibility = Visibility.Collapsed;
-        UsageBarHost.Visibility = Visibility.Visible;
+        UsageBarFrame.Visibility = Visibility.Visible;
 
         var segments = new (string Name, long Value, Brush Brush)[]
         {
@@ -553,7 +574,9 @@ public partial class StatusTabContent : UserControl
         if (apiKey is null)
         {
             BalanceText.Text = "未接入";
-            BalanceBarHost.Visibility = Visibility.Collapsed;
+            BalanceBarFrame.Visibility = Visibility.Collapsed;
+            BalanceBarHost.ColumnDefinitions.Clear();
+            BalanceBarHost.Children.Clear();
             BalanceDetailText.Text = "未找到 DEEPSEEK_API_KEY，无法查询平台余额。";
             BalanceDetailText.Visibility = Visibility.Visible;
             return;
@@ -571,14 +594,16 @@ public partial class StatusTabContent : UserControl
         if (balance is null)
         {
             BalanceText.Text = "不可用";
-            BalanceBarHost.Visibility = Visibility.Collapsed;
+            BalanceBarFrame.Visibility = Visibility.Collapsed;
+            BalanceBarHost.ColumnDefinitions.Clear();
+            BalanceBarHost.Children.Clear();
             BalanceDetailText.Text = "余额接口未返回数据（非 DeepSeek 官方平台 Key 时属预期）。";
             BalanceDetailText.Visibility = Visibility.Visible;
             return;
         }
 
         BalanceText.Text = $"{balance.TotalBalance.ToString("0.##")} {balance.Currency}";
-        BalanceBarHost.Visibility = Visibility.Visible;
+        BalanceBarFrame.Visibility = Visibility.Visible;
         BalanceBarHost.ColumnDefinitions.Clear();
         BalanceBarHost.Children.Clear();
         if (balance.TotalBalance > 0)
