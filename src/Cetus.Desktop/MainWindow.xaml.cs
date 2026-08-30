@@ -56,6 +56,7 @@ public partial class MainWindow : Window
     private readonly CetusSettings _settings;
     private readonly BrowserSession _browserSession;
     private readonly DesktopRuntime _runtime;
+    private readonly Sidebar.WorkspaceTracker _workspaceTracker = new();
 
     private TrayIconController? _tray;
     private WindowComposition? _windowComposition;
@@ -92,13 +93,18 @@ public partial class MainWindow : Window
             },
             OnCetusSettingChanged,
             () => _ = ConfigurePortAsync(),
-            () => _ = CheckForUpdatesFromSettingsAsync());
+            () => _ = CheckForUpdatesFromSettingsAsync(),
+            sessionId => _workspaceTracker.UpdateSelection(sessionId));
         _browserSession.SetRightSidebarOpen(_rightSidebarOpen);
         _runtime = new DesktopRuntime(_settings, _browserSession, Dispatcher);
         _runtime.StateChanged += OnRuntimeStateChanged;
         RightSidebarContent.SetDshEndpointProvider(() => _runtime.Endpoint);
         RightSidebarContent.ChatInserter = text => _browserSession.TryInsertIntoChatAsync(text);
         RightSidebarContent.TerminalShellProvider = () => _settings.DefaultTerminalShell;
+        RightSidebarContent.WorkspaceResolver = cancellationToken =>
+            _workspaceTracker.ResolveRootAsync(_runtime.Endpoint, cancellationToken);
+        _workspaceTracker.SelectionChanged += () => Dispatcher.BeginInvoke(
+            () => RightSidebarContent.NotifyWorkspaceChanged());
 
         if (DevModeFlag.IsActive)
         {

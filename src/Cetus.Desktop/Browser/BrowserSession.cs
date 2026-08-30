@@ -58,6 +58,60 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
             window.chrome.webview.postMessage({ source, type: 'theme', mode: dark ? 'dark' : 'light' });
           };
 
+          // ── current DSH session selection ──
+          // DSH persists the selected session as plain JSON in
+          // localStorage["dsh.sessions.current"] ({} when cleared); there is
+          // no RPC for it, so the bridge intercepts storage writes instead of
+          // polling. The wrapper installs before the DSH bundle runs.
+          const selectionKey = 'dsh.sessions.current';
+          let lastSelectionRaw;
+          const extractSelectionId = (raw) => {
+            if (raw === null) return null;
+            try {
+              const parsed = JSON.parse(raw);
+              if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+              const id = parsed.sessionId;
+              return typeof id === 'string' && id.length > 0 ? id : null;
+            } catch {
+              return null;
+            }
+          };
+          const publishSelection = (reason) => {
+            if (!window.chrome || !window.chrome.webview) return;
+            let raw = null;
+            try {
+              raw = window.localStorage.getItem(selectionKey);
+            } catch {
+              return;
+            }
+            if (raw === lastSelectionRaw) return;
+            lastSelectionRaw = raw;
+            window.chrome.webview.postMessage({
+              source,
+              type: 'dsh-session-selection',
+              reason,
+              sessionId: extractSelectionId(raw)
+            });
+          };
+          try {
+            for (const name of ['setItem', 'removeItem', 'clear']) {
+              const original = Storage.prototype[name];
+              Storage.prototype[name] = function (...args) {
+                const result = original.apply(this, args);
+                if (this === window.localStorage) {
+                  queueMicrotask(() => publishSelection(name));
+                }
+                return result;
+              };
+            }
+            window.addEventListener('storage', (event) => {
+              if (event.storageArea === window.localStorage) publishSelection('storage');
+            });
+          } catch {
+            // Storage interception is best effort; panels fall back to heuristics.
+          }
+          publishSelection('initial');
+
           const updateRightSidebarButton = () => {
             const button = document.getElementById('cetus-right-sidebar-toggle');
             if (!button) return;
@@ -393,6 +447,7 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
     private readonly Action<string, string>? _cetusSettingChanged;
     private readonly Action? _openPortSettings;
     private readonly Action? _checkForUpdates;
+    private readonly Action<string?>? _currentSessionChanged;
     private LoopbackNavigationPolicy? _navigationPolicy;
     private bool _rightSidebarOpen = true;
     private bool _initialized;
@@ -406,7 +461,8 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
         Func<IReadOnlyDictionary<string, string>>? cetusSettingsProvider = null,
         Action<string, string>? cetusSettingChanged = null,
         Action? openPortSettings = null,
-        Action? checkForUpdates = null)
+        Action? checkForUpdates = null,
+        Action<string?>? currentSessionChanged = null)
     {
         _view = view;
         _themeChanged = themeChanged;
@@ -416,6 +472,7 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
         _cetusSettingChanged = cetusSettingChanged;
         _openPortSettings = openPortSettings;
         _checkForUpdates = checkForUpdates;
+        _currentSessionChanged = currentSessionChanged;
     }
 
     public async Task NavigateAsync(Uri trustedOrigin, CancellationToken cancellationToken)
@@ -584,6 +641,14 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
                         _cetusSettingChanged(settingKey, value.ToString());
                         PostCetusSettingsState();
                     }
+                }
+                else if (type.GetString() == "dsh-session-selection")
+                {
+                    string? sessionId = root.TryGetProperty("sessionId", out JsonElement selection)
+                        && selection.ValueKind == JsonValueKind.String
+                        ? selection.GetString()
+                        : null;
+                    _currentSessionChanged?.Invoke(sessionId);
                 }
                 else if (type.GetString() == "cetus-open-port-settings")
                 {

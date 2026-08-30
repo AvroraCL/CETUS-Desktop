@@ -200,7 +200,13 @@ public partial class ReviewTabContent : UserControl, IDisposable
         {
             if (file.Status == "??")
             {
-                SetDiff(await UntrackedDiffAsync(file.Path));
+                IReadOnlyList<DiffLine> untracked = await UntrackedDiffAsync(cwd, file.Path);
+                if (generation != _refreshGeneration)
+                {
+                    return;
+                }
+
+                SetDiff(untracked);
                 return;
             }
 
@@ -219,9 +225,18 @@ public partial class ReviewTabContent : UserControl, IDisposable
         }
     }
 
-    private static async Task<IReadOnlyList<DiffLine>> UntrackedDiffAsync(string relativePath)
+    private static async Task<IReadOnlyList<DiffLine>> UntrackedDiffAsync(string workspaceCwd, string relativePath)
     {
-        string fullPath = relativePath.Replace('/', Path.DirectorySeparatorChar);
+        string candidate = Path.Combine(
+            workspaceCwd,
+            relativePath.Replace('/', Path.DirectorySeparatorChar));
+        string fullPath = Path.GetFullPath(candidate);
+        string workspaceRoot = workspaceCwd.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (!fullPath.StartsWith(workspaceRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            return new[] { DiffLine.Info("无法解析该未跟踪文件在工作区中的路径。") };
+        }
+
         if (!File.Exists(fullPath))
         {
             return new[] { DiffLine.Info("未跟踪文件已不存在。") };

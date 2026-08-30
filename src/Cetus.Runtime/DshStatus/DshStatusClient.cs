@@ -115,6 +115,18 @@ public sealed class DshStatusClient : IDisposable
             details);
     }
 
+    /// <summary>
+    /// Fetches only the session list — the lightweight query used by the
+    /// workspace-following file panel.
+    /// </summary>
+    public async Task<IReadOnlyList<DshSessionDetail>> GetSessionsAsync(
+        Uri endpoint,
+        CancellationToken cancellationToken)
+    {
+        JsonElement sessions = await PostMethodAsync(endpoint, "session.list", new { }, cancellationToken);
+        return ParseSessions(sessions).OrderBy(session => session.UpdatedAt).ToList();
+    }
+
     /// <summary>Creates a session in a workspace; returns the new session id.</summary>
     public async Task<string> CreateSessionAsync(Uri endpoint, string workspaceId, CancellationToken cancellationToken)
     {

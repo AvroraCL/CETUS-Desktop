@@ -39,4 +39,30 @@ public sealed class SidebarFileNodeTests
             }
         }
     }
+
+    [Fact]
+    public void IsExpanded_NotifiesPropertyChanged()
+    {
+        string root = TestWorkspace.CreateDirectory();
+        try
+        {
+            var node = new SidebarFileNode(root, isDirectory: true);
+            var changes = new List<string?>();
+            node.PropertyChanged += (_, e) => changes.Add(e.PropertyName);
+
+            node.IsExpanded = true;
+            node.IsExpanded = true; // No duplicate notification for the same value.
+            node.IsExpanded = false;
+
+            Assert.Equal(2, changes.Count);
+            Assert.All(changes, name => Assert.Equal(nameof(SidebarFileNode.IsExpanded), name));
+        }
+        finally
+        {
+            if (!TestWorkspace.RetainArtifacts)
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
 }

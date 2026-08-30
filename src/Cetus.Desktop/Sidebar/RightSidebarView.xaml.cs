@@ -40,6 +40,9 @@ public partial class RightSidebarView : UserControl, IDisposable
     /// <summary>Provides the configured default terminal shell key.</summary>
     public Func<string>? TerminalShellProvider { get; set; }
 
+    /// <summary>Resolves the DSH workspace root that file tabs should show.</summary>
+    public Func<CancellationToken, Task<string?>>? WorkspaceResolver { get; set; }
+
     public RightSidebarView()
     {
         InitializeComponent();
@@ -204,7 +207,11 @@ public partial class RightSidebarView : UserControl, IDisposable
                 title = SidebarTabModel.TitleOf(kind);
                 break;
             default:
-                content = new FilesTabContent();
+                var files = new FilesTabContent
+                {
+                    WorkspaceResolver = WorkspaceResolver,
+                };
+                content = files;
                 title = SidebarTabModel.TitleOf(kind);
                 break;
         }
@@ -298,6 +305,9 @@ public partial class RightSidebarView : UserControl, IDisposable
             case ReviewTabContent review:
                 review.Dispose();
                 break;
+            case FilesTabContent files:
+                files.Dispose();
+                break;
         }
     }
 
@@ -307,6 +317,18 @@ public partial class RightSidebarView : UserControl, IDisposable
         bool empty = _tabs.Count == 0;
         EmptyStatePanel.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
         ActiveTabHost.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    /// <summary>DSH selection changed; open file tabs follow the new workspace.</summary>
+    public void NotifyWorkspaceChanged()
+    {
+        foreach (SidebarTab tab in _tabs)
+        {
+            if (tab.Content is FilesTabContent files)
+            {
+                _ = files.RefreshWorkspaceAsync();
+            }
+        }
     }
 
     private void RefreshTabStrip()

@@ -1,12 +1,14 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 
 namespace Cetus.Sidebar;
 
-internal sealed class SidebarFileNode
+internal sealed class SidebarFileNode : INotifyPropertyChanged
 {
     private static readonly SidebarFileNode Placeholder = new();
     private bool _childrenLoaded;
+    private bool _isExpanded;
 
     private SidebarFileNode()
     {
@@ -37,6 +39,24 @@ internal sealed class SidebarFileNode
     public bool IsDirectory { get; }
 
     public bool IsPlaceholder => ReferenceEquals(this, Placeholder);
+
+    /// <summary>Two-way bound by the tree so a new root auto-expands.</summary>
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set
+        {
+            if (_isExpanded == value)
+            {
+                return;
+            }
+
+            _isExpanded = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsExpanded)));
+        }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 
     /// <summary>Fluent icon kind reflecting the file type (folder/file group).</summary>
     public string IconKind
