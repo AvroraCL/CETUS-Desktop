@@ -351,6 +351,35 @@ public partial class MainWindow : Window
         // The panel always starts collapsed; only its width is remembered.
         _rightSidebarOpen = false;
         ApplyRightSidebarLayout(_rightSidebarOpen, _settings.RightSidebarWidth);
+        // The strip's top-left corner sits exactly on the sidebar's top-left,
+        // so the 1px divider runs along the strip's left edge. The callback
+        // (not RelativePoint) makes this placement deterministic — observed
+        // RelativePoint anchoring did not match its documented corner.
+        RightSidebarResizePopup.CustomPopupPlacementCallback = (_, _, _) =>
+            new[] { new CustomPopupPlacement(new System.Windows.Point(0, 0), PopupPrimaryAxis.None) };
+        RightSidebar.SizeChanged += (_, args) =>
+        {
+            RightSidebarResizeThumb.Height = args.NewSize.Height;
+            RepositionRightSidebarResizeStrip();
+        };
+        SizeChanged += (_, _) => RepositionRightSidebarResizeStrip();
+        LocationChanged += (_, _) => RepositionRightSidebarResizeStrip();
+    }
+
+    /// <summary>
+    /// Forces the floating resize strip to re-evaluate its placement. WPF
+    /// popups only track their placement target through layout passes, so
+    /// raw window moves (title-bar drags) need an offset nudge to follow.
+    /// </summary>
+    private void RepositionRightSidebarResizeStrip()
+    {
+        if (!RightSidebarResizePopup.IsOpen)
+        {
+            return;
+        }
+
+        RightSidebarResizePopup.HorizontalOffset += 0.01;
+        RightSidebarResizePopup.HorizontalOffset -= 0.01;
     }
 
     private void ClampSidebarWidthToWindow()
@@ -371,6 +400,12 @@ public partial class MainWindow : Window
     {
         _rightSidebarOpen = isOpen;
         _browserSession.SetRightSidebarOpen(isOpen);
+        // Size the strip from the live layout right before opening — a
+        // stale height here is what leaves the popup window invisible.
+        RightSidebarResizeThumb.Height = RightSidebar.ActualHeight;
+        // The floating strip must never linger over the DSH surface while
+        // the panel collapses.
+        RightSidebarResizePopup.IsOpen = isOpen;
 
         double currentWidth = Math.Clamp(
             RightSidebarColumn.ActualWidth,

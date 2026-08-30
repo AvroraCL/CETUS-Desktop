@@ -183,12 +183,10 @@
         </Border>
 
         <Grid Grid.Row="1">
-            <!-- The left 12px gutter is the resize grab zone carved out of
-                 WebView2 airspace: the DSH main surface stays flush against
-                 the divider, so tab content must keep this margin or the
-                 strip would sit on top of the web surface and lose hit
-                 testing to the HWND underneath. -->
-            <ContentControl x:Name="ActiveTabHost" Margin="12,0,0,0" />
+            <!-- Tab content is flush with the divider; the resize grab zone
+                 floats above it from MainWindow (Popup HWND), so WebView2
+                 airspace no longer dictates a visual gutter here. -->
+            <ContentControl x:Name="ActiveTabHost" Margin="0" />
             <StackPanel x:Name="EmptyStatePanel" Visibility="Collapsed">
                 <TextBlock Text="打开标签页"
                            FontSize="20"
