@@ -32,8 +32,10 @@ internal static class GitRunner
 
         using var process = new Process { StartInfo = startInfo };
         process.Start();
+        Task<string> errors = process.StandardError.ReadToEndAsync(cancellationToken);
         string output = await process.StandardOutput.ReadToEndAsync(cancellationToken);
         await process.WaitForExitAsync(cancellationToken);
+        await errors;
         return (process.ExitCode, output);
     }
 }

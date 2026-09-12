@@ -9,6 +9,7 @@ internal sealed class SidebarFileNode : INotifyPropertyChanged
     private static readonly SidebarFileNode Placeholder = new();
     private bool _childrenLoaded;
     private bool _isExpanded;
+    private Task? _loadingTask;
 
     private SidebarFileNode()
     {
@@ -85,9 +86,11 @@ internal sealed class SidebarFileNode : INotifyPropertyChanged
         }
     }
 
-    public ObservableCollection<SidebarFileNode> Children { get; } = [];
+    public ObservableCollection<SidebarFileNode> Children { get; private set; } = [];
 
-    public void LoadChildren()
+    public Task LoadChildrenAsync() => _loadingTask ??= LoadChildrenCoreAsync();
+
+    private async Task LoadChildrenCoreAsync()
     {
         if (!IsDirectory || _childrenLoaded)
         {
@@ -95,11 +98,12 @@ internal sealed class SidebarFileNode : INotifyPropertyChanged
         }
 
         _childrenLoaded = true;
-        Children.Clear();
         try
         {
-            var directory = new DirectoryInfo(FullPath);
-            IEnumerable<SidebarFileNode> nodes = directory
+            ObservableCollection<SidebarFileNode> children = await Task.Run(() =>
+            {
+                var directory = new DirectoryInfo(FullPath);
+                IEnumerable<SidebarFileNode> nodes = directory
                 .EnumerateDirectories()
                 .Where(item => !item.Attributes.HasFlag(FileAttributes.System))
                 .Select(item => new SidebarFileNode(item.FullName, isDirectory: true))
@@ -108,14 +112,16 @@ internal sealed class SidebarFileNode : INotifyPropertyChanged
                     .Select(item => new SidebarFileNode(item.FullName, isDirectory: false)))
                 .OrderByDescending(item => item.IsDirectory)
                 .ThenBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase);
-            foreach (SidebarFileNode node in nodes)
-            {
-                Children.Add(node);
-            }
+                return new ObservableCollection<SidebarFileNode>(nodes);
+            });
+            Children = children;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Children)));
         }
         catch (Exception error) when (error is UnauthorizedAccessException or IOException)
         {
             // Inaccessible folders remain empty and do not break the whole tree.
+            Children = [];
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Children)));
         }
     }
 }

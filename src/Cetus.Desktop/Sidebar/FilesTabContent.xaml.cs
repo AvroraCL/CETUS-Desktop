@@ -18,6 +18,9 @@ public sealed partial class FilesTabContent : UserControl, IDisposable
     private int _previewGeneration;
     private CancellationTokenSource? _previewCts;
     private bool _disposed;
+    private int _workspaceGeneration;
+
+    internal Func<string, CancellationToken, Task<FilePreviewResult>> PreviewLoader { get; set; } = FilePreviewService.LoadAsync;
 
     public FilesTabContent()
     {
@@ -38,6 +41,7 @@ public sealed partial class FilesTabContent : UserControl, IDisposable
     public void Dispose()
     {
         _disposed = true;
+        _workspaceGeneration++;
         _previewGeneration++;
         _previewCts?.Cancel();
     }
@@ -66,15 +70,13 @@ public sealed partial class FilesTabContent : UserControl, IDisposable
 
     private async void OnRefreshClicked(object sender, RoutedEventArgs e)
     {
-        await FollowWorkspaceAsync();
-        if (!_disposed)
-        {
-            LoadFilesRoot(_filesRoot);
-        }
+        await FollowWorkspaceAsync(forceReload: true);
     }
 
-    private async Task FollowWorkspaceAsync()
+    private async Task FollowWorkspaceAsync(bool forceReload = false)
     {
+        int generation = ++_workspaceGeneration;
+        ClearPreview();
         string? root = null;
         if (WorkspaceResolver is not null)
         {
@@ -89,22 +91,22 @@ public sealed partial class FilesTabContent : UserControl, IDisposable
             }
         }
 
-        if (_disposed)
+        if (_disposed || generation != _workspaceGeneration)
         {
             return;
         }
 
         if (root is not null && IsRenderableDirectory(root) && !SamePath(root, _filesRoot))
         {
-            LoadFilesRoot(root);
+            await LoadFilesRootAsync(root);
         }
-        else if (FilesTree.ItemsSource is null)
+        else if (forceReload || FilesTree.ItemsSource is null)
         {
-            LoadFilesRoot(_filesRoot);
+            await LoadFilesRootAsync(_filesRoot);
         }
     }
 
-    private void LoadFilesRoot(string path)
+    private async Task LoadFilesRootAsync(string path)
     {
         if (!Directory.Exists(path))
         {
@@ -114,17 +116,17 @@ public sealed partial class FilesTabContent : UserControl, IDisposable
         _filesRoot = path;
         PathBox.Text = path;
         var root = new SidebarFileNode(path, isDirectory: true);
-        root.LoadChildren();
         root.IsExpanded = true;
         FilesTree.ItemsSource = new[] { root };
         ClearPreview();
+        await root.LoadChildrenAsync();
     }
 
-    private void OnFileNodeExpanded(object sender, RoutedEventArgs e)
+    private async void OnFileNodeExpanded(object sender, RoutedEventArgs e)
     {
         if (e.OriginalSource is TreeViewItem { DataContext: SidebarFileNode node })
         {
-            node.LoadChildren();
+            await node.LoadChildrenAsync();
         }
     }
 
@@ -159,7 +161,7 @@ public sealed partial class FilesTabContent : UserControl, IDisposable
         }
     }
 
-    private async Task LoadPreviewAsync(string path)
+    internal async Task LoadPreviewAsync(string path)
     {
         int generation = ++_previewGeneration;
         CancellationTokenSource? previous = _previewCts;
@@ -168,7 +170,7 @@ public sealed partial class FilesTabContent : UserControl, IDisposable
         previous?.Cancel();
         try
         {
-            FilePreviewResult result = await FilePreviewService.LoadAsync(path, cts.Token);
+            FilePreviewResult result = await PreviewLoader(path, cts.Token);
             if (_disposed || generation != _previewGeneration)
             {
                 return;
@@ -186,6 +188,15 @@ public sealed partial class FilesTabContent : UserControl, IDisposable
             {
                 ShowNotice($"预览失败：{error.Message}");
             }
+        }
+        finally
+        {
+            if (ReferenceEquals(_previewCts, cts))
+            {
+                _previewCts = null;
+            }
+
+            cts.Dispose();
         }
     }
 
@@ -232,7 +243,13 @@ public sealed partial class FilesTabContent : UserControl, IDisposable
         PreviewImage.Source = null;
     }
 
-    private void ClearPreview() => ShowNotice("选择文件以预览内容。");
+    private void ClearPreview()
+    {
+        _previewGeneration++;
+        _previewCts?.Cancel();
+        PreviewLines.ItemsSource = null;
+        ShowNotice("选择文件以预览内容。");
+    }
 
     private static bool IsRenderableDirectory(string? path) =>
         !string.IsNullOrWhiteSpace(path) && Directory.Exists(path);

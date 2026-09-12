@@ -183,28 +183,28 @@ public partial class StatusTabContent : UserControl
         switch (_scope)
         {
             case StatusScope.CurrentSession:
-            {
-                var focus = FocusOf(snapshot.Sessions);
-                var single = focus is null ? Array.Empty<DshSessionDetail>() : new[] { focus };
-                return (DshUsageSummary.Sum(single), focus);
-            }
-            case StatusScope.CurrentProject when snapshot.Workspace is { } workspace:
-            {
-                // workspace.list rows do not carry session ids here, so
-                // "project" means sessions whose cwd belongs to the workspace
-                // title folder; when nothing matches, fall back to all.
-                var matching = snapshot.Sessions
-                    .Where(session => session.Cwd.EndsWith(
-                        workspace.Title,
-                        StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-                if (matching.Count == 0)
                 {
-                    matching = snapshot.Sessions.ToList();
+                    var focus = FocusOf(snapshot.Sessions);
+                    var single = focus is null ? Array.Empty<DshSessionDetail>() : new[] { focus };
+                    return (DshUsageSummary.Sum(single), focus);
                 }
+            case StatusScope.CurrentProject when snapshot.Workspace is { } workspace:
+                {
+                    // workspace.list rows do not carry session ids here, so
+                    // "project" means sessions whose cwd belongs to the workspace
+                    // title folder; when nothing matches, fall back to all.
+                    var matching = snapshot.Sessions
+                        .Where(session => session.Cwd.EndsWith(
+                            workspace.Title,
+                            StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    if (matching.Count == 0)
+                    {
+                        matching = snapshot.Sessions.ToList();
+                    }
 
-                return (DshUsageSummary.Sum(matching), FocusOf(matching));
-            }
+                    return (DshUsageSummary.Sum(matching), FocusOf(matching));
+                }
             default:
                 return (DshUsageSummary.Sum(snapshot.Sessions), FocusOf(snapshot.Sessions));
         }
@@ -421,17 +421,17 @@ public partial class StatusTabContent : UserControl
             switch (action)
             {
                 case InsightAction.NewSession:
-                {
-                    string sessionId = await _client.CreateSessionAsync(endpoint, argument, CancellationToken.None);
-                    UpdatedText.Text = $"已新建会话 {sessionId}";
-                    break;
-                }
+                    {
+                        string sessionId = await _client.CreateSessionAsync(endpoint, argument, CancellationToken.None);
+                        UpdatedText.Text = $"已新建会话 {sessionId}";
+                        break;
+                    }
                 case InsightAction.CancelSession:
-                {
-                    await _client.CancelSessionAsync(endpoint, argument, CancellationToken.None);
-                    UpdatedText.Text = "已发送中断请求";
-                    break;
-                }
+                    {
+                        await _client.CancelSessionAsync(endpoint, argument, CancellationToken.None);
+                        UpdatedText.Text = "已发送中断请求";
+                        break;
+                    }
             }
 
             _ = RefreshAsync(includeBalance: false);

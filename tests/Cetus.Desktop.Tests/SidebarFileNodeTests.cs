@@ -6,7 +6,7 @@ namespace Cetus.Desktop.Tests;
 public sealed class SidebarFileNodeTests
 {
     [Fact]
-    public void LoadChildren_ListsDirectoriesBeforeFiles()
+    public async Task LoadChildren_ListsDirectoriesBeforeFiles()
     {
         string root = TestWorkspace.CreateDirectory();
         try
@@ -16,7 +16,7 @@ public sealed class SidebarFileNodeTests
             File.WriteAllText(Path.Combine(root, "note.txt"), "CETUS");
             var node = new SidebarFileNode(root, isDirectory: true);
 
-            node.LoadChildren();
+            await node.LoadChildrenAsync();
 
             Assert.Collection(
                 node.Children,

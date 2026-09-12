@@ -23,6 +23,7 @@ public partial class ReviewTabContent : UserControl, IDisposable
     private int _selectedWorkspace;
     private int _refreshGeneration;
     private bool _loaded;
+    private string? _repositoryRoot;
 
     public ReviewTabContent()
     {
@@ -37,6 +38,8 @@ public partial class ReviewTabContent : UserControl, IDisposable
     {
         ++_refreshGeneration;
         _endpointProvider = null;
+        _repositoryRoot = null;
+        _statusClient.Dispose();
     }
 
     private async void LoadAsync()
@@ -70,6 +73,8 @@ public partial class ReviewTabContent : UserControl, IDisposable
         }
 
         int generation = ++_refreshGeneration;
+        _repositoryRoot = null;
+        FilesList.ItemsSource = null;
         try
         {
             Uri endpoint = _endpointProvider();
@@ -120,48 +125,13 @@ public partial class ReviewTabContent : UserControl, IDisposable
     {
         try
         {
-            (int toplevelExit, string _) = await GitRunner.RunAsync(
-                cwd, new[] { "rev-parse", "--is-inside-work-tree" });
-            if (toplevelExit != 0)
-            {
-                SetDiff(new[] { DiffLine.Info("当前会话目录不是 git 仓库，无法审查改动。") });
-                FilesList.ItemsSource = null;
-                return;
-            }
-
-            (int statusExit, string statusOutput) = await GitRunner.RunAsync(
-                cwd, new[] { "status", "--porcelain=v1" });
+            (string root, IReadOnlyList<ReviewFile> files) = await ReviewService.GetChangesAsync(cwd);
             if (generation != _refreshGeneration)
             {
                 return;
             }
 
-            if (statusExit != 0)
-            {
-                SetDiff(new[] { DiffLine.Info("git status 执行失败，请确认该目录可读。") });
-                FilesList.ItemsSource = null;
-                return;
-            }
-
-            List<ReviewFile> files = statusOutput
-                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                .Select(line => line.TrimEnd('\r'))
-                .Where(line => line.Length > 3)
-                .Select(line =>
-                {
-                    string status = line[..2].Trim();
-                    string path = line[3..];
-                    int renameMarker = path.IndexOf(" -> ", StringComparison.Ordinal);
-                    if (renameMarker >= 0)
-                    {
-                        path = path[(renameMarker + 4)..];
-                    }
-
-                    path = path.Trim('"');
-                    return new ReviewFile(status.Length == 0 ? "M" : status, path);
-                })
-                .ToList();
-
+            _repositoryRoot = root;
             if (files.Count == 0)
             {
                 FilesList.ItemsSource = null;
@@ -172,12 +142,17 @@ public partial class ReviewTabContent : UserControl, IDisposable
             FilesList.ItemsSource = files;
             FilesList.SelectedIndex = 0;
         }
-        catch (Win32Exception)
+        catch (Win32Exception error)
         {
-            SetDiff(new[] { DiffLine.Info("未找到 git，请安装 Git 后重试。") });
+            if (generation != _refreshGeneration)
+            {
+                return;
+            }
+
+            SetDiff(new[] { DiffLine.Info($"读取改动失败：{error.Message}") });
             FilesList.ItemsSource = null;
         }
-        catch (Exception error) when (error is IOException or InvalidOperationException)
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
             if (generation == _refreshGeneration)
             {
@@ -189,18 +164,18 @@ public partial class ReviewTabContent : UserControl, IDisposable
     private async void OnFileSelected(object sender, SelectionChangedEventArgs e)
     {
         if (FilesList.SelectedItem is not ReviewFile file
-            || _selectedWorkspace >= _workspaces.Count)
+            || _repositoryRoot is null)
         {
             return;
         }
 
         int generation = ++_refreshGeneration;
-        string cwd = _workspaces[_selectedWorkspace].Cwd;
+        string cwd = _repositoryRoot;
         try
         {
             if (file.Status == "??")
             {
-                IReadOnlyList<DiffLine> untracked = await UntrackedDiffAsync(cwd, file.Path);
+                IReadOnlyList<DiffLine> untracked = await ReviewService.ReadUntrackedAsync(cwd, file.Path);
                 if (generation != _refreshGeneration)
                 {
                     return;
@@ -217,46 +192,17 @@ public partial class ReviewTabContent : UserControl, IDisposable
                 return;
             }
 
-            SetDiff(ParseDiff(output));
+            SetDiff(exitCode == 0 ? ParseDiff(output) : new[] { DiffLine.Info("git diff 执行失败，请确认仓库已有提交且文件可读。") });
         }
-        catch (Win32Exception)
+        catch (Exception error) when (error is Win32Exception or IOException or UnauthorizedAccessException or InvalidOperationException)
         {
-            SetDiff(new[] { DiffLine.Info("未找到 git，请安装 Git 后重试。") });
-        }
-    }
-
-    private static async Task<IReadOnlyList<DiffLine>> UntrackedDiffAsync(string workspaceCwd, string relativePath)
-    {
-        string candidate = Path.Combine(
-            workspaceCwd,
-            relativePath.Replace('/', Path.DirectorySeparatorChar));
-        string fullPath = Path.GetFullPath(candidate);
-        string workspaceRoot = workspaceCwd.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        if (!fullPath.StartsWith(workspaceRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-        {
-            return new[] { DiffLine.Info("无法解析该未跟踪文件在工作区中的路径。") };
-        }
-
-        if (!File.Exists(fullPath))
-        {
-            return new[] { DiffLine.Info("未跟踪文件已不存在。") };
-        }
-
-        var lines = new List<DiffLine>
-        {
-            new("hunk", $"@@ 未跟踪文件（全部视为新增）: {relativePath} @@"),
-        };
-        foreach (string line in await File.ReadAllLinesAsync(fullPath))
-        {
-            lines.Add(new DiffLine("add", "+" + line));
-            if (lines.Count >= 800)
+            if (generation != _refreshGeneration)
             {
-                lines.Add(DiffLine.Info("… 文件过大，仅显示前 800 行"));
-                break;
+                return;
             }
-        }
 
-        return lines;
+            SetDiff(new[] { DiffLine.Info($"读取改动失败：{error.Message}") });
+        }
     }
 
     private static IReadOnlyList<DiffLine> ParseDiff(string output)
