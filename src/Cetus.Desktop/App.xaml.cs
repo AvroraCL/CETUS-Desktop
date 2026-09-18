@@ -7,6 +7,8 @@ namespace Cetus;
 /// <summary>
 /// Application entry: single-instance guard, then a centered brand splash
 /// while the DSH host starts; the main window appears once it settles.
+/// `--background` (autostart) skips the splash entirely and keeps the main
+/// window hidden — the tray icon and a prewarmed DSH host are the whole UI.
 /// </summary>
 public partial class App : System.Windows.Application
 {
@@ -32,13 +34,18 @@ public partial class App : System.Windows.Application
 
         base.OnStartup(e);
 
-        _splash = new SplashWindow();
-        _splash.Show();
+        bool startInBackground = e.Args.Any(arg =>
+            arg.Equals("--background", StringComparison.OrdinalIgnoreCase));
+        if (!startInBackground)
+        {
+            _splash = new SplashWindow();
+            _splash.Show();
+        }
 
         _mainWindow = new MainWindow();
         MainWindow = _mainWindow;
         _mainWindow.SplashDismissRequested += (_, _) => DismissSplash();
-        _mainWindow.StartStartup();
+        _mainWindow.StartStartup(startInBackground);
     }
 
     private void DismissSplash()

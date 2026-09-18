@@ -185,6 +185,47 @@ public sealed class CetusSettingsTests
         Assert.False(CetusSettings.TryParsePort(value, out _));
     }
 
+    [Fact]
+    public void NotifyOnAgentComplete_PersistsAcrossLoads()
+    {
+        using var directory = new TemporaryDirectory();
+        string settingsPath = Path.Combine(directory.Path, "settings.json");
+        var settings = new CetusSettings(settingsPath);
+
+        Assert.True(settings.NotifyOnAgentComplete);
+        settings.SetNotifyOnAgentComplete(false);
+
+        var reloaded = new CetusSettings(settingsPath);
+        Assert.False(reloaded.NotifyOnAgentComplete);
+    }
+
+    [Fact]
+    public void GlobalHotkeyEnabled_PersistsAcrossLoads()
+    {
+        using var directory = new TemporaryDirectory();
+        string settingsPath = Path.Combine(directory.Path, "settings.json");
+        var settings = new CetusSettings(settingsPath);
+
+        Assert.True(settings.GlobalHotkeyEnabled);
+        settings.SetGlobalHotkeyEnabled(false);
+
+        var reloaded = new CetusSettings(settingsPath);
+        Assert.False(reloaded.GlobalHotkeyEnabled);
+    }
+
+    [Fact]
+    public void Load_LegacyFileWithoutNewSwitches_UsesDefaults()
+    {
+        using var directory = new TemporaryDirectory();
+        string settingsPath = Path.Combine(directory.Path, "settings.json");
+        File.WriteAllText(settingsPath, """{ "Port": 4312 }""");
+
+        var settings = new CetusSettings(settingsPath);
+
+        Assert.True(settings.NotifyOnAgentComplete);
+        Assert.True(settings.GlobalHotkeyEnabled);
+    }
+
     [Theory]
     [InlineData(null, false)]
     [InlineData("", false)]

@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Media;
 using Cetus.Browser;
 using Cetus.Configuration;
+using Cetus.DshStatus;
 using Cetus.Platform;
 using Cetus.Runtime;
 using Cetus.Updates;
@@ -24,6 +25,8 @@ public partial class MainWindow : Window
     private TrayIconController? _tray;
     private WindowComposition? _windowComposition;
     private UpdateCoordinator? _updates;
+    private GlobalHotkeyManager? _hotkeys;
+    private DshSessionWatcher? _sessionWatcher;
     private bool _isExiting;
     private bool _startupStarted;
     private bool _announcementShown;
@@ -46,6 +49,11 @@ public partial class MainWindow : Window
             {
                 ["checkUpdatesOnStartup"] = _settings.CheckUpdatesOnStartup ? "true" : "false",
                 ["closeToTray"] = _settings.CloseToTray ? "true" : "false",
+                ["notifyOnAgentComplete"] = _settings.NotifyOnAgentComplete ? "true" : "false",
+                ["globalHotkeyEnabled"] = _settings.GlobalHotkeyEnabled ? "true" : "false",
+                // The registry is the source of truth for autostart, so this is
+                // re-read on every state post instead of coming from settings.
+                ["launchOnStartup"] = AutostartManager.IsEnabled() ? "true" : "false",
                 ["dshPort"] = _settings.EffectivePort.ToString(),
             },
             OnCetusSettingChanged,
@@ -65,9 +73,10 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Begins startup while the brand splash is showing; the main window
-    /// appears only after the runtime settles.
+    /// appears only after the runtime settles. With <paramref name="startInBackground"/>
+    /// there is no splash and the window stays hidden (autostart path).
     /// </summary>
-    public void StartStartup()
+    public void StartStartup(bool startInBackground = false)
     {
         if (_startupStarted || _isExiting)
         {
@@ -98,9 +107,16 @@ public partial class MainWindow : Window
                     }
                 });
             _windowComposition.SetDarkMode(IsSystemDarkMode());
+
+            _hotkeys = new GlobalHotkeyManager(source);
+            _hotkeys.ToggleRequested += OnGlobalHotkeyToggle;
+            if (_settings.GlobalHotkeyEnabled)
+            {
+                _hotkeys.Register();
+            }
         }
 
-        _ = RunStartupAsync();
+        _ = RunStartupAsync(startInBackground);
         if (_settings.CheckUpdatesOnStartup)
         {
             EnsureUpdateCoordinator();
@@ -108,7 +124,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task RunStartupAsync()
+    private async Task RunStartupAsync(bool startInBackground = false)
     {
         // Splash phase: bring the DSH host up with the window still hidden —
         // WebView2 cannot initialize on a window that was never shown.
@@ -121,7 +137,11 @@ public partial class MainWindow : Window
         // Composition was attached right after EnsureHandle above — before
         // any frame can be presented — so nothing races Show() here.
         SplashDismissRequested?.Invoke(this, EventArgs.Empty);
-        Show();
+        if (!startInBackground)
+        {
+            Show();
+        }
+
         ShowRuntimeError(result, "Cetus · 启动失败");
         if (!result.Succeeded)
         {
@@ -252,6 +272,7 @@ public partial class MainWindow : Window
         if (state.Phase == DesktopRuntimePhase.Ready)
         {
             StatusText.Visibility = Visibility.Collapsed;
+            EnsureSessionWatcher();
             return;
         }
 
@@ -297,6 +318,60 @@ public partial class MainWindow : Window
         ShowInTaskbar = true;
         WindowState = WindowState.Normal;
         Activate();
+    }
+
+    private void EnsureSessionWatcher()
+    {
+        if (_sessionWatcher is not null || _isExiting)
+        {
+            return;
+        }
+
+        // Endpoint is resolved per poll so a port change is picked up
+        // without restarting the watcher.
+        _sessionWatcher = new DshSessionWatcher(
+            new DshSessionClient(_settings.DshHomeOverride),
+            () => _runtime.Endpoint);
+        _sessionWatcher.AgentFinished += OnAgentFinished;
+        _sessionWatcher.Start();
+    }
+
+    private void OnAgentFinished(object? sender, DshAgentFinishedEventArgs e)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (_isExiting || _tray is null || !_settings.NotifyOnAgentComplete)
+            {
+                return;
+            }
+
+            // A user watching the session sees the answer live; only
+            // surface the balloon when CETUS is not the focused window.
+            if (IsVisible && ForegroundWindow.IsCurrent(this))
+            {
+                return;
+            }
+
+            _tray.ShowBalloonTip("任务完成", $"「{e.Title}」已完成回复", ShowWindow);
+        });
+    }
+
+    private void OnGlobalHotkeyToggle()
+    {
+        if (_isExiting)
+        {
+            return;
+        }
+
+        if (IsVisible && ForegroundWindow.IsCurrent(this))
+        {
+            Hide();
+            ShowInTaskbar = false;
+        }
+        else
+        {
+            ShowWindow();
+        }
     }
 
     private async Task RetryDshAsync()
@@ -364,7 +439,31 @@ public partial class MainWindow : Window
             case "closeToTray":
                 _settings.SetCloseToTray(value == "true");
                 break;
+            case "notifyOnAgentComplete":
+                _settings.SetNotifyOnAgentComplete(value == "true");
+                break;
+            case "globalHotkeyEnabled":
+                bool hotkeyEnabled = value == "true";
+                _settings.SetGlobalHotkeyEnabled(hotkeyEnabled);
+                if (hotkeyEnabled)
+                {
+                    // Registration can fail while another app owns the combo;
+                    // the state re-post below keeps the switch truthful.
+                    _hotkeys?.Register();
+                }
+                else
+                {
+                    _hotkeys?.Unregister();
+                }
+
+                break;
+            case "launchOnStartup":
+                AutostartManager.SetEnabled(value == "true");
+                break;
         }
+        // The bridge re-posts the settings state right after this callback,
+        // and the provider re-reads the registry each time, so rejected
+        // hotkeys/autostart writes show up as the original switch state.
     }
 
     private async Task CheckForUpdatesFromSettingsAsync()
@@ -466,6 +565,10 @@ public partial class MainWindow : Window
         _isExiting = true;
         _tray?.Dispose();
         _tray = null;
+        _hotkeys?.Dispose();
+        _hotkeys = null;
+        _sessionWatcher?.Dispose();
+        _sessionWatcher = null;
         await _runtime.StopAsync();
         _browserSession.Dispose();
         System.Windows.Application.Current.Shutdown();
@@ -477,6 +580,10 @@ public partial class MainWindow : Window
         _runtime.StateChanged -= OnRuntimeStateChanged;
         _tray?.Dispose();
         _tray = null;
+        _hotkeys?.Dispose();
+        _hotkeys = null;
+        _sessionWatcher?.Dispose();
+        _sessionWatcher = null;
         _windowComposition?.Dispose();
         _windowComposition = null;
         _ = StopAfterUnexpectedCloseAsync();

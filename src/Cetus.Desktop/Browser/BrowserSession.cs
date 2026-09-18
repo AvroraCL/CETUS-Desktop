@@ -193,6 +193,24 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
             checkPill.addEventListener('click', () => postCetus({ type: 'cetus-check-updates' }));
             group.appendChild(cetusRow('检查更新', '手动检测 CETUS 新版本', checkPill));
 
+            const notifyRow = cetusRow(
+              '任务完成提醒', '会话不在前台时，任务完成弹出托盘通知',
+              cetusSwitch('notifyOnAgentComplete', '任务完成提醒'));
+            bindSwitchRow(notifyRow, notifyRow.querySelector('.cetus-switch'));
+            group.appendChild(notifyRow);
+
+            const hotkeyRow = cetusRow(
+              '全局快捷键', 'Ctrl+Alt+Space 随时唤起或隐藏 CETUS',
+              cetusSwitch('globalHotkeyEnabled', '全局快捷键'));
+            bindSwitchRow(hotkeyRow, hotkeyRow.querySelector('.cetus-switch'));
+            group.appendChild(hotkeyRow);
+
+            const autostartRow = cetusRow(
+              '开机自启', '登录 Windows 后 CETUS 在后台启动并驻留托盘',
+              cetusSwitch('launchOnStartup', '开机自启'));
+            bindSwitchRow(autostartRow, autostartRow.querySelector('.cetus-switch'));
+            group.appendChild(autostartRow);
+
             const trayRow = cetusRow(
               '关闭按钮', '开启时点关闭按钮最小化到托盘，关闭则直接退出',
               cetusSwitch('closeToTray', '关闭按钮'));
