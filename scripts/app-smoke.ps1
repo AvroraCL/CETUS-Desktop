@@ -98,7 +98,28 @@ try {
         $windowReady = $applicationProcess.MainWindowHandle -ne 0 -and
             $applicationProcess.MainWindowTitle -match 'DEV'
         try {
-            $response = Invoke-WebRequest -Uri "http://127.0.0.1:$port" -UseBasicParsing -TimeoutSec 2
+            $cookieHeaders = @{}
+            $credPath = Join-Path $TestRoot "dsh-home\.credentials.yaml"
+            if (Test-Path $credPath) {
+                foreach ($line in (Get-Content $credPath)) {
+                    if ($line -match 'secret:\s*(\S+)') {
+                        $s = $matches[1].Trim('"', "'")
+                        $auth = "127.0.0.1:$port"
+                        $sha = [Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($auth))
+                        $cName = "dsh-auth-" + [Convert]::ToBase64String($sha).Replace('+', '-').Replace('/', '_').TrimEnd('=')
+                        $now = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+                        $exp = $now + (30L * 24 * 60 * 60 * 1000)
+                        $pJson = "{`"version`":1,`"authority`":`"$auth`",`"issuedAt`":$now,`"expiresAt`":$exp}"
+                        $b64Body = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($pJson)).Replace('+', '-').Replace('/', '_').TrimEnd('=')
+                        $padded = $s.Replace('-', '+').Replace('_', '/') + ("=" * ((4 - ($s.Length % 4)) % 4))
+                        $hmac = [Security.Cryptography.HMACSHA256]::new([Convert]::FromBase64String($padded))
+                        $sig = [Convert]::ToBase64String($hmac.ComputeHash([Text.Encoding]::UTF8.GetBytes($b64Body))).Replace('+', '-').Replace('/', '_').TrimEnd('=')
+                        $cookieHeaders["Cookie"] = "$cName=v1.$b64Body.$sig"
+                        break
+                    }
+                }
+            }
+            $response = Invoke-WebRequest -Uri "http://127.0.0.1:$port" -Headers $cookieHeaders -UseBasicParsing -TimeoutSec 2
             $healthy = $response.StatusCode -eq 200 -and $response.Content -match 'id=["'']root["'']'
         }
         catch { $healthy = $false }

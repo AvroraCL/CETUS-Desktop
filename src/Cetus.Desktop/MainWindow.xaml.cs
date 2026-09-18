@@ -1,13 +1,10 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Media;
-using System.Windows.Media.Animation;
 using Cetus.Browser;
 using Cetus.Configuration;
 using Cetus.Platform;
-using Cetus.Presentation;
 using Cetus.Runtime;
 using Cetus.Updates;
 using Microsoft.Win32;
@@ -20,50 +17,14 @@ namespace Cetus;
 /// </summary>
 public partial class MainWindow : Window
 {
-    // Snappier than DSH's 300ms: fewer per-frame cross-process resizes of the
-    // hosted WebView means less visible stutter on the push layout. Expand
-    // decelerates into place (instant response), collapse accelerates away
-    // (snappy exit) and runs shorter.
-    private static readonly Duration SidebarExpandDuration =
-        new(TimeSpan.FromMilliseconds(240));
-
-    private static readonly Duration SidebarCollapseDuration =
-        new(TimeSpan.FromMilliseconds(190));
-
-    private static readonly KeySpline SidebarExpandSpline = FreezeSpline(new KeySpline(0, 0, 0.2, 1));
-
-    private static readonly KeySpline SidebarCollapseSpline = FreezeSpline(new KeySpline(0.4, 0, 1, 1));
-
-    private static KeySpline FreezeSpline(KeySpline spline)
-    {
-        spline.Freeze();
-        return spline;
-    }
-
-    /// <summary>Client width the DSH page keeps while the panel is expanded.</summary>
-    private const double MinimumDshSurfaceWidth = 480;
-
-    /// <summary>
-    /// Sidebar cap for the current window: grows with the window (fullscreen
-    /// allows a much wider panel) but always leaves the DSH surface usable.
-    /// </summary>
-    private double EffectiveSidebarMax =>
-        Math.Clamp(
-            ActualWidth - MinimumDshSurfaceWidth,
-            CetusSettings.MinimumRightSidebarWidth,
-            CetusSettings.MaximumRightSidebarWidth);
-
     private readonly CetusSettings _settings;
     private readonly BrowserSession _browserSession;
     private readonly DesktopRuntime _runtime;
-    private readonly Sidebar.WorkspaceTracker _workspaceTracker = new();
 
     private TrayIconController? _tray;
     private WindowComposition? _windowComposition;
     private UpdateCoordinator? _updates;
     private bool _isExiting;
-    private bool _rightSidebarOpen;
-    private int _rightSidebarAnimationGeneration;
     private bool _startupStarted;
     private bool _announcementShown;
 
@@ -77,35 +38,21 @@ public partial class MainWindow : Window
     {
         _settings = CetusSettings.LoadDefault();
         InitializeComponent();
-        InitializeRightSidebar();
-        SizeChanged += (_, _) => ClampSidebarWidthToWindow();
 
         _browserSession = new BrowserSession(
             Browser,
             ApplyWindowTheme,
-            OnRightSidebarToggleRequested,
-            OnDshModalStateChanged,
             () => new Dictionary<string, string>
             {
                 ["checkUpdatesOnStartup"] = _settings.CheckUpdatesOnStartup ? "true" : "false",
                 ["closeToTray"] = _settings.CloseToTray ? "true" : "false",
-                ["defaultTerminalShell"] = _settings.DefaultTerminalShell,
                 ["dshPort"] = _settings.EffectivePort.ToString(),
             },
             OnCetusSettingChanged,
             () => _ = ConfigurePortAsync(),
-            () => _ = CheckForUpdatesFromSettingsAsync(),
-            sessionId => _workspaceTracker.UpdateSelection(sessionId));
-        _browserSession.SetRightSidebarOpen(_rightSidebarOpen);
+            () => _ = CheckForUpdatesFromSettingsAsync());
         _runtime = new DesktopRuntime(_settings, _browserSession, Dispatcher);
         _runtime.StateChanged += OnRuntimeStateChanged;
-        RightSidebarContent.SetDshEndpointProvider(() => _runtime.Endpoint);
-        RightSidebarContent.ChatInserter = text => _browserSession.TryInsertIntoChatAsync(text);
-        RightSidebarContent.TerminalShellProvider = () => _settings.DefaultTerminalShell;
-        RightSidebarContent.WorkspaceResolver = cancellationToken =>
-            _workspaceTracker.ResolveRootAsync(_runtime.Endpoint, cancellationToken);
-        _workspaceTracker.SelectionChanged += () => Dispatcher.BeginInvoke(
-            () => RightSidebarContent.NotifyWorkspaceChanged());
 
         if (DevModeFlag.IsActive)
         {
@@ -287,10 +234,13 @@ public partial class MainWindow : Window
             return;
         }
 
-        RightSidebarContent.OpenWebPage(url);
-        if (!_rightSidebarOpen)
+        try
         {
-            SetRightSidebarOpen(true, animate: true);
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch
+        {
+            // Shell execution failure must not crash the desktop app.
         }
     }
 
@@ -332,12 +282,6 @@ public partial class MainWindow : Window
     private void OnMinimizeClicked(object sender, RoutedEventArgs e) =>
         SystemCommands.MinimizeWindow(this);
 
-    private void OnRightSidebarToggleRequested() =>
-        SetRightSidebarOpen(!_rightSidebarOpen, animate: true);
-
-    private void OnDshModalStateChanged(bool isOpen) =>
-        RightSidebarContent.SetModalDim(isOpen);
-
     private void OnMaximizeClicked(object sender, RoutedEventArgs e) =>
         SystemCommands.MaximizeWindow(this);
 
@@ -345,179 +289,6 @@ public partial class MainWindow : Window
         SystemCommands.RestoreWindow(this);
 
     private void OnCloseToTrayClicked(object sender, RoutedEventArgs e) => Close();
-
-    private void InitializeRightSidebar()
-    {
-        // The panel always starts collapsed; only its width is remembered.
-        _rightSidebarOpen = false;
-        ApplyRightSidebarLayout(_rightSidebarOpen, _settings.RightSidebarWidth);
-        // The strip's top-left corner sits exactly on the sidebar's top-left,
-        // so the 1px divider runs along the strip's left edge. The callback
-        // (not RelativePoint) makes this placement deterministic — observed
-        // RelativePoint anchoring did not match its documented corner.
-        RightSidebarResizePopup.CustomPopupPlacementCallback = (_, _, _) =>
-            new[] { new CustomPopupPlacement(new System.Windows.Point(0, 0), PopupPrimaryAxis.None) };
-        RightSidebar.SizeChanged += (_, args) =>
-        {
-            RightSidebarResizeThumb.Height = args.NewSize.Height;
-            RepositionRightSidebarResizeStrip();
-        };
-        SizeChanged += (_, _) => RepositionRightSidebarResizeStrip();
-        LocationChanged += (_, _) => RepositionRightSidebarResizeStrip();
-    }
-
-    /// <summary>
-    /// Forces the floating resize strip to re-evaluate its placement. WPF
-    /// popups only track their placement target through layout passes, so
-    /// raw window moves (title-bar drags) need an offset nudge to follow.
-    /// </summary>
-    private void RepositionRightSidebarResizeStrip()
-    {
-        if (!RightSidebarResizePopup.IsOpen)
-        {
-            return;
-        }
-
-        RightSidebarResizePopup.HorizontalOffset += 0.01;
-        RightSidebarResizePopup.HorizontalOffset -= 0.01;
-    }
-
-    private void ClampSidebarWidthToWindow()
-    {
-        if (!_rightSidebarOpen)
-        {
-            return;
-        }
-
-        RightSidebarColumn.MaxWidth = EffectiveSidebarMax;
-        if (RightSidebarColumn.ActualWidth > EffectiveSidebarMax)
-        {
-            RightSidebarColumn.Width = new GridLength(EffectiveSidebarMax, GridUnitType.Pixel);
-        }
-    }
-
-    private void SetRightSidebarOpen(bool isOpen, bool animate)
-    {
-        _rightSidebarOpen = isOpen;
-        _browserSession.SetRightSidebarOpen(isOpen);
-        // Size the strip from the live layout right before opening — a
-        // stale height here is what leaves the popup window invisible.
-        RightSidebarResizeThumb.Height = RightSidebar.ActualHeight;
-        // The floating strip must never linger over the DSH surface while
-        // the panel collapses.
-        RightSidebarResizePopup.IsOpen = isOpen;
-
-        double currentWidth = Math.Clamp(
-            RightSidebarColumn.ActualWidth,
-            0,
-            EffectiveSidebarMax);
-        double targetWidth = isOpen
-            ? Math.Clamp(_settings.RightSidebarWidth, CetusSettings.MinimumRightSidebarWidth, EffectiveSidebarMax)
-            : 0;
-        int generation = ++_rightSidebarAnimationGeneration;
-
-        RightSidebarColumn.BeginAnimation(ColumnDefinition.WidthProperty, null);
-        RightSidebarColumn.MinWidth = 0;
-        RightSidebarColumn.Width = new GridLength(currentWidth, GridUnitType.Pixel);
-
-        bool shouldAnimate = animate
-            && SystemParameters.ClientAreaAnimation
-            && Math.Abs(currentWidth - targetWidth) >= 1;
-        if (!shouldAnimate)
-        {
-            ApplyRightSidebarLayout(isOpen, targetWidth);
-            return;
-        }
-
-        // DSH sidebar method (slide, not morph): the panel holds its full
-        // expanded layout while the column clips it against the window edge,
-        // so nothing re-wraps mid-slide and the hosted WebView2 windows move
-        // instead of resizing every frame.
-        RightSidebarContent.Width = isOpen ? targetWidth : currentWidth;
-        RightSidebarContent.HorizontalAlignment = HorizontalAlignment.Left;
-        // Hover restyles mid-slide only burn frames; freeze interaction too.
-        RightSidebarContent.IsHitTestVisible = false;
-
-        var animation = new GridLengthAnimation
-        {
-            From = new GridLength(currentWidth, GridUnitType.Pixel),
-            To = new GridLength(targetWidth, GridUnitType.Pixel),
-            Duration = isOpen ? SidebarExpandDuration : SidebarCollapseDuration,
-            Spline = isOpen ? SidebarExpandSpline : SidebarCollapseSpline,
-            // Hold the final value through the completion callback: with Stop
-            // the column snapped back to its start width for one frame.
-            FillBehavior = FillBehavior.HoldEnd,
-        };
-        // Layout-driven animation: cap the tick rate so high-refresh monitors
-        // do not pay double relayout cost for imperceptible extra frames.
-        Timeline.SetDesiredFrameRate(animation, 60);
-        animation.Completed += (_, _) =>
-        {
-            if (generation == _rightSidebarAnimationGeneration)
-            {
-                ApplyRightSidebarLayout(isOpen, targetWidth);
-            }
-        };
-        RightSidebarColumn.BeginAnimation(
-            ColumnDefinition.WidthProperty,
-            animation,
-            HandoffBehavior.SnapshotAndReplace);
-    }
-
-    private void ApplyRightSidebarLayout(bool isOpen, double width)
-    {
-        ++_rightSidebarAnimationGeneration;
-        // Release the mid-slide frozen layout (idempotent for the
-        // non-animated paths) so the panel stretches with its column again.
-        RightSidebarContent.ClearValue(WidthProperty);
-        RightSidebarContent.HorizontalAlignment = HorizontalAlignment.Stretch;
-        RightSidebarContent.IsHitTestVisible = true;
-        RightSidebarColumn.BeginAnimation(ColumnDefinition.WidthProperty, null);
-        RightSidebarContent.UpdateEmptyState();
-        if (isOpen)
-        {
-            double clampedWidth = Math.Clamp(
-                width,
-                CetusSettings.MinimumRightSidebarWidth,
-                EffectiveSidebarMax);
-            RightSidebarColumn.MinWidth = CetusSettings.MinimumRightSidebarWidth;
-            RightSidebarColumn.MaxWidth = EffectiveSidebarMax;
-            RightSidebarColumn.Width = new GridLength(clampedWidth, GridUnitType.Pixel);
-            RightSidebarResizeThumb.IsEnabled = true;
-        }
-        else
-        {
-            RightSidebarColumn.MinWidth = 0;
-            RightSidebarColumn.Width = new GridLength(0, GridUnitType.Pixel);
-            RightSidebarResizeThumb.IsEnabled = false;
-        }
-    }
-
-    private void OnRightSidebarResizeDelta(object sender, DragDeltaEventArgs e)
-    {
-        if (!_rightSidebarOpen)
-        {
-            return;
-        }
-
-        RightSidebarColumn.BeginAnimation(ColumnDefinition.WidthProperty, null);
-        double width = Math.Clamp(
-            RightSidebarColumn.ActualWidth - e.HorizontalChange,
-            CetusSettings.MinimumRightSidebarWidth,
-            EffectiveSidebarMax);
-        RightSidebarColumn.Width = new GridLength(width, GridUnitType.Pixel);
-    }
-
-    private void OnRightSidebarResizeCompleted(object sender, DragCompletedEventArgs e)
-    {
-        double width = Math.Clamp(
-            RightSidebarColumn.ActualWidth,
-            CetusSettings.MinimumRightSidebarWidth,
-            CetusSettings.MaximumRightSidebarWidth);
-        RightSidebarColumn.Width = new GridLength(width, GridUnitType.Pixel);
-        _settings.SetRightSidebarWidth(width);
-        _settings.SetRightSidebarWidth(width);
-    }
 
     private void ShowWindow()
     {
@@ -593,17 +364,6 @@ public partial class MainWindow : Window
             case "closeToTray":
                 _settings.SetCloseToTray(value == "true");
                 break;
-            case "defaultTerminalShell":
-                try
-                {
-                    _settings.SetDefaultTerminalShell(value);
-                }
-                catch (ArgumentException)
-                {
-                    // Unknown shell from the page — keep the current value.
-                }
-
-                break;
         }
     }
 
@@ -660,24 +420,13 @@ public partial class MainWindow : Window
         Resources["CaptionHoverBrush"] = CreateBrush(isDark ? "#2EFFFFFF" : "#14000000");
         Resources["CaptionPressedBrush"] = CreateBrush(isDark ? "#4AFFFFFF" : "#24000000");
         Resources["CaptionFocusBrush"] = CreateBrush(isDark ? "#24FFFFFF" : "#10000000");
-        Resources["SidebarBorderBrush"] = CreateBrush(isDark ? "#2AFFFFFF" : "#1C000000");
-        Resources["RightSidebarBackgroundBrush"] = CreateBrush(isDark ? "#1B1B1C" : "#F5F7FA");
-        Resources["SidebarPanelForegroundBrush"] = CreateBrush(isDark ? "#F9FAFB" : "#0F1115");
-        Resources["SidebarPanelSecondaryBrush"] = CreateBrush(isDark ? "#CFD3D6" : "#61666B");
-        Resources["SidebarPanelSelectedBrush"] = CreateBrush(isDark ? "#2EFFFFFF" : "#12000000");
-        Resources["SidebarPanelInputBrush"] = CreateBrush(isDark ? "#222224" : "#FFFFFF");
-        Resources["SidebarTerminalBackgroundBrush"] = CreateBrush(isDark ? "#101011" : "#F8FAFC");
-        Resources["SidebarTerminalForegroundBrush"] = CreateBrush(isDark ? "#E5E7EB" : "#172033");
         WindowFrame.Background = CreateBrush(isDark ? "#151517" : "#F8FAFC");
         StatusText.Foreground = CreateBrush(isDark ? "#AAB7CC" : "#52627A");
-        // Match the frame so Chromium's repaint lag during window/sidebar
-        // resizes shows themed bands instead of a flashing white sliver.
         Browser.DefaultBackgroundColor = System.Drawing.Color.FromArgb(
             255,
             isDark ? 27 : 245,
             isDark ? 27 : 247,
             isDark ? 28 : 250);
-        RightSidebarContent.ApplyTheme(isDark);
     }
 
     private static System.Windows.Media.Brush CreateBrush(string color, double opacity = 1) =>
@@ -717,7 +466,6 @@ public partial class MainWindow : Window
         _isExiting = true;
         _tray?.Dispose();
         _tray = null;
-        RightSidebarContent.Dispose();
         await _runtime.StopAsync();
         _browserSession.Dispose();
         System.Windows.Application.Current.Shutdown();
@@ -731,7 +479,6 @@ public partial class MainWindow : Window
         _tray = null;
         _windowComposition?.Dispose();
         _windowComposition = null;
-        RightSidebarContent.Dispose();
         _ = StopAfterUnexpectedCloseAsync();
         base.OnClosed(e);
     }
@@ -747,7 +494,5 @@ public partial class MainWindow : Window
             // The window is already closing; the sidecar Job Object remains the
             // authoritative cleanup for the DSH process tree.
         }
-
-        _browserSession.Dispose();
     }
 }

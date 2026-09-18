@@ -64,7 +64,7 @@ public static class DshCredentials
         return null;
     }
 
-    private static string ResolveDshHome(string? overrideHome)
+    internal static string ResolveDshHome(string? overrideHome)
     {
         if (!string.IsNullOrWhiteSpace(overrideHome))
         {

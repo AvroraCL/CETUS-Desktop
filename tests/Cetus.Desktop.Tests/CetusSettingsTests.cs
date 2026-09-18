@@ -17,7 +17,6 @@ public sealed class CetusSettingsTests
             var settings = new CetusSettings(settingsPath);
 
             Assert.Equal(CetusSettings.DefaultPort, settings.ConfiguredPort);
-            Assert.Equal(CetusSettings.DefaultRightSidebarWidth, settings.RightSidebarWidth);
             settings.SetConfiguredPort(4312);
 
             var reloaded = new CetusSettings(settingsPath);
@@ -31,22 +30,7 @@ public sealed class CetusSettingsTests
     }
 
     [Fact]
-    public void SidebarWidth_PersistsWithoutOverwritingPort()
-    {
-        using var directory = new TemporaryDirectory();
-        string settingsPath = Path.Combine(directory.Path, "settings.json");
-        var settings = new CetusSettings(settingsPath);
-        settings.SetConfiguredPort(4312);
-
-        settings.SetRightSidebarWidth(417.6);
-
-        var reloaded = new CetusSettings(settingsPath);
-        Assert.Equal(4312, reloaded.ConfiguredPort);
-        Assert.Equal(418, reloaded.RightSidebarWidth);
-    }
-
-    [Fact]
-    public void Load_LegacyPortOnlyFile_UsesSidebarDefaults()
+    public void Load_LegacyPortOnlyFile_UsesDefaults()
     {
         using var directory = new TemporaryDirectory();
         string settingsPath = Path.Combine(directory.Path, "settings.json");
@@ -55,8 +39,8 @@ public sealed class CetusSettingsTests
         var settings = new CetusSettings(settingsPath);
 
         Assert.Equal(4312, settings.ConfiguredPort);
-        Assert.Equal(360, settings.RightSidebarWidth);
         Assert.True(settings.CheckUpdatesOnStartup);
+        Assert.True(settings.CloseToTray);
     }
 
     [Fact]
@@ -103,51 +87,17 @@ public sealed class CetusSettingsTests
     }
 
     [Fact]
-    public void DefaultTerminalShell_PersistsAndRejectsUnknownValues()
-    {
-        using var directory = new TemporaryDirectory();
-        string settingsPath = Path.Combine(directory.Path, "settings.json");
-        var settings = new CetusSettings(settingsPath);
-
-        Assert.Equal("pwsh", settings.DefaultTerminalShell);
-        settings.SetDefaultTerminalShell("cmd");
-
-        var reloaded = new CetusSettings(settingsPath);
-        Assert.Equal("cmd", reloaded.DefaultTerminalShell);
-        Assert.Throws<ArgumentException>(() => reloaded.SetDefaultTerminalShell("fish"));
-    }
-
-    [Fact]
-    public void Load_IgnoreInvalidCloseToTrayAndShell()
+    public void Load_IgnoreInvalidCloseToTray()
     {
         using var directory = new TemporaryDirectory();
         string settingsPath = Path.Combine(directory.Path, "settings.json");
         File.WriteAllText(
             settingsPath,
-            """{ "CloseToTray": null, "DefaultTerminalShell": "zsh" }""");
+            """{ "CloseToTray": null }""");
 
         var settings = new CetusSettings(settingsPath);
 
         Assert.True(settings.CloseToTray);
-        Assert.Equal("pwsh", settings.DefaultTerminalShell);
-    }
-
-    [Theory]
-    [InlineData(100, 300)]
-    [InlineData(300, 300)]
-    [InlineData(419.5, 420)]
-    [InlineData(520, 520)]
-    [InlineData(800, 800)]
-    [InlineData(900, 900)]
-    [InlineData(2000, 1600)]
-    public void SetRightSidebarWidth_ClampsAndRounds(double width, int expected)
-    {
-        using var directory = new TemporaryDirectory();
-        var settings = new CetusSettings(Path.Combine(directory.Path, "settings.json"));
-
-        settings.SetRightSidebarWidth(width);
-
-        Assert.Equal(expected, settings.RightSidebarWidth);
     }
 
     [Fact]

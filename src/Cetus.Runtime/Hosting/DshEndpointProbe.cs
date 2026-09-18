@@ -11,11 +11,13 @@ namespace Cetus.Hosting;
 internal sealed class DshEndpointProbe : IDisposable
 {
     private readonly Uri _endpoint;
+    private readonly string? _dshHomeOverride;
     private readonly HttpClient _client;
 
-    public DshEndpointProbe(Uri endpoint)
+    public DshEndpointProbe(Uri endpoint, string? dshHomeOverride = null)
     {
         _endpoint = endpoint;
+        _dshHomeOverride = dshHomeOverride;
         _client = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
     }
 
@@ -28,7 +30,13 @@ internal sealed class DshEndpointProbe : IDisposable
     {
         try
         {
-            using HttpResponseMessage response = await _client.GetAsync(_endpoint, cancellationToken);
+            using var request = new HttpRequestMessage(HttpMethod.Get, _endpoint);
+            if (DshAuth.TryGetSessionCookie(_endpoint, _dshHomeOverride) is { } cookie)
+            {
+                request.Headers.Add("Cookie", $"{cookie.Name}={cookie.Value}");
+            }
+
+            using HttpResponseMessage response = await _client.SendAsync(request, cancellationToken);
             if (response.StatusCode != HttpStatusCode.OK)
             {
                 return false;

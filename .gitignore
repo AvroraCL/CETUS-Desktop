@@ -27,3 +27,6 @@ docs/*
 
 # --- logs ---
 *.log
+
+# --- agent session tooling ---
+.zcode/

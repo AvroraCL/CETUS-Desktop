@@ -8,7 +8,7 @@
   },
   "dsh": {
     "package": "@deepseek-ai/dsh",
-    "version": "0.1.0-rc.6",
-    "integrity": "sha512-brpZfED7ieRa2PQ5tUxMhHrM1pb2CmKFVM/f6yMULBDMicahk+Z2OsHgTwTDnoiZm23Ftu9rQz0NN4pflaoJcg=="
+    "version": "0.1.6-alpha.2",
+    "integrity": "sha512-PHR/3ZHpJNWXlDQ3U9weFb7calWbSMJd2GD3z2iPJ8zAKL7ipuzyPy5xGbaXf2OA8hc0SAGJeoUW7nfatCNOYw=="
   }
 }

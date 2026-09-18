@@ -33,7 +33,7 @@ public sealed class DshHost : IDshHost
         _command = command;
         _endpoint = new Uri(url, UriKind.Absolute);
         _dshHomeOverride = dshHomeOverride;
-        _probe = new DshEndpointProbe(_endpoint);
+        _probe = new DshEndpointProbe(_endpoint, _dshHomeOverride);
     }
 
     /// <summary>Raised after a ready DSH process exits or monitored endpoint becomes unavailable.</summary>
@@ -75,6 +75,8 @@ public sealed class DshHost : IDshHost
             _isReady = false;
             _failureReported = false;
         }
+
+        DshAuth.EnsureSessionSecret(_dshHomeOverride);
 
         DshSidecarProcess sidecar = DshSidecarProcess.Start(
             _command,

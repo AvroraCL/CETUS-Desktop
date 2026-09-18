@@ -27,8 +27,7 @@ CETUS 把官方 Web UI、Agent 能力和插件生态装进一个开箱即用的 
 - 退出 CETUS 时自动回收由它启动的 Node 子进程
 - 启动时自动检查新版本，一键下载安装器并静默升级（GitHub Releases 主源，不可达时自动回退 GitCode 镜像）
 - 完整复用 DeepSeek Harness 的 Agent 能力与插件生态
-- 内置可调宽度的右侧工具栏：标签页式浏览网页（可选中网页元素一键加入聊天，标签显示网站图标）、使用 ConPTY 与 xterm.js 运行完整终端（默认 PowerShell 7 并加载用户配置，可切换 Shell，缺失自动回退）、工作区文件浏览器（自动跟随 DSH 当前会话的工作目录，文本与图片内联预览、超大文件截断提示）、代码变更审查器（列出 Agent 改动的文件并逐文件查看 diff）；标签可拖拽排序，并支持多开、下拉管理与最近关闭恢复
-- DSH 设置页内建「CETUS设置」：启动检查更新、手动检查更新、关闭按钮行为（托盘/退出）、终端默认 Shell、DSH 端口，改动实时保存
+- DSH 设置页内建「CETUS设置」：启动检查更新、手动检查更新、关闭按钮行为（托盘/退出）、DSH 端口，改动实时保存
 
 ### 下载 v0.2.3
 
@@ -69,12 +68,11 @@ CETUS 目前处于早期开发阶段，**M0 桌面骨架与 M2 自包含打包�
 
 - 当前版本尚未进行代码签名，Windows 可能显示安全提醒。
 - 暂无安全模式；DSH 自动恢复耗尽后需要从托盘手动重试。
-- 右侧文件面板目前只能浏览和打开文件，暂不支持创建、重命名、移动或删除。
 - 界面与 Agent 能力主要来自 DeepSeek Harness 上游，部分问题可能随上游版本变化。
 
 ### 架构约束
 
-桌面窗口只渲染状态并转发用户操作；DSH 生命周期、WebView2 会话策略、Windows 原生集成与配置持久化由各自模块拥有。WPF 仍是原生窗口宿主，WebView 消息桥只补充 CETUS 顶部工具栏和原生侧栏入口，不复制 DeepSeek Harness 的业务界面。
+桌面窗口只渲染状态并转发用户操作；DSH 生命周期、WebView2 会话策略、Windows 原生集成与配置持久化由各自模块拥有。WPF 仍是原生窗口宿主，只负责 Windows 桌面体验与必要宿主配置，不复制 DeepSeek Harness 的业务界面。
 
 ---
 
@@ -181,7 +179,7 @@ scripts\publish.ps1
 当前 Runtime 固定版本：
 
 - Node.js `v24.14.0`
-- `@deepseek-ai/dsh@0.1.0-rc.6`（`--omit=dev`）
+- `@deepseek-ai/dsh@0.1.6-alpha.2`（`--omit=dev`）
 
 固定版本与校验值只在 `eng/runtime.json` 维护；发布包内的具体版本记录在 `runtime\VERSIONS.txt`。安装程序默认安装到 `%LOCALAPPDATA%\Cetus`，WebView2 数据位于 `%LOCALAPPDATA%\Cetus\WebView2`；卸载时会一并清理。安装前会自动关闭正在运行的 CETUS 及其残留 Node 进程。
 
