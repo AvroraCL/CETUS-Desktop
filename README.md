@@ -175,26 +175,27 @@ tests/Cetus.Desktop.Tests/          # Runtime、状态机与桌面策略回归�
 scripts\publish.ps1
 ```
 
-脚本需要 PowerShell 7 与 .NET 10 SDK。它复用与开发环境相同的 Runtime 清单、校验缓存和锁定 bootstrap，不依赖系统 Node/npm。首次 bootstrap 需要网络。构建产物位于 `dist\`：
+脚本需要 PowerShell 7 与 .NET 10 SDK。它复用与开发环境相同的 Runtime 清单、校验缓存和锁定 bootstrap，不依赖系统 Node/npm。首次 bootstrap 需要网络。构建产物位于 `dist\`（版本号随项目当前版本）：
 
-- `app-0.2.0\`：自包含运行目录，目标电脑无需安装 .NET 或 Node.js
-- `Cetus-0.2.0-win-x64-portable.zip`：便携版
-- `Cetus-Setup-0.2.0.exe`：Inno Setup 安装程序
+- `app-<版本>\`：自包含运行目录，目标电脑无需安装 .NET 或 Node.js
+- `Cetus-<版本>-win-x64-portable.zip`：便携版
+- `Cetus-Setup-<版本>.exe`：Inno Setup 安装程序
+- `SHA256SUMS.txt`：随 Release 上传的校验文件，更新器下载后自动核对
 
 当前 Runtime 固定版本：
 
 - Node.js `v24.14.0`
 - `@deepseek-ai/dsh@0.1.6-alpha.2`（`--omit=dev`）
 
-固定版本与校验值只在 `eng/runtime.json` 维护；发布包内的具体版本记录在 `runtime\VERSIONS.txt`。安装程序默认安装到 `%LOCALAPPDATA%\Cetus`，WebView2 数据位于 `%LOCALAPPDATA%\Cetus\WebView2`；卸载时会一并清理。安装前会自动关闭正在运行的 CETUS 及其残留 Node 进程。
+固定版本与校验值只在 `eng/runtime.json` 维护；发布包内的具体版本记录在 `runtime\VERSIONS.txt`。安装程序默认安装到 `%LOCALAPPDATA%\Cetus`，WebView2 数据、日志与更新缓存位于 `%LOCALAPPDATA%\Cetus` 下的同名子目录，卸载时会一并清理；每次安装都会重建 `runtime` 目录，避免新旧依赖混杂。安装前会自动关闭正在运行的 CETUS 及其残留 Node 进程。
 
 窗口使用真实的非分层 HWND：Windows 11 22H2 及以上启用系统 Desktop Acrylic，Windows 10 使用 DWM blur-behind。标题栏保持直角，并避开会让窗口拖动退回软件合成路径的透明分层窗口方案。
 
 发布后可分别验证便携包运行时和安装程序：
 
 ```powershell
-scripts\package-smoke.ps1 -ApplicationPath dist\app-0.2.0\Cetus.exe
-scripts\installer-smoke.ps1 -InstallerPath dist\Cetus-Setup-0.2.0.exe -ExpectedVersion 0.2.0
+scripts\package-smoke.ps1 -ApplicationPath dist\app-<版本>\Cetus.exe
+scripts\installer-smoke.ps1 -InstallerPath dist\Cetus-Setup-<版本>.exe -ExpectedVersion <版本>
 ```
 
 版本信息：
