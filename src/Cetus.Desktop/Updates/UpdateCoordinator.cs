@@ -108,6 +108,18 @@ internal sealed class UpdateCoordinator
     {
         if (!installedEdition)
         {
+            if (DevModeFlag.IsActive)
+            {
+                // A DEV binary runs out of the build tree; mirroring a
+                // release bundle over it would destroy the checkout. Only
+                // real portable installs self-replace.
+                _notify(
+                    "CETUS 更新",
+                    $"发现新版本 {release.TagName}。开发构建不做自动升级，点击查看更新公告。",
+                    OpenAnnouncementPage);
+                return;
+            }
+
             _notify(
                 "CETUS 更新",
                 $"发现新版本 {release.TagName}，正在后台下载便携更新包，完成后将自动升级并重启。",
@@ -307,6 +319,13 @@ internal sealed class UpdateCoordinator
             }
             else
             {
+                if (DevModeFlag.IsActive)
+                {
+                    prompt.SetDownloading(false);
+                    prompt.ReportStatus("开发构建不做应用内升级，请打开发布页获取正式包。", isError: true);
+                    return;
+                }
+
                 await ApplyPortableUpdateAsync(prompt, cancellation, release, source);
             }
         }
