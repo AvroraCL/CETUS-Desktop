@@ -48,6 +48,13 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: 
 [Files]
 Source: "{#AppSourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "*.pdb"
 
+[InstallDelete]
+; A Node dependency tree cannot be safely overlaid: packages that the new
+; release no longer contains would linger and shadow the new layout (seen as
+; 0.1.0-era credential parsers surviving into a 0.1.6 install and crashing
+; the sidecar at boot). Rebuild runtime\ from scratch on every install.
+Type: filesandordirs; Name: "{app}\runtime"
+
 [Icons]
 Name: "{userprograms}\Cetus 鲸鱼座"; Filename: "{app}\Cetus.exe"; WorkingDir: "{app}"
 Name: "{userdesktop}\Cetus 鲸鱼座"; Filename: "{app}\Cetus.exe"; WorkingDir: "{app}"; Tasks: desktopicon
