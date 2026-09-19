@@ -45,6 +45,13 @@ internal readonly record struct PortChangeResult(
     bool IsEnvironmentOverridden,
     DesktopRuntimeResult ReconnectResult);
 
+internal sealed class DshPortFallbackEventArgs(int previousPort, int newPort) : EventArgs
+{
+    public int PreviousPort { get; } = previousPort;
+
+    public int NewPort { get; } = newPort;
+}
+
 /// <summary>
 /// Product runtime state machine. It owns DSH startup, browser connection,
 /// automatic recovery, port reconfiguration and ordered shutdown as one module.
@@ -103,6 +110,9 @@ internal sealed class DesktopRuntime
 
     public event EventHandler<DesktopRuntimeStateChangedEventArgs>? StateChanged;
 
+    /// <summary>Raised after the configured port was busy and Cetus fell back to a free one (saved).</summary>
+    public event EventHandler<DshPortFallbackEventArgs>? PortFallback;
+
     public DesktopRuntimeState State { get; private set; }
 
     public bool IsBusy => _isStarting || _isExiting;
@@ -128,8 +138,7 @@ internal sealed class DesktopRuntime
             _browser.Hide();
             Transition(DesktopRuntimePhase.StartingHost, "正在启动 DSH 主机…", canRetry: false);
 
-            IDshHost host = _host ??= CreateHost();
-            await host.StartAsync(cancellation.Token);
+            await StartHostCoreAsync(cancellation.Token);
 
             if (navigateWithUi)
             {
@@ -277,6 +286,34 @@ internal sealed class DesktopRuntime
         await StopHostAsync();
         DiscardHost();
         Transition(DesktopRuntimePhase.Stopped, "已停止", canRetry: false);
+    }
+
+    /// <summary>
+    /// Starts the host, self-healing once onto a free port when the configured
+    /// one is held by a foreign process. With CETUS_PORT overriding the port,
+    /// the occupied port fails the way it always has — the environment owns it.
+    /// </summary>
+    private async Task StartHostCoreAsync(CancellationToken cancellationToken)
+    {
+        IDshHost host = _host ??= CreateHost();
+        try
+        {
+            await host.StartAsync(cancellationToken);
+            return;
+        }
+        catch (DshPortOccupiedException) when (!_isExiting && !_settings.IsPortOverridden)
+        {
+        }
+
+        int previousPort = _settings.EffectivePort;
+        int fallbackPort = FreePortFinder.Reserve();
+        _settings.SetConfiguredPort(fallbackPort);
+        PortFallback?.Invoke(this, new DshPortFallbackEventArgs(previousPort, fallbackPort));
+
+        await StopHostAsync();
+        DiscardHost();
+        host = _host ??= CreateHost();
+        await host.StartAsync(cancellationToken);
     }
 
     private IDshHost CreateHost()

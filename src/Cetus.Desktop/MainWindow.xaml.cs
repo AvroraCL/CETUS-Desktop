@@ -68,6 +68,7 @@ public partial class MainWindow : Window
             () => _ = CheckForUpdatesFromSettingsAsync());
         _runtime = new DesktopRuntime(_settings, _browserSession, Dispatcher);
         _runtime.StateChanged += OnRuntimeStateChanged;
+        _runtime.PortFallback += OnPortFallback;
 
         if (DevModeFlag.IsActive)
         {
@@ -296,6 +297,22 @@ public partial class MainWindow : Window
         {
             StatusText.Text = state.Message;
         }
+    }
+
+    private void OnPortFallback(object? sender, DshPortFallbackEventArgs e)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (_isExiting)
+            {
+                return;
+            }
+
+            _tray?.ShowBalloonTip(
+                "CETUS · 端口已切换",
+                $"端口 {e.PreviousPort} 已被其他程序占用，CETUS 已自动改用 {e.NewPort} 并保存。",
+                ShowWindow);
+        });
     }
 
     private void SetupTray()
@@ -705,6 +722,7 @@ public partial class MainWindow : Window
     {
         _isExiting = true;
         _runtime.StateChanged -= OnRuntimeStateChanged;
+        _runtime.PortFallback -= OnPortFallback;
         _tray?.Dispose();
         _tray = null;
         _hotkeys?.Dispose();

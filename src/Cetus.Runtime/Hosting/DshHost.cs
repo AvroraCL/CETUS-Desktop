@@ -7,7 +7,7 @@ namespace Cetus.Hosting;
 /// </summary>
 public sealed class DshHost : IDshHost
 {
-    private const int PortOccupiedGraceSeconds = 15;
+    private const int DefaultPortOccupiedGraceSeconds = 15;
     private const int ReadyWaitSeconds = 60;
     private const int PollIntervalMs = 500;
     private const int HealthFailureThreshold = 3;
@@ -16,6 +16,7 @@ public sealed class DshHost : IDshHost
     private readonly DshCommand _command;
     private readonly Uri _endpoint;
     private readonly string? _dshHomeOverride;
+    private readonly int _portOccupiedGraceSeconds;
     private readonly DshEndpointProbe _probe;
     private readonly object _lifecycleGate = new();
 
@@ -29,10 +30,16 @@ public sealed class DshHost : IDshHost
     private bool _disposed;
 
     public DshHost(DshCommand command, string url, string? dshHomeOverride = null)
+        : this(command, url, dshHomeOverride, DefaultPortOccupiedGraceSeconds)
+    {
+    }
+
+    internal DshHost(DshCommand command, string url, string? dshHomeOverride, int portOccupiedGraceSeconds)
     {
         _command = command;
         _endpoint = new Uri(url, UriKind.Absolute);
         _dshHomeOverride = dshHomeOverride;
+        _portOccupiedGraceSeconds = portOccupiedGraceSeconds;
         _probe = new DshEndpointProbe(_endpoint, _dshHomeOverride);
     }
 
@@ -53,7 +60,7 @@ public sealed class DshHost : IDshHost
 
         if (_probe.IsPortInUse())
         {
-            DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(PortOccupiedGraceSeconds);
+            DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(_portOccupiedGraceSeconds);
             while (DateTimeOffset.UtcNow < deadline)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -65,8 +72,7 @@ public sealed class DshHost : IDshHost
                 await Task.Delay(PollIntervalMs, cancellationToken);
             }
 
-            throw new InvalidOperationException(
-                $"端口 {_endpoint.Port} 已被其他程序占用，且不是健康的 DSH 服务。");
+            throw new DshPortOccupiedException(_endpoint.Port);
         }
 
         lock (_lifecycleGate)

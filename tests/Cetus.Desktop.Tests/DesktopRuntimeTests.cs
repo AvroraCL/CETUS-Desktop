@@ -135,6 +135,89 @@ public sealed class DesktopRuntimeTests
         Assert.False(runtime.State.CanRetry);
     }
 
+    [Fact]
+    public async Task StartAsync_PortOccupied_SavesFreePortAndRecovers()
+    {
+        using var scope = new RuntimeTestScope();
+        var occupied = new FakeDshHost { StartError = new DshPortOccupiedException(3080) };
+        var healthy = new FakeDshHost();
+        int created = 0;
+        var factory = new FakeDshHostFactory(_ => ++created == 1 ? occupied : healthy);
+        var browser = new FakeBrowserSession();
+        var runtime = scope.CreateRuntime(browser, factory);
+        var fallbacks = new List<DshPortFallbackEventArgs>();
+        runtime.PortFallback += (_, e) => fallbacks.Add(e);
+
+        DesktopRuntimeResult result = await runtime.StartAsync();
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(DesktopRuntimePhase.Ready, runtime.State.Phase);
+        Assert.Equal(2, factory.Endpoints.Count);
+        Assert.Equal(3080, factory.Endpoints[0].Port);
+        Assert.Equal(1, occupied.StartCount);
+        Assert.Equal(1, occupied.StopCount);
+        Assert.Equal(1, healthy.StartCount);
+
+        DshPortFallbackEventArgs fallback = Assert.Single(fallbacks);
+        Assert.Equal(3080, fallback.PreviousPort);
+        Assert.Equal(fallback.NewPort, factory.Endpoints[1].Port);
+        Assert.InRange(fallback.NewPort, 1, 65535);
+        Assert.NotEqual(3080, fallback.NewPort);
+        Assert.Equal(
+            fallback.NewPort,
+            new CetusSettings(Path.Combine(scope.DirectoryPath, "settings.json")).ConfiguredPort);
+        Assert.Equal(new Uri($"http://127.0.0.1:{fallback.NewPort}/"), browser.Navigations.Single());
+    }
+
+    [Fact]
+    public async Task StartAsync_PortOccupiedUnderEnvironmentOverride_DoesNotSelfHeal()
+    {
+        using var scope = new RuntimeTestScope();
+        Environment.SetEnvironmentVariable("CETUS_PORT", "4310");
+        try
+        {
+            var host = new FakeDshHost { StartError = new DshPortOccupiedException(4310) };
+            var runtime = scope.CreateRuntime(
+                new FakeBrowserSession(),
+                new FakeDshHostFactory(_ => host));
+            bool fallbackRaised = false;
+            runtime.PortFallback += (_, _) => fallbackRaised = true;
+
+            DesktopRuntimeResult result = await runtime.StartAsync();
+
+            Assert.False(result.Succeeded);
+            Assert.Same(host.StartError, result.Error);
+            Assert.Equal(1, host.StartCount);
+            Assert.False(fallbackRaised);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("CETUS_PORT", null);
+        }
+    }
+
+    [Fact]
+    public async Task StartAsync_FallbackPortAlsoOccupied_FailsAfterSingleRetry()
+    {
+        using var scope = new RuntimeTestScope();
+        var factory = new FakeDshHostFactory(_ => new FakeDshHost
+        {
+            StartError = new DshPortOccupiedException(4300),
+        });
+        var runtime = scope.CreateRuntime(
+            new FakeBrowserSession(),
+            factory);
+        var fallbacks = new List<DshPortFallbackEventArgs>();
+        runtime.PortFallback += (_, e) => fallbacks.Add(e);
+
+        DesktopRuntimeResult result = await runtime.StartAsync();
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(DesktopRuntimePhase.Failed, runtime.State.Phase);
+        Assert.Equal(2, factory.Endpoints.Count);
+        Assert.Single(fallbacks);
+    }
+
     private sealed class RuntimeTestScope : IDisposable
     {
         private readonly string? _originalPort;
@@ -149,6 +232,8 @@ public sealed class DesktopRuntimeTests
         }
 
         public CetusSettings Settings { get; }
+
+        public string DirectoryPath => _directory;
 
         public DesktopRuntime CreateRuntime(
             IBrowserSession browser,
