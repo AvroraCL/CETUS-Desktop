@@ -398,9 +398,13 @@ public sealed class DshHostTests
                 const http = require('http');
                 const args = process.argv.slice(2);
                 const portIndex = args.indexOf('--port');
+                const hostIndex = args.indexOf('--host');
                 const noOpenCount = args.filter(argument => argument === '--no-open').length;
-                if (!args.includes('web') || noOpenCount !== 1 || portIndex < 0 || args.length !== 4) {
+                if (!args.includes('web') || noOpenCount !== 1 || portIndex < 0 || args.length !== 6) {
                   process.exit(41);
+                }
+                if (hostIndex < 0 || args[hostIndex + 1] !== '127.0.0.1') {
+                  process.exit(44);
                 }
                 const port = Number(args[portIndex + 1]);
                 if (!Number.isInteger(port) || port < 1 || port > 65535) {

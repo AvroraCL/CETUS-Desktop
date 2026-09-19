@@ -93,6 +93,30 @@ public sealed class DiagnosticsCollectorTests
         Assert.Equal("report-body", reader.ReadToEnd());
     }
 
+    [Fact]
+    public void BuildArchive_NeverPacksCredentialsFiles()
+    {
+        using var directory = new TemporaryDirectory();
+        string zipPath = System.IO.Path.Combine(directory.Path, "diag.zip");
+        string credentials = System.IO.Path.Combine(directory.Path, ".credentials.yaml");
+        File.WriteAllText(credentials, "secret: abc");
+
+        DiagnosticsCollector.BuildArchive(zipPath, credentials, directory.Path, null, "report");
+
+        using FileStream stream = File.OpenRead(zipPath);
+        using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
+        Assert.DoesNotContain(archive.Entries, entry =>
+            entry.FullName.Contains(".credentials", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ContainsCredentialsMarker_MatchesAnyLocation()
+    {
+        Assert.True(DiagnosticsCollector.ContainsCredentialsMarker(@"C:\x\.credentials.yaml"));
+        Assert.True(DiagnosticsCollector.ContainsCredentialsMarker(@"C:\x\credentials.backup"));
+        Assert.False(DiagnosticsCollector.ContainsCredentialsMarker(@"C:\x\settings.json"));
+    }
+
     private sealed class TemporaryDirectory : IDisposable
     {
         public TemporaryDirectory()

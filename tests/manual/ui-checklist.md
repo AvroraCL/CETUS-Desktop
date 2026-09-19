@@ -91,4 +91,11 @@
 - [ ] 托盘菜单出现「导出诊断…」入口，任何运行状态下都可以导出诊断包。
 - [ ] DSH 恢复正常（Ready）后诊断页不再显示；诊断页在深浅主题下文字对比度正常。
 
+## 安全加固
+
+- [ ] 启动的 DSH 进程命令行包含 `--host 127.0.0.1`（任务管理器或 `Get-CimInstance Win32_Process` 查 Cetus 子进程）。
+- [ ] DSH 就绪后端口仅监听 `127.0.0.1`：`Get-NetTCPConnection -State Listen -LocalPort <端口>` 的 LocalAddress 不是 `0.0.0.0`/`::`。
+- [ ] `%DSH_HOME%\.credentials.yaml` 的 ACL 无 Users/Everyone/Authenticated Users 的显式授权（`icacls <文件>` 复核）；ACL 收紧失败不阻断 DSH 启动。
+- [ ] 「导出诊断…」得到的 zip 中不存在任何文件名含 credentials 的条目。
+
 记录 Windows 版本、DPI、主题、profile、CETUS commit，以及任何失败项的日志路径 `.dev/profiles/ui-review/logs`。

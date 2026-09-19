@@ -129,7 +129,9 @@ internal static class DiagnosticsCollector
         using var archive = new ZipArchive(stream, ZipArchiveMode.Create);
         AddEntry(archive, "diagnostics.txt", reportText);
 
-        if (!string.IsNullOrWhiteSpace(settingsPath) && File.Exists(settingsPath))
+        if (!string.IsNullOrWhiteSpace(settingsPath)
+            && File.Exists(settingsPath)
+            && !ContainsCredentialsMarker(settingsPath))
         {
             archive.CreateEntryFromFile(settingsPath, "settings.json");
         }
@@ -157,6 +159,14 @@ internal static class DiagnosticsCollector
             // The report above still carries the log tails.
         }
     }
+
+    /// <summary>
+    /// Hard exclusion: DSH's credentials file (or anything named like it)
+    /// never enters a diagnostics archive, even if future collection logic
+    /// starts enumerating wider than today's whitelist.
+    /// </summary>
+    public static bool ContainsCredentialsMarker(string path) =>
+        Path.GetFileName(path).Contains("credentials", StringComparison.OrdinalIgnoreCase);
 
     private static void AddEntry(ZipArchive archive, string name, string content)
     {

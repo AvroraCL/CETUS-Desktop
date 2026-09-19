@@ -1,3 +1,6 @@
+using System.IO;
+using Cetus.DshStatus;
+
 namespace Cetus.Hosting;
 
 /// <summary>
@@ -84,6 +87,11 @@ public sealed class DshHost : IDshHost
 
         DshAuth.EnsureSessionSecret(_dshHomeOverride);
 
+        // Best-effort hygiene: the credentials file must stay plaintext for
+        // DSH, so the defense is a user-only ACL. Failures never block start.
+        CredentialGuard.EnsureUserOnlyAccess(
+            Path.Combine(DshCredentials.ResolveDshHome(_dshHomeOverride), ".credentials.yaml"));
+
         DshSidecarProcess sidecar = DshSidecarProcess.Start(
             _command,
             _endpoint,
@@ -103,6 +111,7 @@ public sealed class DshHost : IDshHost
                 cancellationToken.ThrowIfCancellationRequested();
                 if (await IsHealthyAsync(cancellationToken))
                 {
+                    await RequireLoopbackBindingAsync();
                     MarkReadyAndStartMonitoring();
                     return;
                 }
@@ -174,6 +183,26 @@ public sealed class DshHost : IDshHost
             sidecar.Exited -= OnSidecarExited;
             await sidecar.StopAsync();
         }
+    }
+
+    /// <summary>
+    /// Owned-sidecar safety net: a ready DSH must not be listening on a
+    /// wildcard address. The spawned process was given an explicit loopback
+    /// host, so a violation means upstream behavior changed — stop the tree
+    /// and surface a hard failure (the safe-mode panel picks it up).
+    /// Reused external services are the user's own and are not policed.
+    /// </summary>
+    private async Task RequireLoopbackBindingAsync()
+    {
+        if (LoopbackBindingGuard.IsLoopbackOnly(_endpoint.Port))
+        {
+            return;
+        }
+
+        await StopAsync();
+        throw new InvalidOperationException(
+            $"DSH 监听在非回环地址（端口 {_endpoint.Port}），已停止以保护本机安全。" +
+            (_logPath is not null ? $"日志：{_logPath}" : string.Empty));
     }
 
     /// <summary>HTTP 200 plus the Harness shell's root marker.</summary>

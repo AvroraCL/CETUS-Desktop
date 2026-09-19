@@ -274,6 +274,12 @@ internal sealed class DshSidecarProcess
             startInfo.ArgumentList.Add("--no-open");
         }
 
+        // Belt-and-suspenders loopback lockdown: DSH 0.1.6 already refuses
+        // 0.0.0.0, but the explicit host keeps the guarantee if upstream
+        // defaults ever move. DshHost verifies the binding after readiness.
+        startInfo.ArgumentList.Add("--host");
+        startInfo.ArgumentList.Add("127.0.0.1");
+
         if (endpoint.Port != Cetus.Configuration.CetusSettings.DefaultPort)
         {
             startInfo.ArgumentList.Add("--port");
