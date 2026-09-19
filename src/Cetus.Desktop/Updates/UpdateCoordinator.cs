@@ -101,7 +101,7 @@ internal sealed class UpdateCoordinator
     /// installer without any prompt (the installer relaunches CETUS, which
     /// then shows the announcement page). Portable editions cannot replace
     /// themselves, so they only announce and let the balloon click open the
-    /// announcement page.
+    /// announcement page. Download progress shows on the taskbar.
     /// </summary>
     private async Task AutoInstallAsync(ReleaseInfo release, UpdateFeedSource source, bool installedEdition)
     {
@@ -118,12 +118,13 @@ internal sealed class UpdateCoordinator
             "CETUS 更新",
             $"发现新版本 {release.TagName}，正在后台下载，完成后将自动安装并重启。",
             null);
+        SetTaskbarProgress(Indeterminate);
         try
         {
             string installerPath = await _service.DownloadInstallerAsync(
                 release,
                 source,
-                progress: null,
+                new Progress<double>(ReportTaskbarProgress),
                 CancellationToken.None);
             _notify("CETUS 更新", "下载完成，正在安装更新，CETUS 即将退出。", null);
             Process.Start(new ProcessStartInfo(installerPath)
@@ -137,7 +138,34 @@ internal sealed class UpdateCoordinator
         {
             _notify("CETUS 更新失败", $"自动更新没有完成：{error.Message}", null);
         }
+        finally
+        {
+            SetTaskbarProgress(null);
+        }
     }
+
+    private const double Indeterminate = -1;
+
+    /// <summary>Taskbar download progress; null clears, negative shows indeterminate, otherwise 0..1.</summary>
+    private void SetTaskbarProgress(double? value)
+    {
+        System.Windows.Shell.TaskbarItemInfo info = _owner.TaskbarItemInfo ??= new();
+        if (value is null)
+        {
+            info.ProgressState = System.Windows.Shell.TaskbarItemProgressState.None;
+        }
+        else if (value < 0)
+        {
+            info.ProgressState = System.Windows.Shell.TaskbarItemProgressState.Indeterminate;
+        }
+        else
+        {
+            info.ProgressState = System.Windows.Shell.TaskbarItemProgressState.Normal;
+            info.ProgressValue = Math.Clamp(value.Value, 0, 1);
+        }
+    }
+
+    private void ReportTaskbarProgress(double value) => SetTaskbarProgress(value);
 
     private void OpenAnnouncementPage()
     {
@@ -170,7 +198,12 @@ internal sealed class UpdateCoordinator
         var cancellation = new CancellationTokenSource();
         prompt.CancelClicked += cancellation.Cancel;
         prompt.SetDownloading(true);
-        var progress = new Progress<double>(prompt.ReportProgress);
+        SetTaskbarProgress(Indeterminate);
+        var progress = new Progress<double>(value =>
+        {
+            prompt.ReportProgress(value);
+            ReportTaskbarProgress(value);
+        });
         try
         {
             string installerPath = await _service.DownloadInstallerAsync(
@@ -194,6 +227,10 @@ internal sealed class UpdateCoordinator
         {
             prompt.SetDownloading(false);
             prompt.ReportStatus($"更新失败：{error.Message}", isError: true);
+        }
+        finally
+        {
+            SetTaskbarProgress(null);
         }
     }
 

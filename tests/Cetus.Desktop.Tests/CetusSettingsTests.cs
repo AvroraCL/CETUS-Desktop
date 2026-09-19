@@ -226,6 +226,43 @@ public sealed class CetusSettingsTests
         Assert.True(settings.GlobalHotkeyEnabled);
     }
 
+    [Fact]
+    public void WindowPlacement_PersistsAcrossLoads()
+    {
+        using var directory = new TemporaryDirectory();
+        string settingsPath = Path.Combine(directory.Path, "settings.json");
+        var settings = new CetusSettings(settingsPath);
+
+        Assert.Null(settings.WindowBounds);
+        Assert.Null(settings.WindowMaximized);
+        settings.SetWindowPlacement("100,-40,1280,860", maximized: true);
+
+        Assert.Equal("100,-40,1280,860", settings.WindowBounds);
+        Assert.True(settings.WindowMaximized);
+
+        var reloaded = new CetusSettings(settingsPath);
+        Assert.Equal("100,-40,1280,860", reloaded.WindowBounds);
+        Assert.True(reloaded.WindowMaximized);
+
+        reloaded.SetWindowPlacement(null, false);
+        var cleared = new CetusSettings(settingsPath);
+        Assert.Null(cleared.WindowBounds);
+        Assert.False(cleared.WindowMaximized);
+    }
+
+    [Fact]
+    public void Load_LegacyFileWithoutWindowPlacement_YieldsNulls()
+    {
+        using var directory = new TemporaryDirectory();
+        string settingsPath = Path.Combine(directory.Path, "settings.json");
+        File.WriteAllText(settingsPath, """{ "Port": 4312 }""");
+
+        var settings = new CetusSettings(settingsPath);
+
+        Assert.Null(settings.WindowBounds);
+        Assert.Null(settings.WindowMaximized);
+    }
+
     [Theory]
     [InlineData(null, false)]
     [InlineData("", false)]

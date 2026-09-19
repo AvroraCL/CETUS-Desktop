@@ -347,6 +347,69 @@ public partial class MainWindow : Window
             : null;
     }
 
+    /// <summary>
+    /// Restores the persisted window bounds. Fires from EnsureHandle during
+    /// startup — before the splash flow shows the window — so the frame
+    /// materializes in the right place on the first paint.
+    /// </summary>
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        if (ParseWindowBounds(_settings.WindowBounds) is { } bounds)
+        {
+            Left = bounds.Left;
+            Top = bounds.Top;
+            Width = bounds.Width;
+            Height = bounds.Height;
+            if (_settings.WindowMaximized == true)
+            {
+                WindowState = WindowState.Maximized;
+            }
+        }
+    }
+
+    /// <summary>Persists the restore-state bounds; minimized and never-shown windows keep the last values.</summary>
+    private void SaveWindowPlacement()
+    {
+        if (!IsLoaded || WindowState == WindowState.Minimized)
+        {
+            return;
+        }
+
+        bool maximized = WindowState == WindowState.Maximized;
+        Rect restore = maximized ? RestoreBounds : new Rect(Left, Top, Width, Height);
+        if (restore.Width <= 0 || restore.Height <= 0)
+        {
+            return;
+        }
+
+        _settings.SetWindowPlacement(
+            $"{Math.Round(restore.Left)},{Math.Round(restore.Top)},{Math.Round(restore.Width)},{Math.Round(restore.Height)}",
+            maximized);
+    }
+
+    private static (double Left, double Top, double Width, double Height)? ParseWindowBounds(string? bounds)
+    {
+        if (string.IsNullOrWhiteSpace(bounds))
+        {
+            return null;
+        }
+
+        string[] parts = bounds.Split(',');
+        if (parts.Length != 4
+            || !double.TryParse(parts[0], out double left)
+            || !double.TryParse(parts[1], out double top)
+            || !double.TryParse(parts[2], out double width)
+            || !double.TryParse(parts[3], out double height)
+            || width <= 0
+            || height <= 0)
+        {
+            return null;
+        }
+
+        return (left, top, width, height);
+    }
+
     private void OnMinimizeClicked(object sender, RoutedEventArgs e) =>
         SystemCommands.MinimizeWindow(this);
 
@@ -401,7 +464,10 @@ public partial class MainWindow : Window
                 return;
             }
 
-            _tray.ShowBalloonTip("任务完成", $"「{e.Title}」已完成回复", ShowWindow);
+            _tray.ShowBalloonTip(
+                "任务完成",
+                $"「{e.Title}」已完成回复",
+                () => _ = FocusSessionAsync(e.SessionId));
         });
     }
 
@@ -485,9 +551,7 @@ public partial class MainWindow : Window
                 endpoint, normalized, CancellationToken.None);
             string sessionId = await _dshSessionClient.CreateSessionAsync(
                 endpoint, workspaceId, CancellationToken.None);
-            await _browserSession.ExecuteScriptAsync(
-                $"localStorage.setItem('dsh.sessions.current', JSON.stringify({_sessionSelectionScriptValue(sessionId)}))");
-            await _runtime.NavigateHomeAsync();
+            await FocusSessionCoreAsync(sessionId);
         }
         catch (Exception error) when (error is HttpRequestException or InvalidOperationException or TaskCanceledException)
         {
@@ -504,6 +568,27 @@ public partial class MainWindow : Window
                 _ = OpenWorkspaceAsync(next);
             }
         }
+    }
+
+    /// <summary>Summon the window and make the DSH UI focus a specific session on reload.</summary>
+    private async Task FocusSessionAsync(string sessionId)
+    {
+        ShowWindow();
+        try
+        {
+            await FocusSessionCoreAsync(sessionId);
+        }
+        catch (Exception error) when (error is HttpRequestException or InvalidOperationException or TaskCanceledException)
+        {
+            // The window is already up; a failed refocus must not surface.
+        }
+    }
+
+    private async Task FocusSessionCoreAsync(string sessionId)
+    {
+        await _browserSession.ExecuteScriptAsync(
+            $"localStorage.setItem('dsh.sessions.current', JSON.stringify({_sessionSelectionScriptValue(sessionId)}))");
+        await _runtime.NavigateHomeAsync();
     }
 
     private static string _sessionSelectionScriptValue(string sessionId) =>
@@ -682,6 +767,7 @@ public partial class MainWindow : Window
         if (!_isExiting)
         {
             e.Cancel = true;
+            SaveWindowPlacement();
             if (_settings.CloseToTray)
             {
                 Hide();
@@ -705,6 +791,7 @@ public partial class MainWindow : Window
         }
 
         _isExiting = true;
+        SaveWindowPlacement();
         _tray?.Dispose();
         _tray = null;
         _hotkeys?.Dispose();

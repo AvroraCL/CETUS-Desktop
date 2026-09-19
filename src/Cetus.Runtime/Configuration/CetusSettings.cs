@@ -25,6 +25,8 @@ public sealed class CetusSettings
     private bool _notifyOnAgentComplete = DefaultNotifyOnAgentComplete;
     private bool _globalHotkeyEnabled = DefaultGlobalHotkeyEnabled;
     private string? _lastLaunchVersion;
+    private string? _windowBounds;
+    private bool? _windowMaximized;
 
     public CetusSettings(string settingsPath)
     {
@@ -37,6 +39,8 @@ public sealed class CetusSettings
         _notifyOnAgentComplete = snapshot.NotifyOnAgentComplete;
         _globalHotkeyEnabled = snapshot.GlobalHotkeyEnabled;
         _lastLaunchVersion = snapshot.LastLaunchVersion;
+        _windowBounds = snapshot.WindowBounds;
+        _windowMaximized = snapshot.WindowMaximized;
     }
 
     public int ConfiguredPort => _configuredPort;
@@ -69,6 +73,25 @@ public sealed class CetusSettings
 
     /// <summary>Version string recorded at the previous launch, used to detect that CETUS just updated itself.</summary>
     public string? LastLaunchVersion => _lastLaunchVersion;
+
+    /// <summary>Normal-state window bounds as "left,top,width,height"; null until the first save.</summary>
+    public string? WindowBounds => _windowBounds;
+
+    /// <summary>Whether the window was maximized when it was last saved.</summary>
+    public bool? WindowMaximized => _windowMaximized;
+
+    public void SetWindowPlacement(string? bounds, bool maximized)
+    {
+        string? normalized = string.IsNullOrWhiteSpace(bounds) ? null : bounds.Trim();
+        if (_windowBounds == normalized && _windowMaximized == maximized)
+        {
+            return;
+        }
+
+        _windowBounds = normalized;
+        _windowMaximized = maximized;
+        Persist();
+    }
 
     public void SetLastLaunchVersion(string? version)
     {
@@ -179,7 +202,9 @@ public sealed class CetusSettings
                 file.CloseToTray ?? DefaultCloseToTray,
                 file.NotifyOnAgentComplete ?? DefaultNotifyOnAgentComplete,
                 file.GlobalHotkeyEnabled ?? DefaultGlobalHotkeyEnabled,
-                string.IsNullOrWhiteSpace(file.LastLaunchVersion) ? null : file.LastLaunchVersion.Trim());
+                string.IsNullOrWhiteSpace(file.LastLaunchVersion) ? null : file.LastLaunchVersion.Trim(),
+                string.IsNullOrWhiteSpace(file.WindowBounds) ? null : file.WindowBounds.Trim(),
+                file.WindowMaximized);
         }
         catch (IOException)
         {
@@ -210,6 +235,8 @@ public sealed class CetusSettings
             NotifyOnAgentComplete = _notifyOnAgentComplete,
             GlobalHotkeyEnabled = _globalHotkeyEnabled,
             LastLaunchVersion = _lastLaunchVersion,
+            WindowBounds = _windowBounds,
+            WindowMaximized = _windowMaximized,
         },
             new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(temporaryPath, json);
@@ -225,6 +252,8 @@ public sealed class CetusSettings
         public bool? NotifyOnAgentComplete { get; set; }
         public bool? GlobalHotkeyEnabled { get; set; }
         public string? LastLaunchVersion { get; set; }
+        public string? WindowBounds { get; set; }
+        public bool? WindowMaximized { get; set; }
     }
 
     private sealed record SettingsSnapshot(
@@ -234,7 +263,9 @@ public sealed class CetusSettings
         bool CloseToTray,
         bool NotifyOnAgentComplete,
         bool GlobalHotkeyEnabled,
-        string? LastLaunchVersion)
+        string? LastLaunchVersion,
+        string? WindowBounds,
+        bool? WindowMaximized)
     {
         public static SettingsSnapshot Default { get; } = new(
             DefaultPort,
@@ -243,6 +274,8 @@ public sealed class CetusSettings
             DefaultCloseToTray,
             DefaultNotifyOnAgentComplete,
             DefaultGlobalHotkeyEnabled,
+            null,
+            null,
             null);
     }
 }
