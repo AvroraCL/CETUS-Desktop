@@ -74,7 +74,7 @@ internal sealed class TrayIconController : IDisposable
         _tray = new NotifyIcon
         {
             Icon = _icon,
-            Text = "CETUS鲸鱼座",
+            Text = $"CETUS鲸鱼座 {ResolveVersion()}",
             ContextMenuStrip = _menu,
             Visible = true,
         };
@@ -166,6 +166,10 @@ internal sealed class TrayIconController : IDisposable
 
         return (Icon)SystemIcons.Application.Clone();
     }
+
+    /// <summary>Tooltip version stamp; tray text is capped at 63 chars so keep it short.</summary>
+    private static string ResolveVersion() =>
+        Cetus.Updates.UpdateCoordinator.ReadCurrentVersion().ToString();
 
     public void Dispose()
     {

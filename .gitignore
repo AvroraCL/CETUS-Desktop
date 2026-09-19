@@ -16,6 +16,8 @@ docs/*
 !docs/README 品牌横幅.png
 # the update announcement site ships to GitHub Pages
 !docs/site/
+# development notes worth versioning
+!docs/dev/
 
 # --- isolated development checks ---
 .dev/
