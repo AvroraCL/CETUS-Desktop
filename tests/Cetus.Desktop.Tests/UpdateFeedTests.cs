@@ -76,6 +76,9 @@ public sealed class UpdateFeedTests
         ReleaseInfo release = UpdateFeed.Parse(ReleaseJson)!;
 
         Assert.Equal("Cetus-Setup-0.2.0.exe", UpdateFeed.SelectInstallerAsset(release)?.Name);
+        Assert.Equal(
+            "Cetus-0.2.0-win-x64-portable.zip",
+            UpdateFeed.SelectPortableBundleAsset(release)?.Name);
         Assert.Equal("SHA256SUMS.txt", UpdateFeed.SelectChecksumAsset(release)?.Name);
     }
 
@@ -89,6 +92,7 @@ public sealed class UpdateFeedTests
             [new ReleaseAsset("SHA256SUMS.txt", "https://example.com/SHA256SUMS.txt", 128)]);
 
         Assert.Null(UpdateFeed.SelectInstallerAsset(release));
+        Assert.Null(UpdateFeed.SelectPortableBundleAsset(release));
     }
 
     [Fact]

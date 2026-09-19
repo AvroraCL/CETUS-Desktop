@@ -64,7 +64,7 @@ public sealed class ActivationChannel : IDisposable
                     PipeDirection.In,
                     maxNumberOfServerInstances: 1,
                     PipeTransmissionMode.Byte,
-                    PipeOptions.Asynchronous);
+                    PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
                 await server.WaitForConnectionAsync(token);
                 using var reader = new StreamReader(server, Encoding.UTF8, leaveOpen: true);
                 workspace = ParseMessage(await reader.ReadToEndAsync(token));
@@ -127,7 +127,7 @@ public sealed class ActivationChannel : IDisposable
                 ".",
                 BuildPipeName(instanceId),
                 PipeDirection.Out,
-                PipeOptions.Asynchronous);
+                PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
             await client.ConnectAsync(timeout.Token);
             await client.WriteAsync(payload, timeout.Token);
             await client.FlushAsync(timeout.Token);
