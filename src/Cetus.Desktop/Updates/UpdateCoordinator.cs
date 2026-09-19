@@ -98,11 +98,11 @@ internal sealed class UpdateCoordinator
     }
 
     /// <summary>
-    /// Silent startup path: installed editions download and hand off to the
-    /// installer without any prompt (the installer relaunches CETUS, which
-    /// then shows the announcement page). Portable editions cannot replace
-    /// themselves, so they only announce and let the balloon click open the
-    /// announcement page. Download progress shows on the taskbar.
+    /// Silent startup path: installed editions download the installer and
+    /// portable editions download the zip bundle — both install without any
+    /// prompt. Startup checks stay quiet; the release-notes role moved to
+    /// the GitHub Pages announcement page, which the new build opens after
+    /// the restart.
     /// </summary>
     private async Task AutoInstallAsync(ReleaseInfo release, UpdateFeedSource source, bool installedEdition)
     {
@@ -110,8 +110,22 @@ internal sealed class UpdateCoordinator
         {
             _notify(
                 "CETUS 更新",
-                $"发现新版本 {release.TagName}。便携版无法自动安装，点击查看更新公告。",
-                OpenAnnouncementPage);
+                $"发现新版本 {release.TagName}，正在后台下载便携更新包，完成后将自动升级并重启。",
+                null);
+            SetTaskbarProgress(Indeterminate);
+            try
+            {
+                await ApplyPortableUpdateAsync(null, null, release, source);
+            }
+            catch (Exception error)
+            {
+                _notify("CETUS 更新失败", $"便携更新没有完成：{error.Message}", null);
+            }
+            finally
+            {
+                SetTaskbarProgress(null);
+            }
+
             return;
         }
 
@@ -180,6 +194,36 @@ internal sealed class UpdateCoordinator
         _ => "github",
     };
 
+    /// <summary>
+    /// Applies a portable zip bundle: download into the cache, extract to a
+    /// staging folder, then hand control to a takeover script that runs
+    /// after CETUS exits. Throws on any failure so the caller can report.
+    /// </summary>
+    private async Task ApplyPortableUpdateAsync(
+        UpdatePromptDialog? prompt,
+        CancellationTokenSource? cancellation,
+        ReleaseInfo release,
+        UpdateFeedSource source)
+    {
+        UpdateFeedSource downloadSource = await PickDownloadSourceAsync(source);
+        string zipPath = await _service.DownloadPortableBundleAsync(
+            release,
+            downloadSource,
+            new Progress<double>(value =>
+            {
+                prompt?.ReportProgress(value);
+                ReportTaskbarProgress(value);
+            }),
+            cancellation?.Token ?? CancellationToken.None);
+        string staging = PortableUpdateApplier.PrepareStaging(zipPath, release.Version);
+        string script = PortableUpdateApplier.WriteApplyScript(
+            staging, AppContext.BaseDirectory, Environment.ProcessId);
+        PortableUpdateApplier.LaunchApplyScript(script);
+        prompt?.Close();
+        _notify("CETUS 更新", "便携更新已就绪，CETUS 即将退出并升级到新版本。", null);
+        _exitApplication();
+    }
+
     private const double Indeterminate = -1;
 
     /// <summary>Taskbar download progress; null clears, negative shows indeterminate, otherwise 0..1.</summary>
@@ -220,7 +264,7 @@ internal sealed class UpdateCoordinator
         {
             Owner = _owner,
         };
-        prompt.InstallClicked += () => _ = RunInstallAsync(prompt, release, source);
+        prompt.InstallClicked += () => _ = RunInstallAsync(prompt, release, source, installedEdition);
         prompt.OpenReleasesClicked += () =>
         {
             OpenReleasesPage();
@@ -229,7 +273,11 @@ internal sealed class UpdateCoordinator
         prompt.ShowDialog();
     }
 
-    private async Task RunInstallAsync(UpdatePromptDialog prompt, ReleaseInfo release, UpdateFeedSource source)
+    private async Task RunInstallAsync(
+        UpdatePromptDialog prompt,
+        ReleaseInfo release,
+        UpdateFeedSource source,
+        bool installedEdition)
     {
         var cancellation = new CancellationTokenSource();
         prompt.CancelClicked += cancellation.Cancel;
@@ -242,18 +290,25 @@ internal sealed class UpdateCoordinator
         });
         try
         {
-            UpdateFeedSource downloadSource = await PickDownloadSourceAsync(source);
-            string installerPath = await _service.DownloadInstallerAsync(
-                release,
-                downloadSource,
-                progress,
-                cancellation.Token);
-            Process.Start(new ProcessStartInfo(installerPath)
+            if (installedEdition)
             {
-                UseShellExecute = true,
-                Arguments = "/SILENT",
-            });
-            _exitApplication();
+                UpdateFeedSource downloadSource = await PickDownloadSourceAsync(source);
+                string installerPath = await _service.DownloadInstallerAsync(
+                    release,
+                    downloadSource,
+                    progress,
+                    cancellation.Token);
+                Process.Start(new ProcessStartInfo(installerPath)
+                {
+                    UseShellExecute = true,
+                    Arguments = "/SILENT",
+                });
+                _exitApplication();
+            }
+            else
+            {
+                await ApplyPortableUpdateAsync(prompt, cancellation, release, source);
+            }
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {

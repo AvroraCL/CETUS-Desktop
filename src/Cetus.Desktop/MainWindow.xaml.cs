@@ -319,13 +319,18 @@ public partial class MainWindow : Window
     /// <summary>Safe-mode view: replaces the bare status line with a full failure report.</summary>
     private void ShowDiagnostics(DesktopRuntimeState state)
     {
+        if (state.Error is not { } error)
+        {
+            return;
+        }
+
         StatusText.Visibility = Visibility.Collapsed;
         DiagnosticsPanel.Visibility = Visibility.Visible;
-        DiagnosticsSummary.Text = state.Error.Message;
+        DiagnosticsSummary.Text = error.Message;
 
         int port = _runtime.Endpoint.Port;
         string report = DiagnosticsCollector.BuildFailureReport(
-            state.Error.Message,
+            error.Message,
             _runtime.HostLogPath,
             port,
             UpdateCoordinator.ReadCurrentVersion().ToString());

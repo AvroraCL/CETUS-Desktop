@@ -97,6 +97,12 @@ public static class UpdateFeed
         return FindAsset(release, expected);
     }
 
+    public static ReleaseAsset? SelectPortableBundleAsset(ReleaseInfo release)
+    {
+        string expected = $"Cetus-{release.Version}-win-x64-portable.zip";
+        return FindAsset(release, expected);
+    }
+
     public static ReleaseAsset? SelectChecksumAsset(ReleaseInfo release) =>
         FindAsset(release, ChecksumFileName);
 

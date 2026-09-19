@@ -171,9 +171,29 @@ public sealed class UpdateService : IDisposable
     /// verifies its SHA-256 against SHA256SUMS when that asset exists.
     /// Returns the local installer path.
     /// </summary>
-    public async Task<string> DownloadInstallerAsync(
+    public Task<string> DownloadInstallerAsync(
         ReleaseInfo release,
         UpdateFeedSource source,
+        IProgress<double>? progress,
+        CancellationToken cancellationToken)
+    {
+        return DownloadBundleAsync(release, source, UpdateFeed.SelectInstallerAsset, progress, cancellationToken);
+    }
+
+    /// <summary>Same contract as the installer, for the portable zip bundle.</summary>
+    public Task<string> DownloadPortableBundleAsync(
+        ReleaseInfo release,
+        UpdateFeedSource source,
+        IProgress<double>? progress,
+        CancellationToken cancellationToken)
+    {
+        return DownloadBundleAsync(release, source, UpdateFeed.SelectPortableBundleAsset, progress, cancellationToken);
+    }
+
+    private async Task<string> DownloadBundleAsync(
+        ReleaseInfo release,
+        UpdateFeedSource source,
+        Func<ReleaseInfo, ReleaseAsset?> selectAsset,
         IProgress<double>? progress,
         CancellationToken cancellationToken)
     {
@@ -181,7 +201,7 @@ public sealed class UpdateService : IDisposable
             ? await ResolveGitCodeAssetsAsync(release, cancellationToken) ?? release
             : release;
 
-        ReleaseAsset? installer = UpdateFeed.SelectInstallerAsset(effective)
+        ReleaseAsset? installer = selectAsset(effective)
             ?? throw new InvalidOperationException("发布中没有找到安装器文件。");
 
         Directory.CreateDirectory(CetusPaths.UpdateCacheDirectory);

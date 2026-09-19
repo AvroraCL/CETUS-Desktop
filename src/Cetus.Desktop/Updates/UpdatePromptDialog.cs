@@ -82,7 +82,7 @@ internal sealed class UpdatePromptDialog : Window
         {
             Text = installedEdition
                 ? "将下载安装器并自动运行，随后 CETUS 会退出以完成安装。"
-                : "当前是便携版，无法在应用内自动安装；可以打开发布页手动下载。",
+                : "将下载便携更新包并自动替换当前目录，随后 CETUS 会重启到新版本。",
             Foreground = Brushes.DimGray,
             TextWrapping = TextWrapping.Wrap,
             MinHeight = 20,
@@ -96,29 +96,14 @@ internal sealed class UpdatePromptDialog : Window
             HorizontalAlignment = HorizontalAlignment.Right,
         };
 
-        if (installedEdition)
-        {
-            _releasesButton = CreateButton("查看发布页", OnReleasesClicked);
-            buttons.Children.Add(_releasesButton);
-            _installButton = CreateButton("立即更新", OnInstallClicked);
-            _installButton.IsDefault = true;
-            _installButton.MinWidth = 100;
-            buttons.Children.Add(_installButton);
-            _dismissButton = CreateButton("稍后", OnDismissClicked);
-            buttons.Children.Add(_dismissButton);
-        }
-        else
-        {
-            _installButton = CreateButton("立即更新", OnInstallClicked);
-            _installButton.Visibility = Visibility.Collapsed;
-            _installButton.IsEnabled = false;
-            _releasesButton = CreateButton("打开发布页", OnReleasesClicked);
-            _releasesButton.IsDefault = true;
-            _releasesButton.MinWidth = 100;
-            buttons.Children.Add(_releasesButton);
-            _dismissButton = CreateButton("稍后", OnDismissClicked);
-            buttons.Children.Add(_dismissButton);
-        }
+        _releasesButton = CreateButton("查看发布页", OnReleasesClicked);
+        buttons.Children.Add(_releasesButton);
+        _installButton = CreateButton("立即更新", OnInstallClicked);
+        _installButton.IsDefault = true;
+        _installButton.MinWidth = 100;
+        buttons.Children.Add(_installButton);
+        _dismissButton = CreateButton("稍后", OnDismissClicked);
+        buttons.Children.Add(_dismissButton);
 
         panel.Children.Add(buttons);
         Content = panel;
