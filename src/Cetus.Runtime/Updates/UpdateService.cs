@@ -118,6 +118,55 @@ public sealed class UpdateService : IDisposable
     }
 
     /// <summary>
+    /// Races both feeds with a headers-only request and returns the faster
+    /// reachable source (exact ties keep the preferred one); null when
+    /// neither answers, in which case the caller keeps its original source.
+    /// </summary>
+    public async Task<UpdateFeedSource?> ProbeFasterSourceAsync(
+        UpdateFeedSource preferred,
+        CancellationToken cancellationToken)
+    {
+        Task<(bool Reachable, TimeSpan Elapsed)> github = MeasureAsync(_githubFeed, cancellationToken);
+        Task<(bool Reachable, TimeSpan Elapsed)> gitcode = MeasureAsync(_gitCodeTags, cancellationToken);
+        await Task.WhenAll(github, gitcode);
+        (bool githubOk, TimeSpan githubTime) = github.Result;
+        (bool gitcodeOk, TimeSpan gitcodeTime) = gitcode.Result;
+
+        return (githubOk, gitcodeOk) switch
+        {
+            (true, true) => githubTime < gitcodeTime
+                ? UpdateFeedSource.GitHub
+                : gitcodeTime < githubTime
+                    ? UpdateFeedSource.GitCode
+                    : preferred,
+            (true, false) => UpdateFeedSource.GitHub,
+            (false, true) => UpdateFeedSource.GitCode,
+            _ => null,
+        };
+
+        async Task<(bool Reachable, TimeSpan Elapsed)> MeasureAsync(string url, CancellationToken token)
+        {
+            try
+            {
+                var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+                using HttpResponseMessage response = await _client.GetAsync(
+                    url,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    token);
+                return (response.IsSuccessStatusCode, stopwatch.Elapsed);
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception)
+            {
+                return (false, TimeSpan.MaxValue);
+            }
+        }
+    }
+
+    /// <summary>
     /// Downloads the release's installer into the update cache directory and
     /// verifies its SHA-256 against SHA256SUMS when that asset exists.
     /// Returns the local installer path.

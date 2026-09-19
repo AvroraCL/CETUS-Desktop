@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net.Http;
 using System.Reflection;
 using System.Windows;
 using Cetus.Platform;
@@ -121,9 +122,10 @@ internal sealed class UpdateCoordinator
         SetTaskbarProgress(Indeterminate);
         try
         {
+            UpdateFeedSource downloadSource = await PickDownloadSourceAsync(source);
             string installerPath = await _service.DownloadInstallerAsync(
                 release,
-                source,
+                downloadSource,
                 new Progress<double>(ReportTaskbarProgress),
                 CancellationToken.None);
             _notify("CETUS 更新", "下载完成，正在安装更新，CETUS 即将退出。", null);
@@ -143,6 +145,40 @@ internal sealed class UpdateCoordinator
             SetTaskbarProgress(null);
         }
     }
+
+    /// <summary>
+    /// Downloads from whichever feed answers faster right now (large payloads
+    /// amplify a slow check). The winner is remembered as the preferred
+    /// source; probe failure keeps the source that already answered.
+    /// </summary>
+    private async Task<UpdateFeedSource> PickDownloadSourceAsync(UpdateFeedSource source)
+    {
+        try
+        {
+            UpdateFeedSource? faster = await _service.ProbeFasterSourceAsync(source, CancellationToken.None);
+            if (faster is { } picked)
+            {
+                if (picked != source)
+                {
+                    _settings.SetUpdateSource(ToSettingValue(picked));
+                }
+
+                return picked;
+            }
+        }
+        catch (Exception error) when (error is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        {
+            // Speed probing is advisory; fall through to the known source.
+        }
+
+        return source;
+    }
+
+    private static string ToSettingValue(UpdateFeedSource source) => source switch
+    {
+        UpdateFeedSource.GitCode => "gitcode",
+        _ => "github",
+    };
 
     private const double Indeterminate = -1;
 
@@ -206,9 +242,10 @@ internal sealed class UpdateCoordinator
         });
         try
         {
+            UpdateFeedSource downloadSource = await PickDownloadSourceAsync(source);
             string installerPath = await _service.DownloadInstallerAsync(
                 release,
-                source,
+                downloadSource,
                 progress,
                 cancellation.Token);
             Process.Start(new ProcessStartInfo(installerPath)
