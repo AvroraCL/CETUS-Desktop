@@ -163,6 +163,8 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
             });
             const portPill = document.getElementById('cetus-setting-port');
             if (portPill) portPill.textContent = String(cetusSettingsState.dshPort || '');
+            const dshPill = document.getElementById('cetus-setting-dsh');
+            if (dshPill) dshPill.textContent = String(cetusSettingsState.dshVersion || '');
           };
 
           const installCetusSettings = () => {
@@ -221,6 +223,15 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
             portPill.addEventListener('click', () => postCetus({ type: 'cetus-open-port-settings' }));
             group.appendChild(cetusRow('DSH 端口', 'DSH 服务监听端口，修改后重启生效', portPill));
 
+            const dshPill = cetusPill('cetus-setting-dsh');
+            group.appendChild(cetusRow(
+              'DSH 版本', '内嵌 DeepSeek Harness，随 CETUS 更新一起升级', dshPill));
+
+            const dshCheckPill = cetusPill(null);
+            dshCheckPill.textContent = '检查…';
+            dshCheckPill.addEventListener('click', () => postCetus({ type: 'cetus-check-dsh-update' }));
+            group.appendChild(cetusRow('检查 DSH 新版本', '查询 npm 上游是否有更新的 Harness', dshCheckPill));
+
             section.appendChild(group);
             syncCetusSettings();
             postCetus({ type: 'cetus-settings-request' });
@@ -261,6 +272,7 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
     private readonly Action<string, string>? _cetusSettingChanged;
     private readonly Action? _openPortSettings;
     private readonly Action? _checkForUpdates;
+    private readonly Action? _checkDshUpdate;
     private LoopbackNavigationPolicy? _navigationPolicy;
     private bool _initialized;
     private bool _disposed;
@@ -271,7 +283,8 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
         Func<IReadOnlyDictionary<string, string>>? cetusSettingsProvider = null,
         Action<string, string>? cetusSettingChanged = null,
         Action? openPortSettings = null,
-        Action? checkForUpdates = null)
+        Action? checkForUpdates = null,
+        Action? checkDshUpdate = null)
     {
         _view = view;
         _themeChanged = themeChanged;
@@ -279,6 +292,7 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
         _cetusSettingChanged = cetusSettingChanged;
         _openPortSettings = openPortSettings;
         _checkForUpdates = checkForUpdates;
+        _checkDshUpdate = checkDshUpdate;
     }
 
     public async Task NavigateAsync(Uri trustedOrigin, CancellationToken cancellationToken)
@@ -422,6 +436,10 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
                 else if (type.GetString() == "cetus-open-port-settings")
                 {
                     _openPortSettings?.Invoke();
+                }
+                else if (type.GetString() == "cetus-check-dsh-update")
+                {
+                    _checkDshUpdate?.Invoke();
                 }
                 else if (type.GetString() == "cetus-check-updates")
                 {

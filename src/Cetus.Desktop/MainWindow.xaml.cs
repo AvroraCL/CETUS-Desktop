@@ -7,6 +7,7 @@ using System.Windows.Media;
 using Cetus.Browser;
 using Cetus.Configuration;
 using Cetus.DshStatus;
+using Cetus.Hosting;
 using Cetus.Platform;
 using Cetus.Runtime;
 using Cetus.Updates;
@@ -62,10 +63,12 @@ public partial class MainWindow : Window
                 // re-read on every state post instead of coming from settings.
                 ["launchOnStartup"] = AutostartManager.IsEnabled() ? "true" : "false",
                 ["dshPort"] = _settings.EffectivePort.ToString(),
+                ["dshVersion"] = DshRuntimeInfo.ReadInstalledVersion(AppContext.BaseDirectory) ?? "开发构建",
             },
             OnCetusSettingChanged,
             () => _ = ConfigurePortAsync(),
-            () => _ = CheckForUpdatesFromSettingsAsync());
+            () => _ = CheckForUpdatesFromSettingsAsync(),
+            () => _ = CheckDshUpdateAsync());
         _runtime = new DesktopRuntime(_settings, _browserSession, Dispatcher);
         _runtime.StateChanged += OnRuntimeStateChanged;
         _runtime.PortFallback += OnPortFallback;
@@ -798,6 +801,66 @@ public partial class MainWindow : Window
 
         _updates ??= new UpdateCoordinator(this, ExitApplication, _settings);
         await _updates.CheckForUpdatesAsync(interactive: true);
+    }
+
+    /// <summary>
+    /// Answers the settings-page DSH check: compares the bundled runtime
+    /// against npm dist-tags and guides the user to the CETUS release page
+    /// (the runtime ships inside CETUS releases and is never hot-swapped).
+    /// </summary>
+    private async Task CheckDshUpdateAsync()
+    {
+        if (_isExiting)
+        {
+            return;
+        }
+
+        string current = DshRuntimeInfo.ReadInstalledVersion(AppContext.BaseDirectory) ?? "开发构建";
+        DshDistTags? tags;
+        using (var feed = new NpmDistTagFeed())
+        {
+            tags = await feed.FetchAsync(CancellationToken.None);
+        }
+
+        string alphaLine = tags?.Alpha is { } alpha && alpha != tags.Latest
+            ? $"{Environment.NewLine}alpha 通道：{alpha}"
+            : string.Empty;
+        if (tags is null)
+        {
+            _ = MessageBox.Show(
+                this,
+                "无法查询 npm 上游版本，请稍后重试。",
+                "CETUS · DSH 版本",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
+        bool upToDate = Version.TryParse(tags.Latest, out Version? latest)
+            && Version.TryParse(current, out Version? installed)
+            && installed >= latest;
+        if (upToDate || tags.Latest is null)
+        {
+            _ = MessageBox.Show(
+                this,
+                $"当前内嵌 DSH {current} 已是 npm 上游最新版本。{alphaLine}",
+                "CETUS · DSH 版本",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        MessageBoxResult choice = MessageBox.Show(
+            this,
+            $"发现新的 DSH：{tags.Latest}（stable）{alphaLine}{Environment.NewLine}{Environment.NewLine}" +
+            $"当前内嵌版本：{current}。DSH 随 CETUS 版本一起发布，请更新 CETUS 本体以获取新 Harness。",
+            "CETUS · DSH 版本",
+            MessageBoxButton.OKCancel,
+            MessageBoxImage.Information);
+        if (choice == MessageBoxResult.OK)
+        {
+            OpenUpdateAnnouncement("https://github.com/AvroraCL/CETUS-Desktop/releases");
+        }
     }
 
     private void ShowRuntimeError(DesktopRuntimeResult result, string title)
