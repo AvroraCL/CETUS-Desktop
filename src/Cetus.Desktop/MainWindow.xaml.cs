@@ -37,6 +37,7 @@ public partial class MainWindow : Window
     private bool _isOpeningWorkspace;
     private DateTimeOffset? _hiddenSince;
     private bool _rendererSuspended;
+    private System.Windows.Threading.DispatcherTimer? _backgroundHeartbeat;
     private bool _isExiting;
     private bool _startupStarted;
     private bool _announcementShown;
@@ -552,11 +553,11 @@ public partial class MainWindow : Window
     private void StartBackgroundMaintenance()
     {
         bool maintenanceDone = false;
-        var heartbeat = new System.Windows.Threading.DispatcherTimer
+        _backgroundHeartbeat = new System.Windows.Threading.DispatcherTimer
         {
             Interval = TimeSpan.FromMinutes(1),
         };
-        heartbeat.Tick += (_, _) =>
+        _backgroundHeartbeat.Tick += (_, _) =>
         {
             MaintainBackgroundState();
             if (maintenanceDone || _isExiting)
@@ -570,9 +571,11 @@ public partial class MainWindow : Window
                 RetentionCleaner.PruneLogs(CetusPaths.LogDirectory);
                 RetentionCleaner.PruneStaleFiles(
                     CetusPaths.UpdateCacheDirectory, "*.exe", RetentionCleaner.DefaultUpdateCacheMaxAge);
+                RetentionCleaner.PruneStaleDirectories(
+                    CetusPaths.UpdateCacheDirectory, "staging-", RetentionCleaner.DefaultUpdateCacheMaxAge);
             });
         };
-        heartbeat.Start();
+        _backgroundHeartbeat.Start();
     }
 
     private void MaintainBackgroundState()
@@ -1023,6 +1026,8 @@ public partial class MainWindow : Window
         }
 
         _isExiting = true;
+        _backgroundHeartbeat?.Stop();
+        _backgroundHeartbeat = null;
         SaveWindowPlacement();
         _tray?.Dispose();
         _tray = null;

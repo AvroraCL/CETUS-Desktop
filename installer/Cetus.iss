@@ -71,6 +71,7 @@ Type: filesandordirs; Name: "{app}\Cetus.exe.WebView2"
 ; installed in %LOCALAPPDATA%\Cetus. Remove it on a full uninstall.
 Type: filesandordirs; Name: "{app}\WebView2"
 Type: filesandordirs; Name: "{app}\logs"
+Type: filesandordirs; Name: "{app}\updates"
 Type: files; Name: "{app}\settings.json"
 Type: files; Name: "{app}\recent-workspaces.json"
 

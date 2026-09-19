@@ -67,6 +67,28 @@ public sealed class RetentionCleanerTests
         Assert.Equal(0, RetentionCleaner.PruneStaleFiles(
             System.IO.Path.Combine(Path.GetTempPath(), "cetus-no-such-dir"), "*.log", TimeSpan.FromDays(1)));
 
+    [Fact]
+    public void PruneStaleDirectories_RemovesOnlyOldPrefixedDirectories()
+    {
+        using var directory = new TemporaryDirectory();
+        string oldStaging = System.IO.Path.Combine(directory.Path, "staging-0.1.0");
+        string freshStaging = System.IO.Path.Combine(directory.Path, "staging-0.2.0");
+        string unprefixed = System.IO.Path.Combine(directory.Path, "keep-me");
+        Directory.CreateDirectory(oldStaging);
+        Directory.CreateDirectory(freshStaging);
+        Directory.CreateDirectory(unprefixed);
+        File.WriteAllText(System.IO.Path.Combine(oldStaging, "f.txt"), "x");
+        Directory.SetLastWriteTimeUtc(oldStaging, DateTime.UtcNow.AddDays(-8));
+
+        int deleted = RetentionCleaner.PruneStaleDirectories(
+            directory.Path, "staging-", TimeSpan.FromDays(7));
+
+        Assert.Equal(1, deleted);
+        Assert.False(Directory.Exists(oldStaging));
+        Assert.True(Directory.Exists(freshStaging));
+        Assert.True(Directory.Exists(unprefixed));
+    }
+
     private sealed class TemporaryDirectory : IDisposable
     {
         public TemporaryDirectory()

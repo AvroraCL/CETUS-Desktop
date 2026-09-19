@@ -70,4 +70,46 @@ public static class RetentionCleaner
 
         return deleted;
     }
+
+    /// <summary>
+    /// Removes stale staging directories (left by a failed or cancelled
+    /// portable update) older than <paramref name="maxAge"/>. The current
+    /// staging folder of a running update is newer than any realistic age
+    /// cap, so it is never touched.
+    /// </summary>
+    public static int PruneStaleDirectories(string parentDirectory, string directoryPrefix, TimeSpan maxAge)
+    {
+        if (string.IsNullOrWhiteSpace(parentDirectory) || !Directory.Exists(parentDirectory))
+        {
+            return 0;
+        }
+
+        int deleted = 0;
+        try
+        {
+            foreach (string candidate in Directory
+                .EnumerateDirectories(parentDirectory, directoryPrefix + "*", SearchOption.TopDirectoryOnly))
+            {
+                try
+                {
+                    if (Directory.GetLastWriteTimeUtc(candidate) >= DateTimeOffset.UtcNow - maxAge)
+                    {
+                        continue;
+                    }
+
+                    Directory.Delete(candidate, recursive: true);
+                    deleted++;
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                {
+                    // In use — leave it for the next pass.
+                }
+            }
+        }
+        catch (IOException)
+        {
+        }
+
+        return deleted;
+    }
 }
