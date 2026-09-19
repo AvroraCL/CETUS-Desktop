@@ -27,6 +27,7 @@ CETUS 把官方 Web UI、Agent 能力和插件生态装进一个开箱即用的 
 - 退出 CETUS 时自动回收由它启动的 Node 子进程
 - 启动时自动检查新版本，一键下载安装器并静默升级（GitHub Releases 主源，不可达时自动回退 GitCode 镜像）
 - 完整复用 DeepSeek Harness 的 Agent 能力与插件生态
+- 工作区直达：`Cetus.exe <目录>`、任务栏 Jump List、托盘「最近工作区」或 `cetus://open?path=…` 链接，均可一步打开指定目录的会话；已运行时自动转发给现有窗口
 - 会话任务完成时弹出托盘通知（仅当 CETUS 不在前台时提醒，点击气泡直接回到窗口）
 - Ctrl+Alt+Space 全局快捷键，随时唤起或隐藏 CETUS
 - 可选开机自启：登录 Windows 后 CETUS 在后台启动并驻留托盘，DSH 提前就绪、点开即用

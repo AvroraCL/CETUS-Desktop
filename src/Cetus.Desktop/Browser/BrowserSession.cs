@@ -332,6 +332,21 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
         }
     }
 
+    /// <summary>Runs JavaScript in the current DSH page (trusted loopback content only).</summary>
+    public async Task ExecuteScriptAsync(string script)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_initialized)
+        {
+            throw new InvalidOperationException("浏览器会话尚未初始化。");
+        }
+
+        await _view.CoreWebView2.ExecuteScriptAsync(script);
+    }
+
+    /// <summary>Whether the CoreWebView2 environment exists and the bridge is wired.</summary>
+    public bool IsInitialized => _initialized;
+
     private void OnTopLevelNavigationStarting(
         object? sender,
         CoreWebView2NavigationStartingEventArgs e)

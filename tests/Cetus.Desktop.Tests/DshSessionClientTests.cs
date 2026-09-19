@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using System.Text.Json;
 using Cetus.DshStatus;
 using Cetus.Hosting;
 using Xunit;
@@ -12,7 +13,28 @@ public sealed class DshSessionClientTests
     private static readonly Uri Endpoint = new("http://127.0.0.1:4301/");
 
     [Fact]
-    public async Task GetSessionsAsync_ParsesItemsAndProjectedTitles()
+    public async Task GetSessionsAsync_UsesSlashEndpointAndArgsWrapper()
+    {
+        FakeDshHandler handler = new();
+        handler.Responses.Enqueue(JsonResponse("""{ "result": { "ok": true, "value": { "items": [] } } }"""));
+        using var client = new DshSessionClient(handler: handler);
+
+        await client.GetSessionsAsync(Endpoint, CancellationToken.None);
+
+        CapturedRequest request = Assert.Single(handler.Requests);
+        Assert.Equal("/api/session/list", request.Uri!.AbsolutePath);
+
+        using JsonDocument document = JsonDocument.Parse(request.Body);
+        JsonElement root = document.RootElement;
+        Assert.Equal("client-request", root.GetProperty("type").GetString());
+        Assert.Equal("session/list", root.GetProperty("method").GetString());
+        Assert.True(root.TryGetProperty("payload", out JsonElement payload));
+        Assert.Equal(JsonValueKind.Object, payload.GetProperty("args").ValueKind);
+        Assert.Empty(payload.GetProperty("args").EnumerateObject());
+    }
+
+    [Fact]
+    public async Task GetSessionsAsync_ParsesProjectedTitlesAndCwdFallback()
     {
         FakeDshHandler handler = new();
         handler.Responses.Enqueue(JsonResponse("""
@@ -26,7 +48,7 @@ public sealed class DshSessionClientTests
                       "cwd": "F:\\repos\\demo",
                       "running": true,
                       "updatedAt": 1700000000000,
-                      "title": { "title": "重构登录页" }
+                      "projections": { "values": { "title": "重构登录页" } }
                     },
                     {
                       "sessionId": "s2",
@@ -61,6 +83,39 @@ public sealed class DshSessionClientTests
     }
 
     [Fact]
+    public async Task CreateWorkspaceAsync_PostsRequestWrappedPathAndReturnsId()
+    {
+        FakeDshHandler handler = new();
+        handler.Responses.Enqueue(JsonResponse("""
+            { "result": { "ok": true, "value": { "workspace": { "workspaceId": "ws-1", "path": "F:\\repos\\demo" }, "created": true } } }
+            """));
+        using var client = new DshSessionClient(handler: handler);
+
+        string workspaceId = await client.CreateWorkspaceAsync(Endpoint, @"F:\repos\demo", CancellationToken.None);
+
+        Assert.Equal("ws-1", workspaceId);
+        CapturedRequest request = Assert.Single(handler.Requests);
+        Assert.Equal("/api/workspace/create", request.Uri!.AbsolutePath);
+        Assert.Contains(@"""request"":{""path"":""F:\\repos\\demo""}", request.Body);
+    }
+
+    [Fact]
+    public async Task CreateSessionAsync_PostsWorkspaceIdAndReturnsSessionId()
+    {
+        FakeDshHandler handler = new();
+        handler.Responses.Enqueue(JsonResponse(
+            """{ "result": { "ok": true, "value": { "sessionId": "session-42" } } }"""));
+        using var client = new DshSessionClient(handler: handler);
+
+        string sessionId = await client.CreateSessionAsync(Endpoint, "ws-1", CancellationToken.None);
+
+        Assert.Equal("session-42", sessionId);
+        CapturedRequest request = Assert.Single(handler.Requests);
+        Assert.Equal("/api/session/create", request.Uri!.AbsolutePath);
+        Assert.Contains("\"workspaceId\":\"ws-1\"", request.Body);
+    }
+
+    [Fact]
     public async Task GetSessionsAsync_SendsSessionCookieFromDshHome()
     {
         using var directory = new TemporaryDirectory();
@@ -85,10 +140,8 @@ public sealed class DshSessionClientTests
         await client.GetSessionsAsync(Endpoint, CancellationToken.None);
 
         Assert.Single(handler.Requests);
-        HttpRequestMessage request = handler.Requests[0];
-        Assert.Equal("/api/session.list", request.RequestUri!.AbsolutePath);
-        Assert.True(request.Headers.TryGetValues("Cookie", out IEnumerable<string>? cookies));
-        string cookie = Assert.Single(cookies!);
+        string? cookie = handler.Requests[0].Cookie;
+        Assert.NotNull(cookie);
         Assert.StartsWith("dsh-auth-", cookie, StringComparison.Ordinal);
         Assert.Contains("=v1.", cookie, StringComparison.Ordinal);
     }
@@ -103,8 +156,8 @@ public sealed class DshSessionClientTests
 
         await client.GetSessionsAsync(Endpoint, CancellationToken.None);
 
-        HttpRequestMessage request = Assert.Single(handler.Requests);
-        Assert.False(request.Headers.Contains("Cookie"));
+        CapturedRequest request = Assert.Single(handler.Requests);
+        Assert.Null(request.Cookie);
     }
 
     [Fact]
@@ -123,21 +176,30 @@ public sealed class DshSessionClientTests
         Content = new StringContent(json, Encoding.UTF8, "application/json"),
     };
 
+    private sealed record CapturedRequest(HttpMethod Method, Uri? Uri, string Body, string? Cookie);
+
     private sealed class FakeDshHandler : HttpMessageHandler
     {
-        public List<HttpRequestMessage> Requests { get; } = [];
+        public List<CapturedRequest> Requests { get; } = [];
 
         public Queue<HttpResponseMessage> Responses { get; } = new();
 
-        protected override Task<HttpResponseMessage> SendAsync(
+        protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
-            Requests.Add(request);
-            return Task.FromResult(
-                Responses.Count > 0
-                    ? Responses.Dequeue()
-                    : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") });
+            // HttpClient disposes the content after sending, so the body and
+            // headers must be captured here, while the request is alive.
+            string body = request.Content is null
+                ? string.Empty
+                : await request.Content.ReadAsStringAsync(cancellationToken);
+            string? cookie = request.Headers.TryGetValues("Cookie", out IEnumerable<string>? values)
+                ? values!.First()
+                : null;
+            Requests.Add(new CapturedRequest(request.Method, request.RequestUri, body, cookie));
+            return Responses.Count > 0
+                ? Responses.Dequeue()
+                : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
         }
     }
 

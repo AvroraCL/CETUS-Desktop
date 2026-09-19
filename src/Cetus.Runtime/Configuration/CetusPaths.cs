@@ -28,6 +28,10 @@ public static class CetusPaths
         "CETUS_UPDATE_DIR",
         Path.Combine(UserDataDirectory, "updates"));
 
+    public static string RecentWorkspacesFile => ResolveOverride(
+        "CETUS_RECENT_WORKSPACES_PATH",
+        Path.Combine(UserDataDirectory, "recent-workspaces.json"));
+
     private static string ResolveOverride(string variableName, string fallback)
     {
         string? value = Environment.GetEnvironmentVariable(variableName);

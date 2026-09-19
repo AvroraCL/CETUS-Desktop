@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Windows.Forms;
+using Cetus.Configuration;
 
 namespace Cetus.Platform;
 
@@ -8,7 +9,9 @@ internal sealed record TrayCommands(
     Func<Task> RetryDsh,
     Func<Task> ConfigurePort,
     Func<Task> CheckForUpdates,
-    Action ExitApplication);
+    Action ExitApplication,
+    Action<string> OpenWorkspace,
+    Func<string?> PickWorkspace);
 
 /// <summary>
 /// Owns the notification-area icon, menu and Explorer restart recovery.
@@ -19,14 +22,34 @@ internal sealed class TrayIconController : IDisposable
     private readonly ContextMenuStrip _menu;
     private readonly NotifyIcon _tray;
     private readonly ToolStripMenuItem _retryItem;
+    private readonly ToolStripMenuItem _recentItem;
+    private readonly ToolStripMenuItem _openWorkspaceItem;
+    private readonly Func<string?> _pickWorkspace;
+    private readonly Action<string> _openWorkspace;
     private Action? _balloonClick;
     private bool _disposed;
 
     public TrayIconController(TrayCommands commands)
     {
         _icon = ResolveIcon();
+        _openWorkspace = commands.OpenWorkspace;
+        _pickWorkspace = commands.PickWorkspace;
         _menu = new ContextMenuStrip();
         _menu.Items.Add("显示窗口", null, (_, _) => commands.ShowWindow());
+
+        _recentItem = new ToolStripMenuItem("最近工作区");
+        _recentItem.DropDownItems.Add(new ToolStripMenuItem("暂无记录") { Enabled = false });
+        _menu.Items.Add(_recentItem);
+
+        _openWorkspaceItem = new ToolStripMenuItem("打开工作区…");
+        _openWorkspaceItem.Click += (_, _) =>
+        {
+            if (_pickWorkspace.Invoke() is { } workspace)
+            {
+                _openWorkspace.Invoke(workspace);
+            }
+        };
+        _menu.Items.Add(_openWorkspaceItem);
 
         _retryItem = new ToolStripMenuItem("重试连接 DSH");
         _retryItem.Click += async (_, _) => await commands.RetryDsh();
@@ -77,6 +100,32 @@ internal sealed class TrayIconController : IDisposable
         if (!_disposed)
         {
             _retryItem.Enabled = enabled;
+        }
+    }
+
+    /// <summary>Rebuilds the recent-workspaces submenu from the newest-first list.</summary>
+    public void SetRecentWorkspaces(IReadOnlyList<RecentWorkspace> entries)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _recentItem.DropDownItems.Clear();
+        if (entries.Count == 0)
+        {
+            _recentItem.DropDownItems.Add(new ToolStripMenuItem("暂无记录") { Enabled = false });
+            return;
+        }
+
+        foreach (RecentWorkspace entry in entries)
+        {
+            ToolStripMenuItem item = new(entry.Title)
+            {
+                ToolTipText = entry.Path,
+            };
+            item.Click += (_, _) => _openWorkspace.Invoke(entry.Path);
+            _recentItem.DropDownItems.Add(item);
         }
     }
 

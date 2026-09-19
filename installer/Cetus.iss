@@ -65,6 +65,7 @@ Type: filesandordirs; Name: "{app}\Cetus.exe.WebView2"
 Type: filesandordirs; Name: "{app}\WebView2"
 Type: filesandordirs; Name: "{app}\logs"
 Type: files; Name: "{app}\settings.json"
+Type: files; Name: "{app}\recent-workspaces.json"
 
 [Code]
 // Ask to close only the Cetus installed in {app}, plus its own node sidecar.
@@ -131,4 +132,12 @@ begin
     else
       Result := '请先关闭 Cetus，再重新运行安装程序。';
   end;
+end;
+
+// The cetus:// protocol registration is written by the app at first run
+// (so portable copies get it too); the uninstaller removes it again.
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usPostUninstall then
+    RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER, 'Software\Classes\cetus');
 end;

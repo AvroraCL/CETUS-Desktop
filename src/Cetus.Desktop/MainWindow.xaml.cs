@@ -1,5 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO;
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Media;
 using Cetus.Browser;
@@ -21,12 +23,16 @@ public partial class MainWindow : Window
     private readonly CetusSettings _settings;
     private readonly BrowserSession _browserSession;
     private readonly DesktopRuntime _runtime;
+    private readonly RecentWorkspaces _recentWorkspaces;
 
     private TrayIconController? _tray;
     private WindowComposition? _windowComposition;
     private UpdateCoordinator? _updates;
     private GlobalHotkeyManager? _hotkeys;
     private DshSessionWatcher? _sessionWatcher;
+    private DshSessionClient? _dshSessionClient;
+    private string? _pendingWorkspacePath;
+    private bool _isOpeningWorkspace;
     private bool _isExiting;
     private bool _startupStarted;
     private bool _announcementShown;
@@ -40,6 +46,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         _settings = CetusSettings.LoadDefault();
+        _recentWorkspaces = new RecentWorkspaces(CetusPaths.RecentWorkspacesFile);
         InitializeComponent();
 
         _browserSession = new BrowserSession(
@@ -85,6 +92,7 @@ public partial class MainWindow : Window
 
         _startupStarted = true;
         SetupTray();
+        RefreshWorkspaceEntries();
         // Create the native HWND (and the WebView2 host surface) without
         // showing the window — EnsureCoreWebView2Async would otherwise wait
         // forever for a parent handle while the splash is up.
@@ -159,6 +167,13 @@ public partial class MainWindow : Window
         }
 
         ShowUpdateAnnouncementIfDue();
+
+        // A workspace activation that arrived while the host was still
+        // starting (launch args or early IPC) runs now that the page is up.
+        if (ConsumePendingWorkspace() is { } pendingWorkspace)
+        {
+            _ = OpenWorkspaceAsync(pendingWorkspace);
+        }
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
@@ -296,8 +311,23 @@ public partial class MainWindow : Window
             RetryDshAsync,
             ConfigurePortAsync,
             () => updates.CheckForUpdatesAsync(interactive: true),
-            ExitApplication));
+            ExitApplication,
+            path => _ = OpenWorkspaceAsync(path),
+            PickWorkspace));
         _tray.SetRetryEnabled(_runtime.State.CanRetry);
+    }
+
+    private string? PickWorkspace()
+    {
+        using var dialog = new System.Windows.Forms.FolderBrowserDialog
+        {
+            ShowNewFolderButton = false,
+            UseDescriptionForTitle = true,
+            Description = "选择要用 CETUS 打开的工作区目录",
+        };
+        return dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK
+            ? dialog.SelectedPath
+            : null;
     }
 
     private void OnMinimizeClicked(object sender, RoutedEventArgs e) =>
@@ -328,9 +358,11 @@ public partial class MainWindow : Window
         }
 
         // Endpoint is resolved per poll so a port change is picked up
-        // without restarting the watcher.
+        // without restarting the watcher. The client is shared with the
+        // workspace launcher and owned by MainWindow.
+        _dshSessionClient ??= new DshSessionClient(_settings.DshHomeOverride);
         _sessionWatcher = new DshSessionWatcher(
-            new DshSessionClient(_settings.DshHomeOverride),
+            _dshSessionClient,
             () => _runtime.Endpoint);
         _sessionWatcher.AgentFinished += OnAgentFinished;
         _sessionWatcher.Start();
@@ -372,6 +404,99 @@ public partial class MainWindow : Window
         {
             ShowWindow();
         }
+    }
+
+    /// <summary>
+    /// Entry point for workspace activations (launch args, IPC forwarding,
+    /// Jump List, tray). A null path only summons the window; before the
+    /// runtime is ready the path is parked until the first page load.
+    /// </summary>
+    public void ActivateWorkspace(string? path)
+    {
+        if (_isExiting)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            ShowWindow();
+            return;
+        }
+
+        if (_runtime.State.Phase != DesktopRuntimePhase.Ready || !_browserSession.IsInitialized || _isOpeningWorkspace)
+        {
+            _pendingWorkspacePath = path;
+            return;
+        }
+
+        _ = OpenWorkspaceAsync(path);
+    }
+
+    private string? ConsumePendingWorkspace()
+    {
+        string? path = _pendingWorkspacePath;
+        _pendingWorkspacePath = null;
+        return path;
+    }
+
+    private async Task OpenWorkspaceAsync(string path)
+    {
+        string normalized = RecentWorkspaces.NormalizePath(path);
+        if (!Directory.Exists(normalized))
+        {
+            _tray?.ShowBalloonTip("CETUS · 工作区", $"目录不存在：{normalized}");
+            return;
+        }
+
+        if (_isOpeningWorkspace)
+        {
+            _pendingWorkspacePath = normalized;
+            return;
+        }
+
+        _isOpeningWorkspace = true;
+        try
+        {
+            ShowWindow();
+            _recentWorkspaces.Add(normalized);
+            RefreshWorkspaceEntries();
+
+            Uri endpoint = _runtime.Endpoint;
+            _dshSessionClient ??= new DshSessionClient(_settings.DshHomeOverride);
+            string workspaceId = await _dshSessionClient.CreateWorkspaceAsync(
+                endpoint, normalized, CancellationToken.None);
+            string sessionId = await _dshSessionClient.CreateSessionAsync(
+                endpoint, workspaceId, CancellationToken.None);
+            await _browserSession.ExecuteScriptAsync(
+                $"localStorage.setItem('dsh.sessions.current', JSON.stringify({_sessionSelectionScriptValue(sessionId)}))");
+            await _runtime.NavigateHomeAsync();
+        }
+        catch (Exception error) when (error is HttpRequestException or InvalidOperationException or TaskCanceledException)
+        {
+            if (!_isExiting)
+            {
+                _tray?.ShowBalloonTip("CETUS · 无法打开工作区", $"{normalized}\n{error.Message}");
+            }
+        }
+        finally
+        {
+            _isOpeningWorkspace = false;
+            if (ConsumePendingWorkspace() is { } next)
+            {
+                _ = OpenWorkspaceAsync(next);
+            }
+        }
+    }
+
+    private static string _sessionSelectionScriptValue(string sessionId) =>
+        System.Text.Json.JsonSerializer.Serialize(new { sessionId });
+
+    private void RefreshWorkspaceEntries()
+    {
+        IReadOnlyList<RecentWorkspace> entries = _recentWorkspaces.Entries;
+        _tray?.SetRecentWorkspaces(entries);
+        JumpListController.Apply(entries);
     }
 
     private async Task RetryDshAsync()
@@ -569,6 +694,8 @@ public partial class MainWindow : Window
         _hotkeys = null;
         _sessionWatcher?.Dispose();
         _sessionWatcher = null;
+        _dshSessionClient?.Dispose();
+        _dshSessionClient = null;
         await _runtime.StopAsync();
         _browserSession.Dispose();
         System.Windows.Application.Current.Shutdown();
@@ -584,6 +711,8 @@ public partial class MainWindow : Window
         _hotkeys = null;
         _sessionWatcher?.Dispose();
         _sessionWatcher = null;
+        _dshSessionClient?.Dispose();
+        _dshSessionClient = null;
         _windowComposition?.Dispose();
         _windowComposition = null;
         _ = StopAfterUnexpectedCloseAsync();

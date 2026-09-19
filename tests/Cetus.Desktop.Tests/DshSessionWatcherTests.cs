@@ -142,7 +142,10 @@ public sealed class DshSessionWatcherTests
                         sessionId = session.Id,
                         cwd = @"F:\repos\demo",
                         running = session.Running,
-                        title = new { title = session.Title },
+                        projections = new
+                        {
+                            values = new { title = session.Title },
+                        },
                     }),
                 },
             },

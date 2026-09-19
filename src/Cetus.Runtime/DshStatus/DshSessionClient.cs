@@ -8,9 +8,12 @@ namespace Cetus.DshStatus;
 public sealed record DshSessionInfo(string SessionId, string Title, bool Running, DateTimeOffset UpdatedAt);
 
 /// <summary>
-/// Queries the local DSH host for its session list over the loopback RPC API.
-/// Every request carries the browser-session auth cookie introduced with DSH
-/// 0.1.5; JSON parsing is tolerant and silently drops malformed entries.
+/// Calls the local DSH host's loopback RPC API (session list, workspace and
+/// session creation). Targets the 0.1.6 gateway contract: canonical
+/// <c>namespace/method</c> endpoints, payloads wrapped as
+/// <c>{"args":{...}}</c> and per-session titles served under the
+/// <c>projections.values</c> block. Every request carries the browser-session
+/// auth cookie; JSON parsing is tolerant and drops malformed entries.
 /// </summary>
 public sealed class DshSessionClient : IDisposable
 {
@@ -29,8 +32,39 @@ public sealed class DshSessionClient : IDisposable
     public async Task<IReadOnlyList<DshSessionInfo>> GetSessionsAsync(Uri endpoint, CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        JsonElement value = await PostMethodAsync(endpoint, "session.list", new { }, cancellationToken);
+        JsonElement value = await PostMethodAsync(endpoint, "session/list", new { args = new { } }, cancellationToken);
         return ParseSessions(value);
+    }
+
+    /// <summary>
+    /// Creates — or idempotently resolves — the workspace over an existing
+    /// directory and returns its workspace id.
+    /// </summary>
+    public async Task<string> CreateWorkspaceAsync(Uri endpoint, string path, CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        JsonElement value = await PostMethodAsync(
+            endpoint,
+            "workspace/create",
+            new { args = new { request = new { path } } },
+            cancellationToken);
+        return GetNestedString(value, "workspace", "workspaceId")
+            ?? throw new InvalidOperationException("DSH 未返回工作区 id。");
+    }
+
+    /// <summary>Creates a session inside a workspace; returns the new session id.</summary>
+    public async Task<string> CreateSessionAsync(Uri endpoint, string workspaceId, CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspaceId);
+        JsonElement value = await PostMethodAsync(
+            endpoint,
+            "session/create",
+            new { args = new { request = new { workspaceId } } },
+            cancellationToken);
+        return GetString(value, "sessionId")
+            ?? throw new InvalidOperationException("DSH 未返回新会话 id。");
     }
 
     private async Task<JsonElement> PostMethodAsync(
@@ -62,7 +96,8 @@ public sealed class DshSessionClient : IDisposable
             || !result.TryGetProperty("ok", out JsonElement ok)
             || ok.ValueKind != JsonValueKind.True)
         {
-            string detail = result.TryGetProperty("error", out JsonElement error)
+            string detail = result.ValueKind == JsonValueKind.Object
+                && result.TryGetProperty("error", out JsonElement error)
                 ? error.ToString()
                 : "unknown";
             throw new InvalidOperationException($"DSH 接口 {method} 调用失败：{detail}");
@@ -95,16 +130,10 @@ public sealed class DshSessionClient : IDisposable
             }
 
             string cwd = GetString(item, "cwd") ?? string.Empty;
-            string? title = !string.IsNullOrWhiteSpace(cwd)
-                ? Path.GetFileName(cwd.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
-                : null;
-            if (item.TryGetProperty("title", out JsonElement titleElement)
-                && titleElement.ValueKind == JsonValueKind.Object
-                && GetString(titleElement, "title") is { } projectedTitle)
-            {
-                title = projectedTitle;
-            }
-
+            string? title = GetProjectedTitle(item)
+                ?? (!string.IsNullOrWhiteSpace(cwd)
+                    ? Path.GetFileName(cwd.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+                    : null);
             bool running = item.TryGetProperty("running", out JsonElement runningElement)
                 && runningElement.ValueKind == JsonValueKind.True;
 
@@ -123,25 +152,44 @@ public sealed class DshSessionClient : IDisposable
         return sessions;
     }
 
+    private static string? GetProjectedTitle(JsonElement item) =>
+        item.TryGetProperty("projections", out JsonElement projections)
+            && projections.ValueKind == JsonValueKind.Object
+            && projections.TryGetProperty("values", out JsonElement values)
+            && values.ValueKind == JsonValueKind.Object
+            ? GetString(values, "title")
+            : null;
+
     private static string? GetString(JsonElement element, string name) =>
-        element.TryGetProperty(name, out JsonElement property) && property.ValueKind == JsonValueKind.String
+        element.ValueKind == JsonValueKind.Object
+        && element.TryGetProperty(name, out JsonElement property)
+        && property.ValueKind == JsonValueKind.String
             ? property.GetString()
+            : null;
+
+    private static string? GetNestedString(JsonElement element, string container, string name) =>
+        element.ValueKind == JsonValueKind.Object
+        && element.TryGetProperty(container, out JsonElement inner)
+            ? GetString(inner, name)
             : null;
 
     private static DateTimeOffset GetEpochTime(JsonElement element, string name)
     {
-        if (element.TryGetProperty(name, out JsonElement property))
+        if (element.ValueKind != JsonValueKind.Object
+            || !element.TryGetProperty(name, out JsonElement property))
         {
-            if (property.ValueKind == JsonValueKind.Number && property.TryGetInt64(out long milliseconds))
-            {
-                return DateTimeOffset.FromUnixTimeMilliseconds(milliseconds);
-            }
+            return DateTimeOffset.MinValue;
+        }
 
-            if (property.ValueKind == JsonValueKind.String
-                && DateTimeOffset.TryParse(property.GetString(), out DateTimeOffset parsed))
-            {
-                return parsed;
-            }
+        if (property.ValueKind == JsonValueKind.Number && property.TryGetInt64(out long milliseconds))
+        {
+            return DateTimeOffset.FromUnixTimeMilliseconds(milliseconds);
+        }
+
+        if (property.ValueKind == JsonValueKind.String
+            && DateTimeOffset.TryParse(property.GetString(), out DateTimeOffset parsed))
+        {
+            return parsed;
         }
 
         return DateTimeOffset.MinValue;

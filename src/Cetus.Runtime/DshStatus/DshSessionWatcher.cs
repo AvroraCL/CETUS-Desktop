@@ -9,6 +9,7 @@ public sealed record DshAgentFinishedEventArgs(string SessionId, string Title);
 /// when a session's agent loop transitions from running to idle. The first poll
 /// only establishes a baseline; each completion is reported at most once per
 /// cooldown window so flickering sessions cannot spam the tray.
+/// Does not own <paramref name="client"/> — the caller keeps disposal.
 /// </summary>
 public sealed class DshSessionWatcher : IDisposable
 {
@@ -191,7 +192,5 @@ public sealed class DshSessionWatcher : IDisposable
         {
             cancellation.Dispose();
         }
-
-        _client.Dispose();
     }
 }
