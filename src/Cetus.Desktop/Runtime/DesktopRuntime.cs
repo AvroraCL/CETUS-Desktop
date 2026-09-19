@@ -117,6 +117,9 @@ internal sealed class DesktopRuntime
 
     public bool IsBusy => _isStarting || _isExiting;
 
+    /// <summary>Sidecar log of the owned host, when one exists; null on reuse of an external service.</summary>
+    public string? HostLogPath => _host?.LogPath;
+
     public Uri Endpoint => new($"http://127.0.0.1:{_settings.EffectivePort}/");
 
     /// <summary>

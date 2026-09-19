@@ -11,7 +11,8 @@ internal sealed record TrayCommands(
     Func<Task> CheckForUpdates,
     Action ExitApplication,
     Action<string> OpenWorkspace,
-    Func<string?> PickWorkspace);
+    Func<string?> PickWorkspace,
+    Func<Task> ExportDiagnostics);
 
 /// <summary>
 /// Owns the notification-area icon, menu and Explorer restart recovery.
@@ -62,6 +63,10 @@ internal sealed class TrayIconController : IDisposable
         var checkUpdatesItem = new ToolStripMenuItem("检查更新…");
         checkUpdatesItem.Click += async (_, _) => await commands.CheckForUpdates();
         _menu.Items.Add(checkUpdatesItem);
+
+        var exportDiagnosticsItem = new ToolStripMenuItem("导出诊断…");
+        exportDiagnosticsItem.Click += async (_, _) => await commands.ExportDiagnostics();
+        _menu.Items.Add(exportDiagnosticsItem);
 
         _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add("退出", null, (_, _) => commands.ExitApplication());

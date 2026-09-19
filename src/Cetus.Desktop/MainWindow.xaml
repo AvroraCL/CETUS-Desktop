@@ -198,6 +198,62 @@
                 <wv2:WebView2 x:Name="Browser"
                               Visibility="Collapsed"
                               DefaultBackgroundColor="White" />
+                <!-- Safe-mode panel: replaces the bare status line when automatic
+                     DSH recovery is exhausted. -->
+                <Border x:Name="DiagnosticsPanel"
+                        Visibility="Collapsed"
+                        Padding="48,28">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <StackPanel Grid.Row="0" Margin="0,0,0,14">
+                            <TextBlock x:Name="DiagnosticsTitle"
+                                       Text="DSH 启动失败"
+                                       FontSize="20"
+                                       FontWeight="SemiBold"
+                                       Foreground="#B4232A" />
+                            <TextBlock x:Name="DiagnosticsSummary"
+                                       Margin="0,6,0,0"
+                                       TextWrapping="Wrap"
+                                       Foreground="#667" />
+                        </StackPanel>
+                        <TextBox x:Name="DiagnosticsDetail"
+                                 Grid.Row="1"
+                                 IsReadOnly="True"
+                                 IsReadOnlyCaretVisible="True"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Auto"
+                                 FontFamily="Consolas, Cascadia Mono"
+                                 FontSize="12"
+                                 Padding="10"
+                                 BorderThickness="1"
+                                 BorderBrush="#D5DCE8"
+                                 Background="#F0F3F8"
+                                 Foreground="#333A45" />
+                        <StackPanel Grid.Row="2"
+                                    Orientation="Horizontal"
+                                    Margin="0,14,0,0">
+                            <Button Content="重试连接 DSH"
+                                    Padding="16,6" Margin="0,0,10,0"
+                                    Click="OnDiagnosticsRetryClicked" />
+                            <Button Content="打开日志文件夹"
+                                    Padding="16,6" Margin="0,0,10,0"
+                                    Click="OnDiagnosticsOpenLogsClicked" />
+                            <Button Content="复制诊断信息"
+                                    Padding="16,6" Margin="0,0,10,0"
+                                    Click="OnDiagnosticsCopyClicked" />
+                            <Button Content="导出诊断包…"
+                                    Padding="16,6" Margin="0,0,10,0"
+                                    Click="OnDiagnosticsExportClicked" />
+                            <Button Content="退出 CETUS"
+                                    Padding="16,6"
+                                    Click="OnDiagnosticsExitClicked" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
             </Grid>
         </Border>
     </Grid>
