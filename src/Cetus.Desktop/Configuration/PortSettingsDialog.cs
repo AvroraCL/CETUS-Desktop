@@ -1,3 +1,4 @@
+using System.Net.NetworkInformation;
 using System.Windows;
 using System.Windows.Controls;
 
@@ -7,9 +8,12 @@ internal sealed class PortSettingsDialog : Window
 {
     private readonly TextBox _portTextBox;
     private readonly TextBlock _validationText;
+    private readonly TextBlock _occupancyText;
+    private readonly int _effectivePort;
 
     public PortSettingsDialog(int configuredPort, int effectivePort, bool isOverridden)
     {
+        _effectivePort = effectivePort;
         Title = "Cetus · DSH 端口";
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         ResizeMode = ResizeMode.NoResize;
@@ -50,6 +54,15 @@ internal sealed class PortSettingsDialog : Window
         };
         panel.Children.Add(_validationText);
 
+        _occupancyText = new TextBlock
+        {
+            Foreground = System.Windows.Media.Brushes.DarkOrange,
+            TextWrapping = TextWrapping.Wrap,
+            MinHeight = 20,
+        };
+        panel.Children.Add(_occupancyText);
+        _portTextBox.TextChanged += (_, _) => UpdateOccupancyHint();
+
         var buttons = new StackPanel
         {
             Orientation = Orientation.Horizontal,
@@ -79,10 +92,28 @@ internal sealed class PortSettingsDialog : Window
         {
             _portTextBox.Focus();
             _portTextBox.SelectAll();
+            UpdateOccupancyHint();
         };
     }
 
     public int? SelectedPort { get; private set; }
+
+    /// <summary>Warns while the typed port is held by some other listener, so a save does not surprise.</summary>
+    private void UpdateOccupancyHint()
+    {
+        if (!CetusSettings.TryParsePort(_portTextBox.Text, out int port) || port == _effectivePort)
+        {
+            _occupancyText.Text = string.Empty;
+            return;
+        }
+
+        bool occupied = IPGlobalProperties.GetIPGlobalProperties()
+            .GetActiveTcpListeners()
+            .Any(endpoint => endpoint.Port == port);
+        _occupancyText.Text = occupied
+            ? "该端口当前正被其他程序监听；保存后 CETUS 会自动改用空闲端口。"
+            : string.Empty;
+    }
 
     private void OnSave(object sender, RoutedEventArgs e)
     {
