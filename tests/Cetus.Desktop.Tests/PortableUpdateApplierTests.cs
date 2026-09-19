@@ -96,6 +96,8 @@ public sealed class PortableUpdateApplierTests : IDisposable
         Assert.Contains("taskkill /PID 4242 /F", content, StringComparison.Ordinal);
         Assert.Contains("robocopy", content, StringComparison.Ordinal);
         Assert.Contains("/MIR", content, StringComparison.Ordinal);
+        // Staging (hundreds of MB) must not outlive a successful apply.
+        Assert.Contains($"rd /s /q \"{staging}\"", content, StringComparison.Ordinal);
         Assert.Contains("Cetus.exe", content, StringComparison.Ordinal);
         Assert.EndsWith("del \"%~f0\"", content.TrimEnd(), StringComparison.Ordinal);
     }

@@ -229,7 +229,7 @@ internal sealed class UpdateCoordinator
             cancellation?.Token ?? CancellationToken.None);
         string staging = PortableUpdateApplier.PrepareStaging(zipPath, release.Version);
         string script = PortableUpdateApplier.WriteApplyScript(
-            staging, AppContext.BaseDirectory, Environment.ProcessId);
+            staging, AppContext.BaseDirectory, Environment.ProcessId, zipPath);
         PortableUpdateApplier.LaunchApplyScript(script);
         prompt?.Close();
         _notify("CETUS 更新", "便携更新已就绪，CETUS 即将退出并升级到新版本。", null);

@@ -36,7 +36,7 @@ internal static class PortableUpdateApplier
     }
 
     /// <summary>Writes the takeover script and returns its path.</summary>
-    public static string WriteApplyScript(string stagingDirectory, string targetDirectory, int processId)
+    public static string WriteApplyScript(string stagingDirectory, string targetDirectory, int processId, string? zipPath = null)
     {
         if (!Directory.Exists(stagingDirectory))
         {
@@ -47,6 +47,9 @@ internal static class PortableUpdateApplier
             CetusPaths.UpdateCacheDirectory,
             $"apply-update-{processId}.cmd");
         string logPath = Path.Combine(CetusPaths.UpdateCacheDirectory, "apply-update.log");
+        string cleanup = zipPath is null
+            ? string.Empty
+            : $"del \"{zipPath}\" >nul 2>&1";
         string script = $"""
             @echo off
             setlocal
@@ -62,6 +65,8 @@ internal static class PortableUpdateApplier
             :apply
             robocopy "{stagingDirectory}" "{targetDirectory}" /MIR /R:2 /W:2 /NFL /NDL /NJH /NJS > "{logPath}"
             if errorlevel 8 exit /b 1
+            rd /s /q "{stagingDirectory}" >nul 2>&1
+            {cleanup}
             start "" "{targetDirectory}\Cetus.exe"
             del "%~f0"
             """;
