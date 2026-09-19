@@ -102,6 +102,45 @@ public sealed class PortableUpdateApplierTests : IDisposable
         Assert.EndsWith("del \"%~f0\"", content.TrimEnd(), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ApplyScript_EndToEnd_MirrorsTargetAndCleansUp()
+    {
+        using var directory = new TemporaryDirectory();
+        string staging = System.IO.Path.Combine(directory.Path, "staging-9.9.9");
+        string target = System.IO.Path.Combine(directory.Path, "install");
+        Directory.CreateDirectory(staging);
+        Directory.CreateDirectory(target);
+        Directory.CreateDirectory(System.IO.Path.Combine(target, "runtime"));
+        File.WriteAllText(System.IO.Path.Combine(staging, "Cetus.exe"), "new-exe");
+        File.WriteAllText(System.IO.Path.Combine(staging, "new-file.txt"), "new");
+        File.WriteAllText(System.IO.Path.Combine(target, "old-file.txt"), "old");
+        File.WriteAllText(System.IO.Path.Combine(target, "runtime", "junk.txt"), "junk");
+
+        // A PID that cannot exist: the wait loop must fall straight through.
+        string script = PortableUpdateApplier.WriteApplyScript(staging, target, processId: int.MaxValue);
+
+        using (var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = "cmd.exe",
+            Arguments = $"/c \"{script}\"",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        }))
+        {
+            Assert.NotNull(process);
+            Assert.True(process!.WaitForExit(30_000), "the takeover script did not finish");
+        }
+
+        // The mirror replaced the old tree content and dropped retired files.
+        Assert.True(File.Exists(System.IO.Path.Combine(target, "Cetus.exe")));
+        Assert.True(File.Exists(System.IO.Path.Combine(target, "new-file.txt")));
+        Assert.False(File.Exists(System.IO.Path.Combine(target, "old-file.txt")));
+        Assert.False(File.Exists(System.IO.Path.Combine(target, "runtime", "junk.txt")));
+        // Cleanup: staging removed, script self-deleted.
+        Assert.False(Directory.Exists(staging));
+        Assert.False(File.Exists(script));
+    }
+
     private static void AddEntry(ZipArchive archive, string name, string content)
     {
         ZipArchiveEntry entry = archive.CreateEntry(name);

@@ -55,7 +55,7 @@ internal static class PortableUpdateApplier
             setlocal
             set /a tries=0
             :wait
-            timeout /t 1 /nobreak >nul
+            ping -n 2 127.0.0.1 >nul
             tasklist /FI "PID eq {processId}" 2>nul | find "{processId}" >nul
             if errorlevel 1 goto apply
             set /a tries+=1
