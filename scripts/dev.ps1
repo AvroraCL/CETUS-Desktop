@@ -12,7 +12,9 @@ param(
     [int]$Port = 3084,
 
     [switch]$Force,
-    [switch]$All
+    [switch]$All,
+    # smoke: launch with --background and assert the window stays hidden
+    [switch]$Background
 )
 
 $ErrorActionPreference = "Stop"
@@ -330,7 +332,8 @@ function Invoke-Smoke {
             "build", $project, "-c", "Debug", "--no-restore", "--artifacts-path", $artifacts, "-v", "minimal"
         )
         & (Join-Path $PSScriptRoot "app-smoke.ps1") -ApplicationPath $smokeApp -RuntimeMode Explicit `
-            -NodeExe $runtime.NodeExe -DshEntry $runtime.DshEntry -TestRoot $testRun
+            -NodeExe $runtime.NodeExe -DshEntry $runtime.DshEntry -TestRoot $testRun `
+            -Background:$Background
         if ($LASTEXITCODE -ne 0) { throw "Desktop smoke failed with exit code $LASTEXITCODE." }
         Remove-OwnedDevDirectory $testRun
     }

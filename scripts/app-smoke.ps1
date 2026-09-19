@@ -16,7 +16,11 @@ param(
     [int]$TimeoutSeconds = 60,
 
     [string]$TestRoot,
-    [int]$PreserveProcessId
+    [int]$PreserveProcessId,
+
+    # Launch with --background and assert the window never appears while
+    # DSH still becomes healthy (autostart path).
+    [switch]$Background
 )
 
 $ErrorActionPreference = "Stop"
@@ -84,6 +88,10 @@ try {
         [void]$startInfo.Environment.Remove("CETUS_DSH_ENTRY")
     }
 
+    if ($Background) {
+        $startInfo.ArgumentList.Add("--background")
+    }
+
     $applicationProcess = [Diagnostics.Process]::Start($startInfo)
     if (-not $applicationProcess) { throw "Failed to start CETUS application." }
 
@@ -95,8 +103,17 @@ try {
             throw "CETUS exited early with code $($applicationProcess.ExitCode)."
         }
         $applicationProcess.Refresh()
-        $windowReady = $applicationProcess.MainWindowHandle -ne 0 -and
-            $applicationProcess.MainWindowTitle -match 'DEV'
+        if ($Background) {
+            # The autostart contract: no splash, no main window, tray only.
+            if ($applicationProcess.MainWindowHandle -ne 0) {
+                throw "Background launch unexpectedly created a main window."
+            }
+            $windowReady = $true
+        }
+        else {
+            $windowReady = $applicationProcess.MainWindowHandle -ne 0 -and
+                $applicationProcess.MainWindowTitle -match 'DEV'
+        }
         try {
             $cookieHeaders = @{}
             $credPath = Join-Path $TestRoot "dsh-home\.credentials.yaml"
@@ -142,7 +159,12 @@ try {
         throw "No new Node process used the expected executable, DSH entry, and --no-open flag. Observed: $($newNodes.ExecutablePath -join ', ')"
     }
     $ownedNodeIds = @($runtimeNodes | ForEach-Object { [int]$_.ProcessId })
-    Write-Host "PASS: DEV HWND $($applicationProcess.MainWindowHandle), app PID $($applicationProcess.Id), Node PID $($ownedNodeIds -join ','), port $port"
+    if ($Background) {
+        Write-Host "PASS: background launch stayed hidden (no HWND), app PID $($applicationProcess.Id), Node PID $($ownedNodeIds -join ','), port $port"
+    }
+    else {
+        Write-Host "PASS: DEV HWND $($applicationProcess.MainWindowHandle), app PID $($applicationProcess.Id), Node PID $($ownedNodeIds -join ','), port $port"
+    }
     Write-Host "PASS: runtime $expectedNode"
 
     Stop-Process -Id $applicationProcess.Id -Force
