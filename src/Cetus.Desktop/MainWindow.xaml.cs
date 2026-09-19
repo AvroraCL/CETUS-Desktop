@@ -8,6 +8,7 @@ using Cetus.Browser;
 using Cetus.Configuration;
 using Cetus.DshStatus;
 using Cetus.Hosting;
+using Cetus.Maintenance;
 using Cetus.Platform;
 using Cetus.Runtime;
 using Cetus.Updates;
@@ -34,6 +35,8 @@ public partial class MainWindow : Window
     private DshSessionClient? _dshSessionClient;
     private string? _pendingWorkspacePath;
     private bool _isOpeningWorkspace;
+    private DateTimeOffset? _hiddenSince;
+    private bool _rendererSuspended;
     private bool _isExiting;
     private bool _startupStarted;
     private bool _announcementShown;
@@ -97,6 +100,7 @@ public partial class MainWindow : Window
         _startupStarted = true;
         SetupTray();
         RefreshWorkspaceEntries();
+        StartBackgroundMaintenance();
         // Create the native HWND (and the WebView2 host surface) without
         // showing the window — EnsureCoreWebView2Async would otherwise wait
         // forever for a parent handle while the splash is up.
@@ -523,10 +527,74 @@ public partial class MainWindow : Window
     private void ShowWindow()
     {
         SplashDismissRequested?.Invoke(this, EventArgs.Empty);
+        if (_rendererSuspended)
+        {
+            _browserSession.Resume();
+            _rendererSuspended = false;
+        }
+        _hiddenSince = null;
         Show();
         ShowInTaskbar = true;
         WindowState = WindowState.Normal;
         Activate();
+    }
+
+    /// <summary>
+    /// One-minute heartbeat for background maintenance: after five hidden
+    /// minutes the WebView2 renderer is suspended to cut memory (it resumes
+    /// on visibility), and long-retired logs/update caches get pruned once.
+    /// </summary>
+    private void StartBackgroundMaintenance()
+    {
+        bool maintenanceDone = false;
+        var heartbeat = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMinutes(1),
+        };
+        heartbeat.Tick += (_, _) =>
+        {
+            MaintainBackgroundState();
+            if (maintenanceDone || _isExiting)
+            {
+                return;
+            }
+
+            maintenanceDone = true;
+            _ = Task.Run(() =>
+            {
+                RetentionCleaner.PruneLogs(CetusPaths.LogDirectory);
+                RetentionCleaner.PruneStaleFiles(
+                    CetusPaths.UpdateCacheDirectory, "*.exe", RetentionCleaner.DefaultUpdateCacheMaxAge);
+            });
+        };
+        heartbeat.Start();
+    }
+
+    private void MaintainBackgroundState()
+    {
+        if (_isExiting || !_startupStarted)
+        {
+            return;
+        }
+
+        if (IsVisible)
+        {
+            if (_rendererSuspended)
+            {
+                _browserSession.Resume();
+                _rendererSuspended = false;
+            }
+
+            _hiddenSince = null;
+            return;
+        }
+
+        _hiddenSince ??= DateTimeOffset.UtcNow;
+        if (!_rendererSuspended && DateTimeOffset.UtcNow - _hiddenSince >= TimeSpan.FromMinutes(5))
+        {
+            _rendererSuspended = true;
+            _ = _browserSession.TrySuspendAsync();
+        }
     }
 
     private void EnsureSessionWatcher()

@@ -361,6 +361,44 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
     /// <summary>Whether the CoreWebView2 environment exists and the bridge is wired.</summary>
     public bool IsInitialized => _initialized;
 
+    /// <summary>
+    /// Requests renderer suspension for a hidden window to cut memory use.
+    /// Silent no-op while visible or when WebView2 refuses (e.g. audio).
+    /// </summary>
+    public async Task TrySuspendAsync()
+    {
+        if (!_initialized || _disposed || _view.Visibility == Visibility.Visible)
+        {
+            return;
+        }
+
+        try
+        {
+            await _view.CoreWebView2.TrySuspendAsync();
+        }
+        catch (Exception error) when (error is InvalidOperationException or ObjectDisposedException)
+        {
+            // Suspension is opportunistic; resume-on-show keeps this safe.
+        }
+    }
+
+    /// <summary>Wakes a suspended renderer (also happens automatically on visibility).</summary>
+    public void Resume()
+    {
+        if (!_initialized || _disposed)
+        {
+            return;
+        }
+
+        try
+        {
+            _view.CoreWebView2.Resume();
+        }
+        catch (Exception error) when (error is InvalidOperationException or ObjectDisposedException)
+        {
+        }
+    }
+
     private void OnTopLevelNavigationStarting(
         object? sender,
         CoreWebView2NavigationStartingEventArgs e)
