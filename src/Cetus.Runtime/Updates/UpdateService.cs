@@ -239,7 +239,10 @@ public sealed class UpdateService : IDisposable
         CancellationToken cancellationToken)
     {
         var failures = new List<string>();
-        foreach (UpdateFeedSource source in OrderedSources(preferred))
+        // Race the feeds first: a large payload should start on the faster
+        // source instead of grinding through the slow one until it fails.
+        IReadOnlyList<UpdateFeedSource> order = await OrderedSourcesWithProbeAsync(preferred, cancellationToken);
+        foreach (UpdateFeedSource source in order)
         {
             try
             {
@@ -258,6 +261,33 @@ public sealed class UpdateService : IDisposable
         }
 
         throw new InvalidOperationException($"两个更新源下载均失败：{string.Join("；", failures)}");
+    }
+
+    /// <summary>
+    /// The preferred source first when the probe cannot answer; otherwise the
+    /// faster feed leads and the other remains as the in-place fallback.
+    /// </summary>
+    private async Task<IReadOnlyList<UpdateFeedSource>> OrderedSourcesWithProbeAsync(
+        UpdateFeedSource preferred,
+        CancellationToken cancellationToken)
+    {
+        UpdateFeedSource? faster = null;
+        try
+        {
+            faster = await ProbeFasterSourceAsync(preferred, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            // Probe failures must never block the download.
+        }
+
+        return (faster ?? preferred) == UpdateFeedSource.GitCode
+            ? (IReadOnlyList<UpdateFeedSource>)[UpdateFeedSource.GitCode, UpdateFeedSource.GitHub]
+            : [UpdateFeedSource.GitHub, UpdateFeedSource.GitCode];
     }
 
     private async Task<ReleaseInfo> ResolveReleaseAsync(

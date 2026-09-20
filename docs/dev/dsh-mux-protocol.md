@@ -36,7 +36,9 @@
 
 ## 待跟进（实现"等待输入"前必查）
 
-1. **判定字段仍未定位**（截至本文）：会话事件类型没有集中枚举，分散在 `dsh-agent-loop`（tool-call 调度）与 `dsh-client-ui-conversation`（事件归并渲染）中。"等待工具审批/等待输入"需要跟踪 conversation UI 对事件的归并逻辑才能确定消费哪个事件 `type`/字段。
+1. **判定字段仍未完全定位**（截至本文）：会话事件类型没有集中枚举，分散在 `dsh-agent-loop`（tool-call 调度）与 `dsh-client-ui-conversation`（事件归并渲染）中。已确认的线索：
+   - UI 存在 Ask question（向用户提问）机制，i18n 含 `ask.waiting`（"waiting"）/`ask.cancelled`/`ask.answered` 等状态——这是"等待用户输入"最直接的信号源，需继续定位其承载的投影/事件；
+   - 会话相位 `conversationPhase` 在 `!running && promptAttempted` 时为 `engaging`（空闲等待用户）——与 `session.list` 的 `running` 字段组合即可区分"空闲等待用户"与"从未开始"，可作为轮询版的粗粒度判定。
 2. 快照/增量事件的具体 envelope（`{type:"event", event}` 的内部结构）。
 3. 心跳参数：`websocketHeartbeatIntervalMs` 默认值；`MAX_MISSED_HEARTBEATS = 2`，客户端需响应 ping（`ClientWebSocket` 自动处理）。
 4. 帧中 `value` 的 typert 解码（controller 用 strict codec，字段名以 typert.host.js 为准）。
