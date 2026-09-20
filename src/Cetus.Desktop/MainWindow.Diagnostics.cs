@@ -59,9 +59,19 @@ public partial class MainWindow
 
     private void OnDiagnosticsCopyClicked(object sender, RoutedEventArgs e)
     {
-        if (_diagnosticsReport is { } report)
+        if (_diagnosticsReport is not { } report)
+        {
+            return;
+        }
+
+        try
         {
             Clipboard.SetText(report);
+            _tray?.ShowBalloonTip("CETUS · 诊断信息", "诊断信息已复制到剪贴板。");
+        }
+        catch (System.Runtime.InteropServices.COMException)
+        {
+            // The clipboard can be momentarily held by another process.
         }
     }
 
