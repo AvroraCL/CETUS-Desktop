@@ -459,17 +459,36 @@ public partial class MainWindow : Window
     /// <summary>
     /// Restores the persisted window bounds. Fires from EnsureHandle during
     /// startup — before the splash flow shows the window — so the frame
-    /// materializes in the right place on the first paint.
+    /// materializes in the right place on the first paint. Bounds are
+    /// clamped into the current virtual screen: a detached monitor must not
+    /// leave the window stranded where the user cannot reach it.
     /// </summary>
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
         if (ParseWindowBounds(_settings.WindowBounds) is { } bounds)
         {
-            Left = bounds.Left;
-            Top = bounds.Top;
-            Width = bounds.Width;
-            Height = bounds.Height;
+            double virtualLeft = SystemParameters.VirtualScreenLeft;
+            double virtualTop = SystemParameters.VirtualScreenTop;
+            double virtualRight = virtualLeft + SystemParameters.VirtualScreenWidth;
+            double virtualBottom = virtualTop + SystemParameters.VirtualScreenHeight;
+
+            double width = Math.Min(bounds.Width, SystemParameters.VirtualScreenWidth);
+            double height = Math.Min(bounds.Height, SystemParameters.VirtualScreenHeight);
+            // Keep at least a grabbable strip of the window on screen.
+            double left = Math.Clamp(
+                bounds.Left,
+                virtualRight - width - 160,
+                virtualLeft + SystemParameters.VirtualScreenWidth - 160);
+            double top = Math.Clamp(
+                bounds.Top,
+                virtualBottom - height - 120,
+                virtualTop + SystemParameters.VirtualScreenHeight - 120);
+
+            Left = left;
+            Top = top;
+            Width = width;
+            Height = height;
             if (_settings.WindowMaximized == true)
             {
                 WindowState = WindowState.Maximized;
@@ -983,6 +1002,11 @@ public partial class MainWindow : Window
         Resources["CaptionFocusBrush"] = CreateBrush(isDark ? "#24FFFFFF" : "#10000000");
         WindowFrame.Background = CreateBrush(isDark ? "#151517" : "#F8FAFC");
         StatusText.Foreground = CreateBrush(isDark ? "#AAB7CC" : "#52627A");
+        DiagnosticsTitle.Foreground = CreateBrush(isDark ? "#F28B82" : "#B4232A");
+        DiagnosticsSummary.Foreground = CreateBrush(isDark ? "#93A1BA" : "#52627A");
+        DiagnosticsDetail.Background = CreateBrush(isDark ? "#1E2534" : "#F0F3F8");
+        DiagnosticsDetail.Foreground = CreateBrush(isDark ? "#C9D4E6" : "#333A45");
+        DiagnosticsDetail.BorderBrush = CreateBrush(isDark ? "#2E3A52" : "#D5DCE8");
         Browser.DefaultBackgroundColor = System.Drawing.Color.FromArgb(
             255,
             isDark ? 27 : 245,
