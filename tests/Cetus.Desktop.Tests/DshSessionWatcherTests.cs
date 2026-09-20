@@ -27,6 +27,26 @@ public sealed class DshSessionWatcherTests
     }
 
     [Fact]
+    public async Task FaultySubscriber_DoesNotBreakDispatchToOthers()
+    {
+        FakeDshHandler handler = new();
+        handler.Responses.Enqueue(SessionsJson(("s1", "任务一", Running: true)));
+        handler.Responses.Enqueue(SessionsJson(("s1", "任务一", Running: false)));
+        using var watcher = CreateWatcher(handler);
+
+        watcher.AgentFinished += (_, _) => throw new InvalidOperationException("boom");
+        List<DshAgentFinishedEventArgs> events = [];
+        watcher.AgentFinished += (_, e) => events.Add(e);
+
+        // Must not throw despite the faulty first subscriber.
+        await watcher.PollOnceAsync(CancellationToken.None);
+        await watcher.PollOnceAsync(CancellationToken.None);
+
+        DshAgentFinishedEventArgs finished = Assert.Single(events);
+        Assert.Equal("s1", finished.SessionId);
+    }
+
+    [Fact]
     public async Task RunningToIdle_RaisesFinishedEventWithSessionTitle()
     {
         FakeDshHandler handler = new();

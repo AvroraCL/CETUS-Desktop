@@ -165,7 +165,32 @@ public sealed class DshSessionWatcher : IDisposable
         {
             foreach (DshAgentFinishedEventArgs args in finished)
             {
-                AgentFinished?.Invoke(this, args);
+                DispatchSafely(args);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Invokes each subscriber independently: a faulty subscriber is logged
+    /// and skipped instead of breaking the chain for the others.
+    /// </summary>
+    private void DispatchSafely(DshAgentFinishedEventArgs args)
+    {
+        if (AgentFinished is not { } handlers)
+        {
+            return;
+        }
+
+        foreach (EventHandler<DshAgentFinishedEventArgs> handler in handlers.GetInvocationList())
+        {
+            try
+            {
+                handler(this, args);
+            }
+            catch (Exception error) when (error is not OperationCanceledException)
+            {
+                Configuration.RuntimeLog.Append(
+                    "DshSessionWatcher subscriber threw: " + error.Message);
             }
         }
     }

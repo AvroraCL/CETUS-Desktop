@@ -273,7 +273,8 @@ public sealed class DesktopRuntimeTests
     }
 
     private sealed class RuntimeTestScope : IDisposable
-    {        private readonly string? _originalPort;
+    {
+        private readonly string? _originalPort;
         private readonly string _directory;
 
         public RuntimeTestScope()

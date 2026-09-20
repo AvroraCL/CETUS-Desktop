@@ -73,7 +73,8 @@ internal sealed class BrowserSession : IBrowserSession, IUpdateNoticeSink, IDisp
     }
 
     public async Task NavigateAsync(Uri trustedOrigin, CancellationToken cancellationToken)
-    {        ObjectDisposedException.ThrowIf(_disposed, this);
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(trustedOrigin);
         _navigationPolicy = new LoopbackNavigationPolicy(trustedOrigin);
         if (!_initialized)
@@ -135,7 +136,9 @@ internal sealed class BrowserSession : IBrowserSession, IUpdateNoticeSink, IDisp
             throw new InvalidOperationException("浏览器会话尚未初始化。");
         }
 
-        await _view.CoreWebView2.ExecuteScriptAsync(script);
+        // Bounded so a wedged page cannot hang workspace focus indefinitely.
+        await _view.CoreWebView2.ExecuteScriptAsync(script)
+            .WaitAsync(TimeSpan.FromSeconds(10));
     }
 
     /// <summary>Whether the CoreWebView2 environment exists and the bridge is wired.</summary>
