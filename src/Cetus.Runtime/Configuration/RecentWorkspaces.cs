@@ -17,6 +17,7 @@ public sealed class RecentWorkspaces
 
     private readonly string _filePath;
     private List<RecentWorkspace> _entries;
+    private readonly object _gate = new();
 
     public RecentWorkspaces(string filePath)
     {
@@ -29,15 +30,18 @@ public sealed class RecentWorkspaces
     /// <summary>Moves <paramref name="workspacePath"/> to the front (adding it when new).</summary>
     public RecentWorkspace Add(string workspacePath)
     {
-        string normalized = NormalizePath(workspacePath);
-        RecentWorkspace entry = new(
-            normalized,
-            Path.GetFileName(normalized) is { Length: > 0 } title ? title : normalized,
-            DateTimeOffset.UtcNow);
+        lock (_gate)
+        {
+            string normalized = NormalizePath(workspacePath);
+            RecentWorkspace entry = new(
+                normalized,
+                Path.GetFileName(normalized) is { Length: > 0 } title ? title : normalized,
+                DateTimeOffset.UtcNow);
 
-        _entries = Promote(_entries, entry, MaxEntries);
-        Persist();
-        return entry;
+            _entries = Promote(_entries, entry, MaxEntries);
+            Persist();
+            return entry;
+        }
     }
 
     /// <summary>Full path with separators trimmed and casing canonicalized where the OS allows.</summary>

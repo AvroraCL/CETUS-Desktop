@@ -273,6 +273,24 @@ public sealed class CetusSettingsTests
     public void DevModeFlag_ParsesOptInValues(string? value, bool expected) =>
         Assert.Equal(expected, DevModeFlag.IsEnabled(value));
 
+    [Fact]
+    public void Persist_ConcurrentSaves_ProduceAValidFile()
+    {
+        using var directory = new TemporaryDirectory();
+        string settingsPath = System.IO.Path.Combine(directory.Path, "settings.json");
+        var settings = new CetusSettings(settingsPath);
+
+        Parallel.For(0, 32, index =>
+        {
+            settings.SetConfiguredPort(20000 + index);
+            settings.SetCloseToTray(index % 2 == 0);
+        });
+
+        // The file must always parse back and hold one of the written values.
+        var reloaded = new CetusSettings(settingsPath);
+        Assert.InRange(reloaded.ConfiguredPort, 20000, 20031);
+    }
+
     private sealed class TemporaryDirectory : IDisposable
     {
         public TemporaryDirectory()

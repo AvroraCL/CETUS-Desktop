@@ -18,6 +18,7 @@ public sealed class CetusSettings
     public const bool DefaultGlobalHotkeyEnabled = true;
 
     private readonly string _settingsPath;
+    private readonly object _persistGate = new();
     private int _configuredPort;
     private bool _checkUpdatesOnStartup;
     private string _updateSource = DefaultUpdateSource;
@@ -217,6 +218,16 @@ public sealed class CetusSettings
     }
 
     private void Persist()
+    {
+        // UI and background paths (port self-heal) can race; serialize the
+        // temp-file swap so concurrent saves cannot interleave.
+        lock (_persistGate)
+        {
+            PersistCore();
+        }
+    }
+
+    private void PersistCore()
     {
         string? directory = Path.GetDirectoryName(_settingsPath);
         if (string.IsNullOrEmpty(directory))
