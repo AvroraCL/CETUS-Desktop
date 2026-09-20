@@ -23,7 +23,11 @@ param(
     # relative paths near 180 characters and Inno's file replacement path must
     # remain below the legacy Windows path ceiling.
     [string]$InstallDirectory = (Join-Path ([System.IO.Path]::GetTempPath()) (
-        "CS-" + [guid]::NewGuid().ToString("N").Substring(0, 8)))
+        "CS-" + [guid]::NewGuid().ToString("N").Substring(0, 8))),
+
+    # Install twice: plant a retired Node package into runtime\ before the
+    # second pass and assert [InstallDelete] cleared it instead of overlaying.
+    [switch]$VerifyRuntimeRebuild
 )
 
 $ErrorActionPreference = "Stop"
@@ -76,6 +80,21 @@ function Wait-ForLogMarker {
     }
 
     throw "Timed out waiting for ${Description}. Log: $Path"
+}
+
+function Stop-SmokeCetus {
+    # The installer's [Run] postinstall entry launches Cetus.exe even under
+    # /VERYSILENT, and a running app locks files the uninstall assertions
+    # need. Only this smoke's own install directory is ever touched.
+    $stopped = Get-Process Cetus -ErrorAction SilentlyContinue | Where-Object {
+        $_.Path -and $_.Path.StartsWith($InstallDirectory, [StringComparison]::OrdinalIgnoreCase)
+    }
+    foreach ($process in $stopped) {
+        Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+    }
+    if ($stopped) {
+        Start-Sleep -Seconds 2
+    }
 }
 
 $cetusExe = Join-Path $InstallDirectory "Cetus.exe"
@@ -135,8 +154,42 @@ try {
 
     Write-Host "PASS: installed and validated $cetusExe"
     $validated = $true
+    Stop-SmokeCetus
+
+    if ($VerifyRuntimeRebuild) {
+        # Regression drill for the mixed-runtime tree failure: plant a
+        # package retired by the new release, reinstall over the same
+        # directory, and require [InstallDelete] to have rebuilt runtime\.
+        $stalePackage = Join-Path $InstallDirectory `
+            "runtime\dsh\node_modules\@deepseek-ai\stale-leftover-package\lib\index.js"
+        [void](New-Item -ItemType Directory -Force -Path (Split-Path -Parent $stalePackage))
+        Set-Content -LiteralPath $stalePackage -Value "leftover"
+
+        $secondLog = "$InstallDirectory-install-2.log"
+        & $installer "/VERYSILENT" "/SUPPRESSMSGBOXES" "/NORESTART" "/SP-" "/DIR=$InstallDirectory" "/LOG=$secondLog"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Second installer pass exited with code $LASTEXITCODE."
+        }
+
+        $reinstallTimer = [System.Diagnostics.Stopwatch]::StartNew()
+        Wait-ForLogMarker -Path $secondLog -Pattern '\bInstallation process succeeded\.\s*$' `
+            -Timer $reinstallTimer -TimeoutSeconds $TimeoutSeconds `
+            -Description "the second Inno Setup installation to finish"
+        Wait-ForFile -Path (Join-Path $InstallDirectory "runtime\node.exe") `
+            -Timer $reinstallTimer -TimeoutSeconds $TimeoutSeconds -Description "runtime\node.exe"
+
+        if (Test-Path -LiteralPath $stalePackage) {
+            throw "runtime was overlaid instead of rebuilt: the leftover package survived the reinstall."
+        }
+        if (-not (Test-Path -LiteralPath (Join-Path $InstallDirectory "runtime\dsh\node_modules\@deepseek-ai\dsh\package.json") -PathType Leaf)) {
+            throw "runtime rebuild lost the DSH package."
+        }
+        Write-Host "PASS: second install rebuilt the runtime tree (leftover cleared)"
+        Stop-SmokeCetus
+    }
 }
 finally {
+    Stop-SmokeCetus
     if ($installed -and (Test-Path -LiteralPath $uninstaller -PathType Leaf)) {
         & $uninstaller "/VERYSILENT" "/SUPPRESSMSGBOXES" "/NORESTART" "/LOG=$uninstallLog"
         if ($LASTEXITCODE -ne 0) {
