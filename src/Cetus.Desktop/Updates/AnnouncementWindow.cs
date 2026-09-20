@@ -39,6 +39,7 @@ internal sealed class AnnouncementWindow : Window
         };
         Content = _browser;
         Loaded += OnLoaded;
+        Closed += (_, _) => _browser.Dispose();
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)

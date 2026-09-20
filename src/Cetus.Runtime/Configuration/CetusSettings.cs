@@ -10,6 +10,7 @@ namespace Cetus.Configuration;
 /// </summary>
 public sealed class CetusSettings
 {
+    private static readonly JsonSerializerOptions CachedIndented = new() { WriteIndented = true };
     public const int DefaultPort = 3080;
     public const bool DefaultCheckUpdatesOnStartup = true;
     public const string DefaultUpdateSource = "github";
@@ -249,7 +250,7 @@ public sealed class CetusSettings
             WindowBounds = _windowBounds,
             WindowMaximized = _windowMaximized,
         },
-            new JsonSerializerOptions { WriteIndented = true });
+            CachedIndented);
         File.WriteAllText(temporaryPath, json);
         try
         {

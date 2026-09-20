@@ -13,6 +13,7 @@ public sealed record RecentWorkspace(string Path, string Title, DateTimeOffset L
 /// </summary>
 public sealed class RecentWorkspaces
 {
+    private static readonly JsonSerializerOptions CachedIndented = new() { WriteIndented = true };
     public const int MaxEntries = 10;
 
     private readonly string _filePath;
@@ -140,7 +141,7 @@ public sealed class RecentWorkspaces
                     LastUsedUnixMs = entry.LastUsed.ToUnixTimeMilliseconds(),
                 })
                 .ToList(),
-        }, new JsonSerializerOptions { WriteIndented = true });
+        }, CachedIndented);
         File.WriteAllText(temporaryPath, json);
         try
         {

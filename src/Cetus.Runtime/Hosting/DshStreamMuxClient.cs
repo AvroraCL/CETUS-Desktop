@@ -7,6 +7,11 @@ namespace Cetus.Hosting;
 
 public sealed record DshMuxItem(string StreamId, JsonElement Value);
 
+internal static class DshMuxJson
+{
+    public static readonly JsonSerializerOptions CamelCase = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+}
+
 public sealed record DshMuxStreamError(string StreamId, string Code, string Message);
 
 /// <summary>
@@ -69,17 +74,18 @@ public sealed class DshStreamMuxClient : IDisposable
         await socket.ConnectAsync(BuildMuxUri(origin), cancellationToken);
         _socket = socket;
         _loopCancellation = new CancellationTokenSource();
-        _receiveLoop = Task.Run(() => ReceiveLoopAsync(socket, _loopCancellation.Token));
+        _receiveLoop = Task.Run(
+            () => ReceiveLoopAsync(socket, _loopCancellation.Token),
+            CancellationToken.None);
     }
 
     public async Task OpenStreamAsync(string streamId, string endpoint, JsonElement payload, CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         await SendAsync(
-            JsonSerializer.Serialize(new { type = "open", streamId, endpoint, payload }, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            }),
+            JsonSerializer.Serialize(
+                new { type = "open", streamId, endpoint, payload },
+                DshMuxJson.CamelCase),
             cancellationToken);
     }
 

@@ -740,7 +740,7 @@ public partial class MainWindow : Window
             isDark ? 28 : 250);
     }
 
-    private static System.Windows.Media.Brush CreateBrush(string color, double opacity = 1) =>
+    private static System.Windows.Media.SolidColorBrush CreateBrush(string color, double opacity = 1) =>
         new SolidColorBrush(
             (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(color))
         {

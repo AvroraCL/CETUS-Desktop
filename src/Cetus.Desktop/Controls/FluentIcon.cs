@@ -27,7 +27,7 @@ public sealed class FluentIcon : FrameworkElement
             CreateDefaultForeground(),
             FrameworkPropertyMetadataOptions.AffectsRender | FrameworkPropertyMetadataOptions.Inherits));
 
-    private static Brush CreateDefaultForeground()
+    private static System.Windows.Media.SolidColorBrush CreateDefaultForeground()
     {
         var brush = new SolidColorBrush(Color.FromRgb(0x9C, 0xA3, 0xAF));
         brush.Freeze();

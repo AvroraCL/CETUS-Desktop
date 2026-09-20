@@ -12,6 +12,8 @@ namespace Cetus.Updates;
 /// </summary>
 public sealed record PortableUpdateFailureNotice(string? Version, string? Reason)
 {
+    private static readonly JsonSerializerOptions CaseInsensitive = new() { PropertyNameCaseInsensitive = true };
+
     public static PortableUpdateFailureNotice? TryRead(string path)
     {
         try
@@ -35,9 +37,7 @@ public sealed record PortableUpdateFailureNotice(string? Version, string? Reason
 
             // The takeover script writes camelCase keys ("version", "reason"),
             // so matching is case-insensitive.
-            return JsonSerializer.Deserialize<PortableUpdateFailureNotice>(
-                content,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+            return JsonSerializer.Deserialize<PortableUpdateFailureNotice>(content, CaseInsensitive)
                 ?? new PortableUpdateFailureNotice(null, content);
         }
         catch (Exception error) when (error is IOException
