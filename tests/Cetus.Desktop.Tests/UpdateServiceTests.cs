@@ -165,6 +165,68 @@ public sealed class UpdateServiceTests
     }
 
     [Fact]
+    public async Task DownloadPortableBundleAsync_SelectsTheZipAndVerifiesIt()
+    {
+        string? originalDir = Environment.GetEnvironmentVariable("CETUS_UPDATE_DIR");
+        using var directory = new TemporaryDirectory();
+        try
+        {
+            Environment.SetEnvironmentVariable("CETUS_UPDATE_DIR", directory.Path);
+            byte[] zipBytes = "portable-zip-bytes"u8.ToArray();
+            string zipHash = Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(zipBytes)).ToLowerInvariant();
+            const string zipName = "Cetus-0.2.1-win-x64-portable.zip";
+            var release = new ReleaseInfo(
+                "v0.2.1",
+                new Version(0, 2, 1),
+                null,
+                [
+                    new ReleaseAsset("Cetus-Setup-0.2.1.exe", "https://github.com/setup.exe", 15),
+                    new ReleaseAsset(zipName, $"https://github.com/{zipName}", zipBytes.Length),
+                    new ReleaseAsset("SHA256SUMS.txt", "https://github.com/SHA256SUMS.txt", 128),
+                ]);
+            var handler = new FakeHandler
+            {
+                Responder = request =>
+                {
+                    string url = request.RequestUri!.ToString();
+                    if (url.EndsWith("SHA256SUMS.txt", StringComparison.Ordinal))
+                    {
+                        return new HttpResponseMessage(HttpStatusCode.OK)
+                        {
+                            Content = new StringContent($"{zipHash}  {zipName}\n", Encoding.UTF8, "text/plain"),
+                        };
+                    }
+
+                    if (url.EndsWith(zipName, StringComparison.Ordinal))
+                    {
+                        return new HttpResponseMessage(HttpStatusCode.OK)
+                        {
+                            Content = new ByteArrayContent(zipBytes),
+                        };
+                    }
+
+                    return new HttpResponseMessage(HttpStatusCode.NotFound);
+                },
+            };
+            using var service = new UpdateService(handler);
+
+            string path = await service.DownloadPortableBundleAsync(
+                release, UpdateFeedSource.GitHub, null, CancellationToken.None);
+
+            Assert.Equal(Path.Combine(directory.Path, zipName), path);
+            Assert.Equal(zipBytes, await File.ReadAllBytesAsync(path));
+            // The installer asset must not have been touched.
+            Assert.DoesNotContain("Cetus-Setup-0.2.1.exe", handler.Requests[0]);
+            Assert.Equal(2, handler.Requests.Count); // zip + sums, nothing else
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("CETUS_UPDATE_DIR", originalDir);
+        }
+    }
+
+    [Fact]
     public async Task DownloadInstallerAsync_WritesVerifiedFileAndReportsProgress()
     {
         string? originalDir = Environment.GetEnvironmentVariable("CETUS_UPDATE_DIR");
