@@ -131,14 +131,14 @@ public sealed class DshStreamMuxClientTests : IAsyncLifetime
         {
             try
             {
-            HttpListenerContext context = await _listener.GetContextAsync();
-            using WebSocket server = await AcceptAsync(context);
-            await SendJson(server, SnapshotFrame("f1"));
-            await SendJson(server, TurnEndFrame("f1"));
-            await SendJson(server, EndFrame("f1"));
-            // Close the output half first: an abrupt dispose drops in-flight
-            // frames and the client never sees them.
-            await server.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+                HttpListenerContext context = await _listener.GetContextAsync();
+                using WebSocket server = await AcceptAsync(context);
+                await SendJson(server, SnapshotFrame("f1"));
+                await SendJson(server, TurnEndFrame("f1"));
+                await SendJson(server, EndFrame("f1"));
+                // Close the output half first: an abrupt dispose drops in-flight
+                // frames and the client never sees them.
+                await server.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
             }
             catch (Exception error)
             {
