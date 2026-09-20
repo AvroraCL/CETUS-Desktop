@@ -227,6 +227,7 @@ internal sealed class UpdateCoordinator
                 ReportTaskbarProgress(value);
             }),
             cancellation?.Token ?? CancellationToken.None);
+        prompt?.ReportStatus("下载完成，正在解压并准备升级…", isError: false);
         string staging = PortableUpdateApplier.PrepareStaging(zipPath, release.Version);
         string script = PortableUpdateApplier.WriteApplyScript(
             staging, AppContext.BaseDirectory, Environment.ProcessId, zipPath);
