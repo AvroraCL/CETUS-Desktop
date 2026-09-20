@@ -1,4 +1,5 @@
 using System.IO;
+using Cetus.Configuration;
 using Cetus.DshStatus;
 
 namespace Cetus.Hosting;
@@ -92,6 +93,7 @@ public sealed class DshHost : IDshHost
         CredentialGuard.EnsureUserOnlyAccess(
             Path.Combine(DshCredentials.ResolveDshHome(_dshHomeOverride), ".credentials.yaml"));
 
+        RuntimeLog.Append($"DSH spawn: endpoint={_endpoint}, grace={_portOccupiedGraceSeconds}s");
         DshSidecarProcess sidecar = DshSidecarProcess.Start(
             _command,
             _endpoint,
@@ -276,6 +278,7 @@ public sealed class DshHost : IDshHost
             _sidecar = null;
         }
 
+        RuntimeLog.Append($"DSH process exited: exitCode={e.ExitCode}");
         RuntimeFailure?.Invoke(this, new DshHostFailureEventArgs(
             DshHostFailureKind.ProcessExited,
             e.ExitCode,
@@ -284,6 +287,10 @@ public sealed class DshHost : IDshHost
 
     private void ReportRuntimeFailure(DshHostFailureEventArgs failure)
     {
+        RuntimeLog.Append(
+            "DSH runtime failure: kind=" + failure.Kind
+            + ", exitCode=" + (failure.ExitCode?.ToString() ?? "-")
+            + ", log=" + (failure.LogPath ?? "-"));
         lock (_lifecycleGate)
         {
             if (_isStopping || !_isReady || _failureReported)

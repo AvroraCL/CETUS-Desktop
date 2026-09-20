@@ -5,14 +5,17 @@ namespace Cetus.Desktop.Tests;
 
 public sealed class ActivationChannelTests
 {
+    private static string UniqueId() => "test-" + Guid.NewGuid().ToString("N");
+
     [Fact]
     public async Task ForwardedWorkspace_ReachesServerEvent()
     {
+        string id = UniqueId();
         TaskCompletionSource<ActivationRequest> received = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var server = new ActivationChannel(null, request => received.TrySetResult(request));
+        using var server = new ActivationChannel(id, request => received.TrySetResult(request));
         server.Start();
 
-        bool forwarded = await ActivationChannel.TryForwardAsync(@"F:\repos\demo");
+        bool forwarded = await ActivationChannel.TryForwardAsync(@"F:\repos\demo", id);
 
         Assert.True(forwarded);
         ActivationRequest request = await received.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -22,11 +25,12 @@ public sealed class ActivationChannelTests
     [Fact]
     public async Task PlainForward_SendsNullWorkspace()
     {
+        string id = UniqueId();
         TaskCompletionSource<ActivationRequest> received = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var server = new ActivationChannel(null, request => received.TrySetResult(request));
+        using var server = new ActivationChannel(id, request => received.TrySetResult(request));
         server.Start();
 
-        bool forwarded = await ActivationChannel.TryForwardAsync(null);
+        bool forwarded = await ActivationChannel.TryForwardAsync(null, id);
 
         Assert.True(forwarded);
         ActivationRequest request = await received.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -36,7 +40,9 @@ public sealed class ActivationChannelTests
     [Fact]
     public async Task TryForward_WithoutServer_ReturnsFalse()
     {
-        bool forwarded = await ActivationChannel.TryForwardAsync(@"F:\repos\nobody-home");
+        // A unique id keeps the probe away from any really running instance.
+        bool forwarded = await ActivationChannel.TryForwardAsync(
+            @"F:\repos\nobody-home", UniqueId());
 
         Assert.False(forwarded);
     }

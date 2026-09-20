@@ -311,6 +311,8 @@ internal sealed class DesktopRuntime
         int previousPort = _settings.EffectivePort;
         int fallbackPort = FreePortFinder.Reserve();
         _settings.SetConfiguredPort(fallbackPort);
+        Configuration.RuntimeLog.Append(
+            $"port fallback: {previousPort} occupied, switching to {fallbackPort} (saved)");
         PortFallback?.Invoke(this, new DshPortFallbackEventArgs(previousPort, fallbackPort));
 
         await StopHostAsync();
@@ -388,6 +390,8 @@ internal sealed class DesktopRuntime
             {
                 int attempt = ++_automaticRestartAttempts;
                 int delaySeconds = attempt * 2;
+                Configuration.RuntimeLog.Append(
+                    $"automatic recovery attempt {attempt}/{MaxAutomaticRestartAttempts} after {delaySeconds}s");
                 _browser.Hide();
                 string failureDescription = failure.Kind == DshHostFailureKind.ProcessExited
                     ? $"DSH 主机意外退出（代码 {failure.ExitCode?.ToString() ?? "未知"}）"

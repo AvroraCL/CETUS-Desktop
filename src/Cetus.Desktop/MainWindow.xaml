@@ -195,7 +195,11 @@
                            HorizontalAlignment="Center" VerticalAlignment="Center"
                            FontSize="16" Foreground="#667"
                            Text="正在启动 DSH 主机…" />
+                <!-- The 6px side/bottom inset keeps the WebView2 child HWND off
+                     the resize border: a full-bleed HwndHost captures real
+                     mouse hit-testing there and windowed resizing dies. -->
                 <wv2:WebView2 x:Name="Browser"
+                              Margin="6,0,6,6"
                               Visibility="Collapsed"
                               DefaultBackgroundColor="White" />
                 <!-- Safe-mode panel: replaces the bare status line when automatic

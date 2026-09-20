@@ -280,6 +280,18 @@ public partial class MainWindow : Window
 
         try
         {
+            new AnnouncementWindow(url, IsSystemDarkMode()) { Owner = this }.Show();
+        }
+        catch
+        {
+            OpenInSystemBrowser(url);
+        }
+    }
+
+    private static void OpenInSystemBrowser(string url)
+    {
+        try
+        {
             Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
         }
         catch

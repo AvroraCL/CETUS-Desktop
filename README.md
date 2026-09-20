@@ -33,12 +33,12 @@ CETUS 把官方 Web UI、Agent 能力和插件生态装进一个开箱即用的 
 - 可选开机自启：登录 Windows 后 CETUS 在后台启动并驻留托盘，DSH 提前就绪、点开即用
 - DSH 设置页内建「CETUS设置」：启动检查更新、手动检查更新、任务完成提醒、全局快捷键、开机自启、关闭按钮行为（托盘/退出）、DSH 端口、DSH 版本查询，改动实时保存
 
-### 下载 v0.4.0
+### 下载 v0.3.1
 
 | 文件 | 说明 |
 |---|---|
-| [Cetus-Setup-0.4.0.exe](https://github.com/AvroraCL/CETUS-Desktop/releases/download/v0.4.0/Cetus-Setup-0.4.0.exe) | 中文安装向导，按当前用户安装，无需管理员权限 |
-| [Cetus-0.4.0-win-x64-portable.zip](https://github.com/AvroraCL/CETUS-Desktop/releases/download/v0.4.0/Cetus-0.4.0-win-x64-portable.zip) | 便携版，解压后直接运行 |
+| [Cetus-Setup-0.3.1.exe](https://github.com/AvroraCL/CETUS-Desktop/releases/download/v0.3.1/Cetus-Setup-0.3.1.exe) | 中文安装向导，按当前用户安装，无需管理员权限 |
+| [Cetus-0.3.1-win-x64-portable.zip](https://github.com/AvroraCL/CETUS-Desktop/releases/download/v0.3.1/Cetus-0.3.1-win-x64-portable.zip) | 便携版，解压后直接运行 |
 
 历史版本与更新日志见 [Releases](https://github.com/AvroraCL/CETUS-Desktop/releases)。
 
