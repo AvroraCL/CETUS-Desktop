@@ -31,12 +31,12 @@
 
 ## session/follow
 
-- 订阅粒度为**单个会话**：请求为 durable address（`{ address, cursor? }`，具体 schema 见 `dsh-api-session-controller` 的 `validateFollowRequest`），返回"开头快照 + 之后逐事件"。
+- 订阅粒度为**单个会话**：请求字段只有可选的 `maxMessages`（正整数）；`address` 是 `{ kind: "session", sessionId }` 或 `{ kind: "subagent", childSessionId, parentSessionId }`。返回"开头快照 + 之后逐事件"（快照 + `session/event` 内部总线广播的增量）。
 - 要监控所有会话需要：轮询/跟随会话列表 + 为每个会话各开一条流，并处理会话创建/销毁。
 
-## 待跟进（实现前必查）
+## 待跟进（实现"等待输入"前必查）
 
-1. 会话事件日志的事件类型枚举——"等待工具审批/等待输入"对应哪个（或哪些）事件 `type`；UI 层（dsh-client-ui-conversation）渲染等待态所消费的字段。
-2. `address` 的构造方式（workspaceId/sessionId 组合）。
-3. 心跳参数：`websocketHeartbeatIntervalMs` 默认值；`MAX_MISSED_HEARTBEATS = 2`，客户端需响应 ping。
+1. **判定字段仍未定位**（截至本文）：会话事件类型没有集中枚举，分散在 `dsh-agent-loop`（tool-call 调度）与 `dsh-client-ui-conversation`（事件归并渲染）中。"等待工具审批/等待输入"需要跟踪 conversation UI 对事件的归并逻辑才能确定消费哪个事件 `type`/字段。
+2. 快照/增量事件的具体 envelope（`{type:"event", event}` 的内部结构）。
+3. 心跳参数：`websocketHeartbeatIntervalMs` 默认值；`MAX_MISSED_HEARTBEATS = 2`，客户端需响应 ping（`ClientWebSocket` 自动处理）。
 4. 帧中 `value` 的 typert 解码（controller 用 strict codec，字段名以 typert.host.js 为准）。
