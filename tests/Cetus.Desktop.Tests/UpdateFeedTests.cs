@@ -64,8 +64,8 @@ public sealed class UpdateFeedTests
     [Fact]
     public void VersionComparison_TreatsPatchBumpsAsNewer()
     {
-        UpdateFeed.TryParseTag("v0.1.9", out Version current);
-        UpdateFeed.TryParseTag("v0.1.10", out Version next);
+        Assert.True(UpdateFeed.TryParseTag("v0.1.9", out Version current));
+        Assert.True(UpdateFeed.TryParseTag("v0.1.10", out Version next));
 
         Assert.True(next > current);
     }

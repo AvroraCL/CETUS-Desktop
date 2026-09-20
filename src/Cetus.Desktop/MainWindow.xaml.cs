@@ -366,6 +366,7 @@ public partial class MainWindow : Window
             StatusText.Visibility = Visibility.Collapsed;
             DiagnosticsPanel.Visibility = Visibility.Collapsed;
             EnsureSessionWatcher();
+            EnsureTurnEndWatcher();
             return;
         }
 
@@ -455,6 +456,26 @@ public partial class MainWindow : Window
     /// minutes the WebView2 renderer is suspended to cut memory (it resumes
     /// on visibility), and long-retired logs/update caches get pruned once.
     /// </summary>
+    private DshTurnEndWatcher? _turnEndWatcher;
+
+    private void EnsureTurnEndWatcher()
+    {
+        if (_turnEndWatcher is not null || _isExiting)
+        {
+            return;
+        }
+
+        // Realtime turn-end detection over the mux; falls back to the
+        // polling watcher only when this stream is not connected.
+        _dshSessionClient ??= new DshSessionClient(_settings.DshHomeOverride);
+        _turnEndWatcher = new DshTurnEndWatcher(
+            _dshSessionClient,
+            () => _runtime.Endpoint,
+            _settings.DshHomeOverride);
+        _turnEndWatcher.TurnEnded += OnTurnEnded;
+        _turnEndWatcher.Start();
+    }
+
     private void EnsureSessionWatcher()
     {
         if (_sessionWatcher is not null || _isExiting)
@@ -475,6 +496,53 @@ public partial class MainWindow : Window
 
     private void OnAgentFinished(object? sender, DshAgentFinishedEventArgs e)
     {
+        Dispatcher.BeginInvoke(() => NotifyTurnFinished(e.SessionId, e.Title));
+    }
+
+    private readonly Dictionary<string, DateTimeOffset> _recentTurnNotifies = new(StringComparer.Ordinal);
+    private static readonly TimeSpan TurnNotifyCooldown = TimeSpan.FromMinutes(2);
+
+    /// <summary>
+    /// Single notification path for both detection routes (mux realtime and
+    /// polling fallback): a per-session cooldown keeps the two from
+    /// duplicating the same completion.
+    /// </summary>
+    private void NotifyTurnFinished(string sessionId, string title)
+    {
+        if (_isExiting || _tray is null || !_settings.NotifyOnAgentComplete)
+        {
+            return;
+        }
+
+        if (_recentTurnNotifies.TryGetValue(sessionId, out DateTimeOffset notified)
+            && DateTimeOffset.UtcNow - notified < TurnNotifyCooldown)
+        {
+            return;
+        }
+
+        _recentTurnNotifies[sessionId] = DateTimeOffset.UtcNow;
+        if (_recentTurnNotifies.Count > 32)
+        {
+            var oldest = _recentTurnNotifies.MinBy(kv => kv.Value);
+            _recentTurnNotifies.Remove(oldest.Key);
+        }
+
+        // A user watching the session sees the answer live; only surface the
+        // balloon when CETUS is not the focused window.
+        if (IsVisible && ForegroundWindow.IsCurrent(this))
+        {
+            return;
+        }
+
+        _tray.ShowBalloonTip(
+            "任务完成",
+            $"「{title}」已完成回复",
+            () => _ = FocusSessionAsync(sessionId));
+    }
+
+    /// <summary>Realtime mux path: raise the same completion notice the instant a turn ends.</summary>
+    private void OnTurnEnded(object? sender, DshTurnEndedEventArgs e)
+    {
         Dispatcher.BeginInvoke(() =>
         {
             if (_isExiting || _tray is null || !_settings.NotifyOnAgentComplete)
@@ -482,8 +550,6 @@ public partial class MainWindow : Window
                 return;
             }
 
-            // A user watching the session sees the answer live; only
-            // surface the balloon when CETUS is not the focused window.
             if (IsVisible && ForegroundWindow.IsCurrent(this))
             {
                 return;
