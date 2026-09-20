@@ -29,18 +29,18 @@
 
 `workspace/follow`、`session/follow`、`terminal/*` 流（见各 controller 的 typert 绑定）。
 
-## session/follow
+## session/follow（已逆向完成）
 
-- 订阅粒度为**单个会话**：请求字段只有可选的 `maxMessages`（正整数）；`address` 是 `{ kind: "session", sessionId }` 或 `{ kind: "subagent", childSessionId, parentSessionId }`。返回"开头快照 + 之后逐事件"（快照 + `session/event` 内部总线广播的增量）。
+- 订阅粒度为**单个会话**。wire 请求：`open { endpoint: "session/follow", payload: { args: { request: { address, maxMessages?, assistantStream? } } } }`，其中 `address = { kind: "session", sessionId }` 或 `{ kind: "subagent", parentSessionId, childSessionId, mode }`（typert `SessionFollowRequest`，strict 校验）。
+- 帧序列（`item.value`）：
+  1. `{ type: "snapshot", header, cursor, records: SessionEventEntry[], hasMore, projections }` —— 开头快照；
+  2. `{ type: "event", event }` 增量（`event = { type, seq, time, data }`）；
+  3. `{ type: "assistant-stream", frame }`（仅 `assistantStream: true` 订阅）。
+- `SessionEventType` 全集（`dsh-session` SessionEventMap）：`turn/start`、`turn/end`（reason: `completed | aborted | blocked | error | max-tokens | interrupted`）、`step/start`、`step/end`、`user/message`、`system/message`、`assistant/message`、`assistant/attempt`、`tool/call`、`tool/result`、`request/header`、`request/context`、`session/end-seed`、`max-tokens`。
 - 要监控所有会话需要：轮询/跟随会话列表 + 为每个会话各开一条流，并处理会话创建/销毁。
 
-## 待跟进（实现"等待输入"前必查）
+## "等待输入"判定结论
 
-1. **判定路径已收敛，实现按 2-3 小时立项**：
-   - "等待输入"源自 **`@deepseek-ai/dsh-user-questions`** 的 `user-questions/request` waterfall 服务：agent 提问时**同步挂起等待 answerer**，期间 `running` 大概率保持 true——因此 `session.list` 轮询（当前任务完成通知的机制）**原理上检测不到等待审批**，必须订阅 `session/follow` 事件流；
-   - 问题状态在内存 waterfall 中、不进 `session.list` 投影（投影仅有 title/sessionListMetadata{blank,lastPromptAt}/subagent/agentPreset 等）；
-   - **判定规则（待事件 envelope 确认后实现）**：follow 流中出现未闭合的 ask 展示事件（无 answered/cancelled 对应）即"等待输入"；UI 侧 i18n 确认存在 `ask.waiting`（"waiting"）状态；
-   - 会话相位 `conversationPhase` 在 `!running && promptAttempted` 时为 `engaging`（空闲等待用户）——可作为"空闲等待下一条消息"的粗粒度判定。
-2. 快照/增量事件的具体 envelope（`{type:"event", event}` 的内部结构）与 ask 展示事件的字段。
-3. 心跳参数：`websocketHeartbeatIntervalMs` 默认值；`MAX_MISSED_HEARTBEATS = 2`，客户端需响应 ping（`ClientWebSocket` 自动处理）。
-4. 帧中 `value` 的 typert 解码（controller 用 strict codec，字段名以 typert.host.js 为准）。
+- **Ask question / 工具审批不产生会话日志事件**：`@deepseek-ai/dsh-user-questions` 的 `user-questions/request` 是 waterfall 服务，agent 同步挂起等待 answerer（期间 `running` 大概率保持 true），问题状态在内存中、不进 `session.list` 投影（仅 title/sessionListMetadata{blank,lastPromptAt}/subagent/agentPreset）。**轮询 `session.list` 原理上检测不到等待审批**。
+- 可靠检测必须订阅 `session/follow` 并在客户端维护"未闭合 ask 展示"状态；UI 侧 i18n 存在 `ask.waiting`（"waiting"）。
+- 粗粒度替代：`turn/end(kind=completed)` 是**实时完成信号**（比 10s 轮询快且准）；`conversationPhase` 的 `engaging`（`!running && promptAttempted`）可标"空闲等待下一条消息"。
