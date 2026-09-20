@@ -86,4 +86,74 @@ public sealed class DshAuthTests
             }
         }
     }
+
+    [Fact]
+    public void EnsureSessionSecret_OnEmptyExistingFile_KeepsTheVersionHeader()
+    {
+        string dir = TestWorkspace.CreateDirectory();
+        try
+        {
+            // DSH parses this file strictly and refuses to boot without the
+            // top-level version header, so extending a pre-existing file must
+            // not drop it — a failed boot here becomes a restart loop.
+            string path = Path.Combine(dir, ".credentials.yaml");
+            File.WriteAllText(path, string.Empty);
+
+            string secret = DshAuth.EnsureSessionSecret(dir);
+
+            string content = File.ReadAllText(path);
+            Assert.Contains("version: 1", content);
+            Assert.Contains("records:", content);
+            Assert.Contains("client-connection/browser-session:", content);
+            Assert.Contains($"secret: {secret}", content);
+            Assert.Equal(secret, DshAuth.ReadSessionSecret(dir));
+            Assert.False(File.Exists(path + ".cetus.tmp"));
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void EnsureSessionSecret_OnExistingCredentialFile_PreservesOtherEntries()
+    {
+        string dir = TestWorkspace.CreateDirectory();
+        try
+        {
+            string path = Path.Combine(dir, ".credentials.yaml");
+            File.WriteAllText(
+                path,
+                """
+                version: 1
+                refs:
+                  DEEPSEEK_API_KEY: sk-test
+                """);
+
+            string secret = DshAuth.EnsureSessionSecret(dir);
+
+            string content = File.ReadAllText(path);
+            Assert.Contains("DEEPSEEK_API_KEY: sk-test", content);
+            Assert.Contains("secret: " + secret, content);
+
+            // Exactly one document-level version line: the nested payload has
+            // its own "version: 1" further in, indented.
+            string[] topLevelLines = content
+                .Split('\n')
+                .Select(line => line.TrimEnd('\r'))
+                .Where(line => line.StartsWith("version:", StringComparison.Ordinal))
+                .ToArray();
+            Assert.Single(topLevelLines);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
 }

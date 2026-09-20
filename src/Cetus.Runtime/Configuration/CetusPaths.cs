@@ -8,9 +8,11 @@ namespace Cetus.Configuration;
 /// </summary>
 public static class CetusPaths
 {
-    public static string UserDataDirectory => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "Cetus");
+    public static string UserDataDirectory => ResolveOverride(
+        "CETUS_USER_DATA_DIR",
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Cetus"));
 
     public static string SettingsFile => ResolveOverride(
         "CETUS_SETTINGS_PATH",

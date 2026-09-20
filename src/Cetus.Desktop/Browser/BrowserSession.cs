@@ -295,9 +295,18 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
         _checkDshUpdate = checkDshUpdate;
     }
 
-    public async Task NavigateAsync(Uri trustedOrigin, CancellationToken cancellationToken)
+    /// <summary>
+    /// Same resolution as CetusSettings.DshHomeOverride; read here so the
+    /// browser signs its cookie against the same DSH home the probe uses.
+    /// </summary>
+    private static string? ResolveDshHomeOverride()
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        string? value = Environment.GetEnvironmentVariable("CETUS_DSH_HOME");
+        return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    public async Task NavigateAsync(Uri trustedOrigin, CancellationToken cancellationToken)
+    {        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(trustedOrigin);
         _navigationPolicy = new LoopbackNavigationPolicy(trustedOrigin);
         if (!_initialized)
@@ -322,7 +331,11 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        if (Cetus.Hosting.DshAuth.TryGetSessionCookie(trustedOrigin) is { } cookie)
+        // The override matters: with CETUS_DSH_HOME set, the probe and the
+        // session clients sign against that home, so the browser cookie must
+        // come from the same place or the page loads a 401 while the probe
+        // happily reports the host as healthy.
+        if (Cetus.Hosting.DshAuth.TryGetSessionCookie(trustedOrigin, ResolveDshHomeOverride()) is { } cookie)
         {
             var cookieObj = _view.CoreWebView2.CookieManager.CreateCookie(
                 cookie.Name,

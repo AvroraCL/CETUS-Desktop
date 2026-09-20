@@ -86,6 +86,17 @@ internal sealed class UpdateCoordinator
 
             if (result.UpdateAvailable && result.Release is { } found)
             {
+                if (!interactive && UpdateRejection.IsRejected(found.Version))
+                {
+                    // This exact build already failed to start once and was
+                    // rolled back; retrying it silently would kill DSH again.
+                    _notify(
+                        "CETUS 更新",
+                        $"版本 {found.TagName} 上次升级失败并已回滚，已跳过自动升级。",
+                        OpenAnnouncementPage);
+                    return;
+                }
+
                 if (!interactive)
                 {
                     await AutoInstallAsync(found, result.Source, InstalledEdition.IsInstalled());
@@ -216,7 +227,7 @@ internal sealed class UpdateCoordinator
         prompt?.ReportStatus("下载完成，正在解压并准备升级…", isError: false);
         string staging = PortableUpdateApplier.PrepareStaging(download.Path, release.Version);
         string script = PortableUpdateApplier.WriteApplyScript(
-            staging, AppContext.BaseDirectory, Environment.ProcessId, download.Path);
+            staging, AppContext.BaseDirectory, Environment.ProcessId, download.Path, release.Version);
         PortableUpdateApplier.LaunchApplyScript(script);
         prompt?.Close();
         _notify("CETUS 更新", "便携更新已就绪，CETUS 即将退出并升级到新版本。", null);
@@ -297,6 +308,9 @@ internal sealed class UpdateCoordinator
                     progress,
                     cancellation.Token);
                 _settings.SetUpdateSource(ToSettingValue(download.Source));
+                // The user asked for this version explicitly, so the automatic
+                // suppression no longer applies to it.
+                UpdateRejection.Clear(release.Version);
                 Process.Start(new ProcessStartInfo(download.Path)
                 {
                     UseShellExecute = true,

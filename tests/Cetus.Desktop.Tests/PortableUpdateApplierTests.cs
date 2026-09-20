@@ -89,7 +89,11 @@ public sealed class PortableUpdateApplierTests : IDisposable
         Directory.CreateDirectory(staging);
 
         string script = PortableUpdateApplier.WriteApplyScript(
-            staging, System.IO.Path.Combine(directory.Path, "target"), processId: 4242);
+            staging,
+            System.IO.Path.Combine(directory.Path, "target"),
+            processId: 4242,
+            zipPath: null,
+            version: new Version(9, 9, 9));
 
         string content = File.ReadAllText(script);
         Assert.True(File.ReadAllBytes(script).AsSpan().StartsWith(Encoding.UTF8.Preamble));
@@ -98,7 +102,16 @@ public sealed class PortableUpdateApplierTests : IDisposable
         Assert.Contains("Read-ManagedFiles", content, StringComparison.Ordinal);
         Assert.Contains("Restore-Backup", content, StringComparison.Ordinal);
         Assert.Contains("--update-health=", content, StringComparison.Ordinal);
-        Assert.Contains("within 90 seconds", content, StringComparison.Ordinal);
+
+        // The health budget must cover Cetus's own worst-case startup path
+        // (occupied-port grace + readiness wait + WebView2); a budget shorter
+        // than that turns a slow first start into a rollback loop that kills DSH.
+        Assert.Contains(
+            $"$healthSeconds = {(int)PortableUpdateApplier.HealthBudget.TotalSeconds}",
+            content,
+            StringComparison.Ordinal);
+        Assert.Contains("$attemptVersion = '9.9.9'", content, StringComparison.Ordinal);
+        Assert.Contains("ConvertTo-Json -Compress", content, StringComparison.Ordinal);
         Assert.DoesNotContain("/MIR", content, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Remove-Item -LiteralPath $PSCommandPath", content, StringComparison.Ordinal);
     }

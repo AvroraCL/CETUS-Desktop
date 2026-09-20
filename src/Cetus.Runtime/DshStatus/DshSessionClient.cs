@@ -32,7 +32,16 @@ public sealed class DshSessionClient : IDisposable
     public async Task<IReadOnlyList<DshSessionInfo>> GetSessionsAsync(Uri endpoint, CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        JsonElement value = await PostMethodAsync(endpoint, "session/list", new { args = new { } }, cancellationToken);
+        // DSH 0.1.6's typert gateway requires the descriptor-declared argument
+        // name: session/list takes `_request`, unlike workspace/create and
+        // session/create which take `request`. Sending `{}` is rejected with
+        // gateway/arguments-invalid, which silently killed the tray
+        // "agent finished" signal.
+        JsonElement value = await PostMethodAsync(
+            endpoint,
+            "session/list",
+            new { args = new { _request = new { } } },
+            cancellationToken);
         return ParseSessions(value);
     }
 

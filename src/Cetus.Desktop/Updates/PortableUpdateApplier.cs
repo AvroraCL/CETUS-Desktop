@@ -13,6 +13,17 @@ namespace Cetus.Updates;
 internal static class PortableUpdateApplier
 {
     internal const string ManagedFilesManifestName = ".cetus-managed-files.json";
+
+    /// <summary>
+    /// A portable update is only declared healthy once the new build has
+    /// started DSH, loaded the page and written the marker. That path has to
+    /// absorb the port-occupied grace (15 s), the readiness wait (90 s) and
+    /// WebView2 initialization, so the old 90 s budget was shorter than a
+    /// merely slow first start — every miss triggered a rollback that relaunched
+    /// the previous build and killed DSH again.
+    /// </summary>
+    internal static readonly TimeSpan HealthBudget = TimeSpan.FromSeconds(180);
+
     internal static string FailureNoticePath => Path.Combine(
         CetusPaths.UpdateCacheDirectory,
         "portable-update-failure.txt");
@@ -39,7 +50,8 @@ internal static class PortableUpdateApplier
         string stagingDirectory,
         string targetDirectory,
         int processId,
-        string? zipPath = null)
+        string? zipPath = null,
+        Version? version = null)
     {
         if (!Directory.Exists(stagingDirectory))
         {
@@ -52,6 +64,7 @@ internal static class PortableUpdateApplier
         string backupPath = Path.Combine(CetusPaths.UpdateCacheDirectory, $"backup-{token}");
         string healthPath = Path.Combine(CetusPaths.UpdateCacheDirectory, $"update-health-{token}.ready");
         string logPath = Path.Combine(CetusPaths.UpdateCacheDirectory, "apply-update.log");
+        string manifestVersion = version is null ? string.Empty : version.ToString(3);
 
         string script = $$"""
             $ErrorActionPreference = 'Stop'
@@ -64,6 +77,8 @@ internal static class PortableUpdateApplier
             $log = {{Ps(logPath)}}
             $failureNotice = {{Ps(FailureNoticePath)}}
             $manifestName = '{{ManagedFilesManifestName}}'
+            $healthSeconds = {{(int)HealthBudget.TotalSeconds}}
+            $attemptVersion = {{Ps(manifestVersion)}}
 
             function Write-UpdateLog([string]$message) {
                 try {
@@ -145,13 +160,13 @@ internal static class PortableUpdateApplier
                 $newProcess = Start-Process -FilePath $exe -ArgumentList ('--update-health="' + $health + '"') -PassThru
 
                 $healthy = $false
-                for ($attempt = 0; $attempt -lt 180; $attempt++) {
+                for ($attempt = 0; $attempt -lt ($healthSeconds * 2); $attempt++) {
                     if (Test-Path -LiteralPath $health -PathType Leaf) { $healthy = $true; break }
                     if ($newProcess.HasExited) { throw "New CETUS process exited early with code $($newProcess.ExitCode)." }
                     Start-Sleep -Milliseconds 500
                     $newProcess.Refresh()
                 }
-                if (-not $healthy) { throw 'New CETUS did not become healthy within 90 seconds.' }
+                if (-not $healthy) { throw "New CETUS did not become healthy within $healthSeconds seconds." }
 
                 Write-UpdateLog 'Portable update completed successfully.'
                 Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction SilentlyContinue
@@ -171,8 +186,14 @@ internal static class PortableUpdateApplier
                 } catch {
                     Write-UpdateLog "Rollback encountered an additional error: $($_.Exception.Message)"
                 }
-                $notice = "新版本升级失败，已恢复旧版本。详情：$reason"
-                try { Set-Content -LiteralPath $failureNotice -Value $notice -Encoding UTF8 } catch { }
+                $notice = [ordered]@{
+                    version = $attemptVersion
+                    reason = "新版本升级失败，已恢复旧版本。详情：$reason"
+                    at = (Get-Date).ToString('o')
+                }
+                try {
+                    Set-Content -LiteralPath $failureNotice -Value ($notice | ConvertTo-Json -Compress) -Encoding UTF8
+                } catch { }
                 $oldExe = Join-Path $target 'Cetus.exe'
                 if (Test-Path -LiteralPath $oldExe -PathType Leaf) {
                     try { Start-Process -FilePath $oldExe -ErrorAction Stop } catch {

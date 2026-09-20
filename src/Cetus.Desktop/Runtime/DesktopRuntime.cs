@@ -72,6 +72,7 @@ internal sealed class DesktopRuntime
     private CancellationTokenSource? _startupCancellation;
     private CancellationTokenSource? _recoveryCancellation;
     private bool _isStarting;
+    private bool _isStopping;
     private bool _isExiting;
     private int _automaticRestartAttempts;
     private DateTimeOffset _lastReadyAt;
@@ -184,11 +185,16 @@ internal sealed class DesktopRuntime
                 Transition(State with { CanRetry = true });
             }
 
-            if (_pendingFailure is { } failure
+            // A failure observed while a start was in flight is only meaningful
+            // if that start actually reached Ready. Leaving it parked after a
+            // FAILED start makes the next successful start immediately kill the
+            // host that just came up — the "restarted right after launch" report.
+            DshHostFailureEventArgs? pending = _pendingFailure;
+            _pendingFailure = null;
+            if (pending is { } failure
                 && !_isExiting
                 && State.Phase == DesktopRuntimePhase.Ready)
             {
-                _pendingFailure = null;
                 BeginAutomaticRecovery(failure);
             }
         }
@@ -214,6 +220,14 @@ internal sealed class DesktopRuntime
         Transition(DesktopRuntimePhase.LoadingBrowser, "正在加载界面…", canRetry: false);
         await _browser.NavigateAsync(Endpoint, cancellationToken);
         _lastReadyAt = _timeProvider.GetUtcNow();
+
+        // Only StartAsync used to clear this phase, so any later navigation
+        // (workspace activation, Jump List, cetus:// link) left the runtime in
+        // LoadingBrowser and disabled the tray retry item until a restart.
+        if (!_isStarting && !_isExiting)
+        {
+            Transition(DesktopRuntimePhase.Ready, string.Empty, canRetry: true);
+        }
     }
 
     public async Task<DesktopRuntimeResult> RetryAsync(
@@ -276,19 +290,27 @@ internal sealed class DesktopRuntime
 
     public async Task StopAsync()
     {
-        if (State.Phase == DesktopRuntimePhase.Stopped)
+        if (State.Phase == DesktopRuntimePhase.Stopped || _isStopping)
         {
             return;
         }
 
-        _isExiting = true;
-        CancelStartup();
-        CancelAutomaticRecovery();
-        Transition(DesktopRuntimePhase.Stopping, "正在退出…", canRetry: false);
-        _browser.Hide();
-        await StopHostAsync();
-        DiscardHost();
-        Transition(DesktopRuntimePhase.Stopped, "已停止", canRetry: false);
+        _isStopping = true;
+        try
+        {
+            _isExiting = true;
+            CancelStartup();
+            CancelAutomaticRecovery();
+            Transition(DesktopRuntimePhase.Stopping, "正在退出…", canRetry: false);
+            _browser.Hide();
+            await StopHostAsync();
+            DiscardHost();
+            Transition(DesktopRuntimePhase.Stopped, "已停止", canRetry: false);
+        }
+        finally
+        {
+            _isStopping = false;
+        }
     }
 
     /// <summary>

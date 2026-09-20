@@ -218,11 +218,20 @@ public partial class MainWindow : Window
 
         try
         {
-            string detail = File.ReadAllText(path).Trim();
-            _tray?.ShowBalloonTip(
-                "CETUS 更新失败",
-                string.IsNullOrWhiteSpace(detail) ? "新版本启动失败，已恢复旧版本。" : detail,
-                null);
+            PortableUpdateFailureNotice? notice = PortableUpdateFailureNotice.TryRead(path);
+            string detail = notice?.Reason is { Length: > 0 } reason
+                ? reason
+                : "新版本启动失败，已恢复旧版本。";
+            _tray?.ShowBalloonTip("CETUS 更新失败", detail, null);
+
+            // Remember the failed version so the silent startup updater does not
+            // reinstall it and kill DSH again on every launch.
+            if (notice?.Version is { Length: > 0 } version
+                && Version.TryParse(version.Trim().TrimStart('v', 'V'), out Version? parsed))
+            {
+                UpdateRejection.Record(parsed);
+            }
+
             File.Delete(path);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)

@@ -218,9 +218,62 @@ public sealed class DesktopRuntimeTests
         Assert.Single(fallbacks);
     }
 
-    private sealed class RuntimeTestScope : IDisposable
+    [Fact]
+    public async Task StartAsync_FailureParkedAfterReady_DoesNotReplayOnTheNextRuntime()
     {
-        private readonly string? _originalPort;
+        using var scope = new RuntimeTestScope();
+        var firstHost = new FakeDshHost();
+        var browser = new FakeBrowserSession();
+        var first = scope.CreateRuntime(browser, new FakeDshHostFactory(_ => firstHost));
+        _ = await first.StartAsync();
+
+        // The host reports a failure while a later navigation is in flight, so
+        // it is parked until the startup critical section ends; reaching Ready
+        // replays it once.
+        browser.BeforeNavigate = () => firstHost.RaiseFailure(new DshHostFailureEventArgs(
+            DshHostFailureKind.HealthCheckFailed,
+            null,
+            null,
+            "probe"));
+        await first.NavigateHomeAsync();
+        await first.StopAsync();
+
+        // A fresh runtime with a healthy host must not inherit the parked
+        // failure: replaying it would kill a host that just came up, which is
+        // the "it restarted right after opening" report.
+        var healthyHost = new FakeDshHost();
+        var second = scope.CreateRuntime(new FakeBrowserSession(), new FakeDshHostFactory(_ => healthyHost));
+
+        DesktopRuntimeResult succeeded = await second.StartAsync();
+
+        Assert.True(succeeded.Succeeded);
+        Assert.Equal(DesktopRuntimePhase.Ready, second.State.Phase);
+        Assert.Equal(1, healthyHost.StartCount);
+        Assert.Equal(0, healthyHost.StopCount);
+    }
+
+    [Fact]
+    public async Task NavigateHomeAsync_FromReady_ReturnsToReadyAndKeepsRetryEnabled()
+    {
+        using var scope = new RuntimeTestScope();
+        var host = new FakeDshHost();
+        var browser = new FakeBrowserSession();
+        var runtime = scope.CreateRuntime(browser, new FakeDshHostFactory(_ => host));
+        Assert.True((await runtime.StartAsync()).Succeeded);
+
+        await runtime.NavigateHomeAsync();
+
+        // Workspace activation / Jump List navigations must not strand the
+        // runtime in LoadingBrowser, which used to disable the tray retry item.
+        Assert.Equal(DesktopRuntimePhase.Ready, runtime.State.Phase);
+        Assert.True(runtime.State.CanRetry);
+        Assert.Equal(2, browser.Navigations.Count);
+        Assert.Equal(1, host.StartCount);
+        Assert.Equal(0, host.StopCount);
+    }
+
+    private sealed class RuntimeTestScope : IDisposable
+    {        private readonly string? _originalPort;
         private readonly string _directory;
 
         public RuntimeTestScope()

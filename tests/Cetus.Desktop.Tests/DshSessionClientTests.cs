@@ -13,7 +13,7 @@ public sealed class DshSessionClientTests
     private static readonly Uri Endpoint = new("http://127.0.0.1:4301/");
 
     [Fact]
-    public async Task GetSessionsAsync_UsesSlashEndpointAndArgsWrapper()
+    public async Task GetSessionsAsync_UsesSlashEndpointAndUnderscoreRequestWrapper()
     {
         FakeDshHandler handler = new();
         handler.Responses.Enqueue(JsonResponse("""{ "result": { "ok": true, "value": { "items": [] } } }"""));
@@ -29,8 +29,15 @@ public sealed class DshSessionClientTests
         Assert.Equal("client-request", root.GetProperty("type").GetString());
         Assert.Equal("session/list", root.GetProperty("method").GetString());
         Assert.True(root.TryGetProperty("payload", out JsonElement payload));
-        Assert.Equal(JsonValueKind.Object, payload.GetProperty("args").ValueKind);
-        Assert.Empty(payload.GetProperty("args").EnumerateObject());
+
+        // DSH's typert gateway rejects an empty args object for session/list
+        // with gateway/arguments-invalid ("missing \"_request\""), which made
+        // every poll fail and silently disabled agent-finished notifications.
+        JsonElement args = payload.GetProperty("args");
+        Assert.Equal(JsonValueKind.Object, args.ValueKind);
+        Assert.True(args.TryGetProperty("_request", out JsonElement requestArg));
+        Assert.Equal(JsonValueKind.Object, requestArg.ValueKind);
+        Assert.Empty(requestArg.EnumerateObject());
     }
 
     [Fact]

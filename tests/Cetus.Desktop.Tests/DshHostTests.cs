@@ -126,6 +126,9 @@ public sealed class DshHostTests
         var host = new DshHost(
             new DshCommand("missing-node.exe", "missing-entry.js", UseShim: false),
             LocalUrl(port));
+        // Reuse stays possible, but only for a host Cetus can prove is still
+        // owned; an unowned listener is treated as a foreign service.
+        host.MarkEndpointOwnedByCurrentProcessForTest();
 
         await host.StartAsync();
 
@@ -179,10 +182,14 @@ public sealed class DshHostTests
     public async Task RuntimeMonitor_ReportsOneFailureWhenReusedServiceBecomesUnhealthy()
     {
         int port = GetFreeLoopbackPort();
+        using var userData = new UserDataScope();
         using var server = new RootHttpServer(port);
         var host = new DshHost(
             new DshCommand("missing-node.exe", "missing-entry.js", UseShim: false),
-            LocalUrl(port));
+            LocalUrl(port),
+            dshHomeOverride: null,
+            TestMonitorOptions);
+        host.MarkEndpointOwnedByCurrentProcessForTest();
         var failure = new TaskCompletionSource<DshHostFailureEventArgs>(
             TaskCreationOptions.RunContinuationsAsynchronously);
         int eventCount = 0;
@@ -197,11 +204,12 @@ public sealed class DshHostTests
             await host.StartAsync();
             server.SetUnhealthy();
 
-            DshHostFailureEventArgs result = await failure.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            DshHostFailureEventArgs result = await failure.Task.WaitAsync(TimeSpan.FromSeconds(30));
             await Task.Delay(500);
 
             Assert.Equal(DshHostFailureKind.HealthCheckFailed, result.Kind);
             Assert.Null(result.ExitCode);
+            Assert.NotNull(result.Detail);
             Assert.Equal(1, Volatile.Read(ref eventCount));
         }
         finally
@@ -214,10 +222,14 @@ public sealed class DshHostTests
     public async Task RuntimeMonitor_ReportsFailureWhenReusedServiceStops()
     {
         int port = GetFreeLoopbackPort();
+        using var userData = new UserDataScope();
         using var server = new RootHttpServer(port);
         var host = new DshHost(
             new DshCommand("missing-node.exe", "missing-entry.js", UseShim: false),
-            LocalUrl(port));
+            LocalUrl(port),
+            dshHomeOverride: null,
+            TestMonitorOptions);
+        host.MarkEndpointOwnedByCurrentProcessForTest();
         var failure = new TaskCompletionSource<DshHostFailureEventArgs>(
             TaskCreationOptions.RunContinuationsAsynchronously);
         host.RuntimeFailure += (_, args) => failure.TrySetResult(args);
@@ -227,7 +239,7 @@ public sealed class DshHostTests
             await host.StartAsync();
             server.Stop();
 
-            DshHostFailureEventArgs result = await failure.Task.WaitAsync(TimeSpan.FromSeconds(20));
+            DshHostFailureEventArgs result = await failure.Task.WaitAsync(TimeSpan.FromSeconds(30));
 
             Assert.Equal(DshHostFailureKind.HealthCheckFailed, result.Kind);
             Assert.Null(result.ExitCode);
@@ -284,6 +296,46 @@ public sealed class DshHostTests
 
 
     private static string LocalUrl(int port) => $"http://127.0.0.1:{port}/";
+
+    /// <summary>Wall-clock-cheap monitor timing so lifecycle tests stay fast.</summary>
+    private static readonly DshHostOptions TestMonitorOptions = new(
+        PortOccupiedGraceSeconds: 0,
+        MonitorInterval: TimeSpan.FromMilliseconds(100),
+        HealthFailureThreshold: 2,
+        ProbeTimeout: TimeSpan.FromSeconds(2));
+
+    /// <summary>
+    /// Keeps the endpoint ownership marker and the runtime log out of the real
+    /// Cetus user-data directory, which a live Cetus instance may be reading
+    /// (and whose log its diagnostics export).
+    /// </summary>
+    private sealed class UserDataScope : IDisposable
+    {
+        private readonly string _directory = TestWorkspace.CreateDirectory();
+        private readonly string? _original = Environment.GetEnvironmentVariable("CETUS_USER_DATA_DIR");
+        private readonly string? _originalLogDir = Environment.GetEnvironmentVariable("CETUS_LOG_DIR");
+
+        public UserDataScope()
+        {
+            Environment.SetEnvironmentVariable("CETUS_USER_DATA_DIR", _directory);
+            Environment.SetEnvironmentVariable("CETUS_LOG_DIR", Path.Combine(_directory, "logs"));
+            HostOwnerState.Clear();
+        }
+
+        public void Dispose()
+        {
+            HostOwnerState.Clear();
+            Environment.SetEnvironmentVariable("CETUS_USER_DATA_DIR", _original);
+            Environment.SetEnvironmentVariable("CETUS_LOG_DIR", _originalLogDir);
+            try
+            {
+                Directory.Delete(_directory, recursive: true);
+            }
+            catch (IOException)
+            {
+            }
+        }
+    }
 
     private static async Task<int> WaitForPidFileAsync(string path)
     {

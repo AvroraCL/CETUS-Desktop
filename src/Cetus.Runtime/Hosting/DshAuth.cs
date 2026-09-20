@@ -117,46 +117,55 @@ public static class DshAuth
     {
         try
         {
-            if (File.Exists(path))
+            string content = File.Exists(path) ? File.ReadAllText(path) : string.Empty;
+            if (content.Contains("client-connection/browser-session", StringComparison.Ordinal))
             {
-                string content = File.ReadAllText(path);
-                if (content.Contains("client-connection/browser-session", StringComparison.Ordinal))
-                {
-                    return;
-                }
-
-                var sb = new StringBuilder(content.TrimEnd());
-                sb.AppendLine();
-                if (!content.Contains("records:", StringComparison.Ordinal))
-                {
-                    sb.AppendLine("records:");
-                }
-                sb.AppendLine("  client-connection/browser-session:");
-                sb.AppendLine("    kind: grant");
-                sb.AppendLine("    payload:");
-                sb.AppendLine("      version: 1");
-                sb.AppendLine($"      secret: {secret}");
-                File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
+                return;
             }
-            else
+
+            // DSH parses this file strictly and refuses to boot without the
+            // top-level version header, so it is always emitted even when an
+            // existing (possibly empty) file is being extended. The write goes
+            // through a temp file + rename because DSH itself may be writing
+            // the same file at the same time.
+            var builder = new StringBuilder();
+            if (!HasTopLevelVersion(content))
             {
-                string content = $"""
-                    version: 1
-                    records:
-                      client-connection/browser-session:
-                        kind: grant
-                        payload:
-                          version: 1
-                          secret: {secret}
-
-                    """;
-                File.WriteAllText(path, content, Encoding.UTF8);
+                builder.AppendLine("version: 1");
             }
+
+            builder.Append(content.TrimEnd());
+            builder.AppendLine();
+            if (!content.Contains("records:", StringComparison.Ordinal))
+            {
+                builder.AppendLine("records:");
+            }
+
+            builder.AppendLine("  client-connection/browser-session:");
+            builder.AppendLine("    kind: grant");
+            builder.AppendLine("    payload:");
+            builder.AppendLine("      version: 1");
+            builder.AppendLine($"      secret: {secret}");
+
+            string temporary = path + ".cetus.tmp";
+            File.WriteAllText(temporary, builder.ToString(), Encoding.UTF8);
+            File.Move(temporary, path, overwrite: true);
         }
         catch (IOException)
         {
         }
+        catch (UnauthorizedAccessException)
+        {
+        }
     }
+
+    /// <summary>
+    /// True when the document already declares the document-level version.
+    /// Nested payload versions ("      version: 1") do not count.
+    /// </summary>
+    private static bool HasTopLevelVersion(string content) =>
+        content.Split('\n').Any(line =>
+            line.StartsWith("version:", StringComparison.Ordinal));
 
     public static string Base64Url(byte[] data) =>
         Convert.ToBase64String(data).Replace('+', '-').Replace('/', '_').TrimEnd('=');

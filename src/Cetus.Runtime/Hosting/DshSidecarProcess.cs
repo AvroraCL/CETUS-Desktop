@@ -12,7 +12,7 @@ internal sealed class DshSidecarExitedEventArgs(int exitCode) : EventArgs
 /// Owns exactly one spawned DSH process tree, Windows Job Object and sidecar
 /// log. Cleanup is idempotent across explicit stop and asynchronous exit.
 /// </summary>
-internal sealed class DshSidecarProcess
+internal sealed class DshSidecarProcess : IDshSidecarProcess
 {
     private readonly object _gate = new();
     private readonly SemaphoreSlim _logWriteGate = new(1, 1);
@@ -38,6 +38,10 @@ internal sealed class DshSidecarProcess
 
     public string LogPath { get; }
 
+    public int ProcessId { get; private set; }
+
+    public DateTimeOffset ProcessStartedAt { get; private set; }
+
     public static DshSidecarProcess Start(
         DshCommand command,
         Uri endpoint,
@@ -62,6 +66,15 @@ internal sealed class DshSidecarProcess
             job.Assign(process);
 
             var sidecar = new DshSidecarProcess(process, job, logStream, logPath);
+            sidecar.ProcessId = process.Id;
+            try
+            {
+                sidecar.ProcessStartedAt = process.StartTime;
+            }
+            catch (InvalidOperationException)
+            {
+                sidecar.ProcessStartedAt = DateTimeOffset.UtcNow;
+            }
             process = null;
             job = null;
             logStream = null!;
