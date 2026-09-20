@@ -52,6 +52,20 @@ internal sealed class AnnouncementWindow : Window
             await _browser.EnsureCoreWebView2Async(environment);
             _browser.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
             _browser.CoreWebView2.Settings.IsStatusBarEnabled = false;
+            // Outbound links (GitHub releases, etc.) belong in the system
+            // browser; the announcement window stays on the announcement page.
+            _browser.CoreWebView2.NewWindowRequested += (_, e) =>
+            {
+                e.Handled = true;
+                try
+                {
+                    System.Diagnostics.Process.Start(
+                        new System.Diagnostics.ProcessStartInfo(e.Uri) { UseShellExecute = true });
+                }
+                catch (System.ComponentModel.Win32Exception)
+                {
+                }
+            };
             _browser.CoreWebView2.Navigate(_url);
         }
         catch (Exception error) when (error is InvalidOperationException or IOException
