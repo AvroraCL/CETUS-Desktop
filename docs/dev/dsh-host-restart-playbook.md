@@ -72,6 +72,20 @@ Cetus 只有两把"刀"，其余都是触发条件：
 - `DshHostFailureClassificationTests`：鉴权被拒不杀主机、残留宿主不被认领、真实宕机只报一次且带原因。
 - `HostOwnerStateTests`：归属记录的写入、死进程、PID 复用、清理。
 - `UpdateRejectionTests`：黑名单与失败通知解析（含旧版纯文本格式）。
+- `UpdateNoticeStateTests`：页内更新提示的 C# 侧载荷契约。
+
+### 页内更新提示的跨语言验证
+
+更新卡片是注入 DSH 页面的 JavaScript，C# 单测覆盖不到，用 `tests/bridge/` 做真实执行验证：
+
+```powershell
+node tests\bridge\extract-bridge.js src\Cetus.Desktop\Browser\BrowserSession.cs
+node tests\bridge\run-bridge-test.js src\Cetus.Desktop\Browser\BrowserSession.cs.extracted.js
+```
+
+第二步在最小 DOM 垫片上真跑脚本，断言：无更新不渲染；有更新时卡片显示版本与说明；点主按钮发出 `cetus-update-install`；进行中禁用按钮并显示百分比；关闭按钮移除卡片并发出 `cetus-update-dismiss`；设置页那行显示"新版本 x.y.z"；页面加载时主动请求状态。
+
+该垫片**确实抓到过真问题**，所以每次改桥脚本都要重跑这条命令，退出码非 0 即失败。
 
 ## 7. 仍然存在的已知风险
 

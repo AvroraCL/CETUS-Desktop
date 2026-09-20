@@ -11,7 +11,7 @@ namespace Cetus.Browser;
 /// Owns the complete WebView2 session: environment initialization, trusted
 /// origin enforcement, external-link delegation and the Harness theme bridge.
 /// </summary>
-internal sealed class BrowserSession : IBrowserSession, IDisposable
+internal sealed class BrowserSession : IBrowserSession, IUpdateNoticeSink, IDisposable
 {
     private const string WindowBridgeSource = "cetus-window";
 
@@ -165,6 +165,178 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
             if (portPill) portPill.textContent = String(cetusSettingsState.dshPort || '');
             const dshPill = document.getElementById('cetus-setting-dsh');
             if (dshPill) dshPill.textContent = String(cetusSettingsState.dshVersion || '');
+
+            // The update card can be dismissed while the release stays available,
+            // so the settings row keeps a permanent way back to it.
+            const updatePill = document.getElementById('cetus-setting-update');
+            if (updatePill) {
+              const available = updateState && (updateState.available === true || updateState.available === 'true');
+              updatePill.textContent = available ? `新版本 ${updateState.version || ''}` : '检查更新…';
+              updatePill.dataset.pending = available ? 'true' : 'false';
+              updatePill.style.borderColor = available ? 'transparent' : '';
+              updatePill.style.color = available ? '#fff' : '';
+              updatePill.style.background = available
+                ? 'var(--dsw-alias-state-business-primary, #2f6bff)' : '';
+            }
+          };
+
+          // ── CETUS update notice, rendered inside the Harness page ──
+          const updateCardId = 'cetus-update-card';
+          let updateState = {};
+
+          const installUpdateStyle = () => {
+            if (document.getElementById('cetus-update-style')) return;
+            const style = document.createElement('style');
+            style.id = 'cetus-update-style';
+            style.textContent = `
+              #cetus-update-card {
+                position: fixed; right: 20px; bottom: 20px; z-index: 2147483000;
+                width: min(380px, calc(100vw - 40px));
+                box-sizing: border-box; padding: 16px 18px;
+                display: flex; flex-direction: column; gap: 10px;
+                border-radius: 14px; border: 1px solid var(--dsw-alias-border-l2, #0002);
+                background: var(--dsw-alias-bg-module-platform, #fff);
+                color: var(--dsw-alias-label-primary, #111);
+                box-shadow: 0 12px 32px #0000002e;
+                font-size: 13px; line-height: 1.5;
+                animation: cetus-update-in 0.22s ease-out; }
+              @keyframes cetus-update-in {
+                from { opacity: 0; transform: translateY(8px); }
+                to { opacity: 1; transform: none; } }
+              #cetus-update-card .cetus-update-title {
+                font-size: 14px; font-weight: 600; }
+              #cetus-update-card .cetus-update-version {
+                color: var(--dsw-alias-label-tertiary, #666); }
+              #cetus-update-card .cetus-update-notes {
+                max-height: 150px; overflow: auto; white-space: pre-wrap;
+                color: var(--dsw-alias-label-secondary, #444); }
+              #cetus-update-card .cetus-update-bar {
+                height: 4px; border-radius: 2px; overflow: hidden;
+                background: var(--dsw-alias-border-l3, #0001); }
+              #cetus-update-card .cetus-update-bar > i {
+                display: block; height: 100%; width: 0%;
+                background: var(--dsw-alias-state-business-primary, #2f6bff);
+                transition: width 0.2s var(--ds-ease-in-out, ease); }
+              #cetus-update-card .cetus-update-actions {
+                display: flex; align-items: center; gap: 8px; }
+              #cetus-update-card button {
+                font: inherit; cursor: pointer; border-radius: 8px;
+                border: 1px solid var(--dsw-alias-border-l3, #0002);
+                background: transparent; color: inherit; padding: 6px 12px; }
+              #cetus-update-card button.cetus-update-primary {
+                border-color: transparent; font-weight: 600; color: #fff;
+                background: var(--dsw-alias-state-business-primary, #2f6bff); }
+              #cetus-update-card button:disabled { opacity: 0.6; cursor: default; }
+              #cetus-update-card .cetus-update-close {
+                position: absolute; right: 8px; top: 6px; border: none;
+                padding: 2px 6px; font-size: 16px; line-height: 1;
+                background: transparent; color: var(--dsw-alias-label-tertiary, #888); }
+            `;
+            document.head.appendChild(style);
+          };
+
+          const buildUpdateCard = () => {
+            installUpdateStyle();
+            const card = document.createElement('div');
+            card.id = updateCardId;
+            card.setAttribute('role', 'status');
+
+            const close = document.createElement('button');
+            close.type = 'button';
+            close.className = 'cetus-update-close';
+            close.setAttribute('aria-label', '忽略此版本');
+            close.textContent = '×';
+            close.addEventListener('click', () => {
+              updateState = {};
+              postCetus({ type: 'cetus-update-dismiss' });
+              renderUpdateCard();
+            });
+            card.appendChild(close);
+
+            const title = document.createElement('div');
+            title.className = 'cetus-update-title';
+            card.appendChild(title);
+
+            const version = document.createElement('div');
+            version.className = 'cetus-update-version';
+            card.appendChild(version);
+
+            const notes = document.createElement('div');
+            notes.className = 'cetus-update-notes';
+            card.appendChild(notes);
+
+            const bar = document.createElement('div');
+            bar.className = 'cetus-update-bar';
+            const fill = document.createElement('i');
+            bar.appendChild(fill);
+            card.appendChild(bar);
+
+            const actions = document.createElement('div');
+            actions.className = 'cetus-update-actions';
+            card.appendChild(actions);
+
+            document.body.appendChild(card);
+
+            const primary = document.createElement('button');
+            primary.type = 'button';
+            primary.className = 'cetus-update-primary';
+            primary.addEventListener('click', () => {
+              if (primary.disabled || primary.dataset.mode !== 'install') return;
+              primary.disabled = true;
+              const ui = updateCard;
+              if (ui) {
+                ui.title.textContent = '正在准备更新…';
+                ui.bar.style.display = 'none';
+              }
+              postCetus({ type: 'cetus-update-install' });
+            });
+
+            const details = document.createElement('button');
+            details.type = 'button';
+            details.textContent = '查看发布说明';
+            details.addEventListener('click', () => postCetus({ type: 'cetus-update-details' }));
+
+            return { card, title, version, notes, bar, fill, actions, primary, details };
+          };
+
+          let updateCard = null;
+
+          const renderUpdateCard = () => {
+            const state = updateState || {};
+            const available = state.available === true || state.available === 'true';
+            if (!available || !state.version) {
+              if (updateCard) { updateCard.card.remove(); updateCard = null; }
+              return;
+            }
+
+            if (!document.body) return;
+            if (!updateCard) updateCard = buildUpdateCard();
+            const ui = updateCard;
+            ui.card.style.display = '';
+            ui.primary.disabled = false;
+            ui.version.textContent = `当前 ${state.current || '—'} → 新版本 ${state.version}`;
+            ui.notes.textContent = state.notes || '';
+            ui.notes.style.display = state.notes ? '' : 'none';
+
+            const busy = state.installing === true || state.installing === 'true';
+            const ready = state.ready === true || state.ready === 'true';
+            if (busy) {
+              const progress = Number(state.progress);
+              const known = Number.isFinite(progress) && progress > 0;
+              ui.title.textContent = '正在准备更新…';
+              ui.bar.style.display = known ? '' : 'none';
+              ui.fill.style.width = known ? `${Math.round(progress * 100)}%` : '0%';
+              ui.primary.textContent = known ? `${Math.round(progress * 100)}%` : '下载中…';
+              ui.primary.disabled = true;
+              ui.primary.dataset.mode = 'busy';
+            } else {
+              ui.title.textContent = '发现 CETUS 新版本';
+              ui.bar.style.display = 'none';
+              ui.primary.textContent = ready ? '安装并重启' : '立即更新';
+              ui.primary.dataset.mode = 'install';
+            }
+
+            ui.actions.replaceChildren(ui.primary, ui.details);
           };
 
           const installCetusSettings = () => {
@@ -190,9 +362,17 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
             bindSwitchRow(checkRow, checkRow.querySelector('.cetus-switch'));
             group.appendChild(checkRow);
 
-            const checkPill = cetusPill(null);
+            const checkPill = cetusPill('cetus-setting-update');
             checkPill.textContent = '检查更新…';
-            checkPill.addEventListener('click', () => postCetus({ type: 'cetus-check-updates' }));
+            checkPill.addEventListener('click', () => {
+              // Bring the card back if it was dismissed, then re-check.
+              if (updateState && (updateState.available === true || updateState.available === 'true')) {
+                renderUpdateCard();
+                return;
+              }
+              checkPill.textContent = '检查中…';
+              postCetus({ type: 'cetus-check-updates' });
+            });
             group.appendChild(cetusRow('检查更新', '手动检测 CETUS 新版本', checkPill));
 
             const notifyRow = cetusRow(
@@ -249,13 +429,20 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
             }
             window.chrome.webview.addEventListener('message', (event) => {
               const message = event.data;
-              if (message && message.source === source && message.type === 'cetus-settings-state') {
+              if (!message || message.source !== source) return;
+              if (message.type === 'cetus-settings-state') {
                 cetusSettingsState = message.values || {};
+                syncCetusSettings();
+              } else if (message.type === 'cetus-update-state') {
+                updateState = message.update || {};
+                renderUpdateCard();
                 syncCetusSettings();
               }
             });
             window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', report);
             installCetusSettings();
+            renderUpdateCard();
+            postCetus({ type: 'cetus-update-state-request' });
             report();
           };
           if (document.readyState === 'loading') {
@@ -273,6 +460,10 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
     private readonly Action? _openPortSettings;
     private readonly Action? _checkForUpdates;
     private readonly Action? _checkDshUpdate;
+    private readonly Action? _installUpdate;
+    private readonly Action? _openReleasePage;
+    private readonly Action? _dismissUpdate;
+    private readonly Func<string?>? _updateStateProvider;
     private LoopbackNavigationPolicy? _navigationPolicy;
     private bool _initialized;
     private bool _disposed;
@@ -284,7 +475,11 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
         Action<string, string>? cetusSettingChanged = null,
         Action? openPortSettings = null,
         Action? checkForUpdates = null,
-        Action? checkDshUpdate = null)
+        Action? checkDshUpdate = null,
+        Action? installUpdate = null,
+        Action? openReleasePage = null,
+        Action? dismissUpdate = null,
+        Func<string?>? updateStateProvider = null)
     {
         _view = view;
         _themeChanged = themeChanged;
@@ -293,6 +488,10 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
         _openPortSettings = openPortSettings;
         _checkForUpdates = checkForUpdates;
         _checkDshUpdate = checkDshUpdate;
+        _installUpdate = installUpdate;
+        _openReleasePage = openReleasePage;
+        _dismissUpdate = dismissUpdate;
+        _updateStateProvider = updateStateProvider;
     }
 
     /// <summary>
@@ -450,6 +649,7 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
         if (e.IsSuccess)
         {
             PostCetusSettingsState();
+            PostUpdateState();
         }
     }
 
@@ -496,6 +696,22 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
                 {
                     _checkForUpdates?.Invoke();
                 }
+                else if (type.GetString() == "cetus-update-state-request")
+                {
+                    PostUpdateState();
+                }
+                else if (type.GetString() == "cetus-update-install")
+                {
+                    _installUpdate?.Invoke();
+                }
+                else if (type.GetString() == "cetus-update-details")
+                {
+                    _openReleasePage?.Invoke();
+                }
+                else if (type.GetString() == "cetus-update-dismiss")
+                {
+                    _dismissUpdate?.Invoke();
+                }
             }
         }
         catch (JsonException)
@@ -521,6 +737,37 @@ internal sealed class BrowserSession : IBrowserSession, IDisposable
             values,
         }));
     }
+
+    /// <summary>
+    /// Pushes the current update state so the in-page notice can render. The
+    /// payload is produced by the update coordinator, which owns the meaning of
+    /// every field; when no coordinator exists or the page is not ready yet the
+    /// call is remembered and replayed after the next navigation.
+    /// </summary>
+    public void PostUpdateState()
+    {
+        if (_updateStateProvider is null)
+        {
+            return;
+        }
+
+        if (!_initialized || _disposed || _view.CoreWebView2 is not { } core)
+        {
+            // The page will ask for the state again once it loads.
+            return;
+        }
+
+        string json = _updateStateProvider() ?? EmptyUpdateState;
+        using JsonDocument update = JsonDocument.Parse(json);
+        core.PostWebMessageAsJson(JsonSerializer.Serialize(new
+        {
+            source = WindowBridgeSource,
+            type = "cetus-update-state",
+            update = update.RootElement.Clone(),
+        }));
+    }
+
+    private const string EmptyUpdateState = """{"available":false}""";
 
     private bool IsTrusted(string uriText)
     {

@@ -72,7 +72,11 @@ public partial class MainWindow : Window
             OnCetusSettingChanged,
             () => _ = ConfigurePortAsync(),
             () => _ = CheckForUpdatesFromSettingsAsync(),
-            () => _ = CheckDshUpdateAsync());
+            () => _ = CheckDshUpdateAsync(),
+            () => _ = EnsureUpdateCoordinator().InstallAvailableAsync(),
+            () => EnsureUpdateCoordinator().OpenAvailableReleasePage(),
+            () => EnsureUpdateCoordinator().DismissNotice(),
+            () => _updates?.UpdateStateJson());
         _runtime = new DesktopRuntime(_settings, _browserSession, Dispatcher);
         _runtime.StateChanged += OnRuntimeStateChanged;
         _runtime.PortFallback += OnPortFallback;
@@ -295,7 +299,9 @@ public partial class MainWindow : Window
                 ExitApplication,
                 _settings,
                 notify: (title, message, onClick) => _tray?.ShowBalloonTip(title, message, onClick),
-                openAnnouncement: OpenUpdateAnnouncement);
+                openAnnouncement: OpenUpdateAnnouncement,
+                browser: _browserSession,
+                showWindow: ShowWindow);
         }
 
         return _updates;
@@ -963,8 +969,14 @@ public partial class MainWindow : Window
             return;
         }
 
-        _updates ??= new UpdateCoordinator(this, ExitApplication, _settings);
-        await _updates.CheckForUpdatesAsync(interactive: true);
+        // Already holding a newer release: show it again instead of re-querying.
+        if (EnsureUpdateCoordinator().HasAvailableUpdate)
+        {
+            EnsureUpdateCoordinator().PostUpdateState();
+            return;
+        }
+
+        await EnsureUpdateCoordinator().CheckForUpdatesAsync(interactive: true);
     }
 
     /// <summary>

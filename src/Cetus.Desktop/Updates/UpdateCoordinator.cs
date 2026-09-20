@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Reflection;
 using System.Windows;
+using Cetus.Browser;
 using Cetus.Platform;
 using Cetus.Configuration;
 
@@ -24,15 +25,23 @@ internal sealed class UpdateCoordinator
     private readonly Action<string, string, Action?> _notify;
     private readonly Action<string>? _openAnnouncement;
     private readonly Action<string, MessageBoxImage>? _showInfo;
+    private readonly IUpdateNoticeSink? _browser;
+    private readonly Action? _showWindow;
     private string _releasesPageUrl = UpdateCheckResult.Failed("x").ReleasesPageUrl;
     private int _updateTaskRunning;
+    private AvailableUpdate? _available;
+    private Version? _dismissedVersion;
+    private bool _updateBusy;
+    private double _updateProgress;
 
     public UpdateCoordinator(
         Window owner,
         Action exitApplication,
         CetusSettings settings,
         Action<string, string, Action?>? notify = null,
-        Action<string>? openAnnouncement = null)
+        Action<string>? openAnnouncement = null,
+        IUpdateNoticeSink? browser = null,
+        Action? showWindow = null)
         : this(
             owner,
             exitApplication,
@@ -40,7 +49,10 @@ internal sealed class UpdateCoordinator
             settings,
             ReadCurrentVersion(),
             notify,
-            openAnnouncement)
+            openAnnouncement,
+            showInfo: null,
+            browser,
+            showWindow)
     {
     }
 
@@ -52,7 +64,9 @@ internal sealed class UpdateCoordinator
         Version currentVersion,
         Action<string, string, Action?>? notify = null,
         Action<string>? openAnnouncement = null,
-        Action<string, MessageBoxImage>? showInfo = null)
+        Action<string, MessageBoxImage>? showInfo = null,
+        IUpdateNoticeSink? browser = null,
+        Action? showWindow = null)
     {
         _owner = owner;
         _exitApplication = exitApplication;
@@ -62,6 +76,8 @@ internal sealed class UpdateCoordinator
         _notify = notify ?? ((_, _, _) => { });
         _openAnnouncement = openAnnouncement;
         _showInfo = showInfo;
+        _browser = browser;
+        _showWindow = showWindow;
     }
 
     public async Task CheckForUpdatesAsync(bool interactive)
@@ -99,10 +115,12 @@ internal sealed class UpdateCoordinator
 
                 if (!interactive)
                 {
-                    await AutoInstallAsync(found, result.Source, InstalledEdition.IsInstalled());
+                    await PrepareReleaseAsync(found, result.Source, InstalledEdition.IsInstalled());
                     return;
                 }
 
+                // A manual check re-surfaces a notice the user dismissed earlier.
+                _dismissedVersion = null;
                 await PresentAsync(found, InstalledEdition.IsInstalled(), result.Source);
                 return;
             }
@@ -112,6 +130,11 @@ internal sealed class UpdateCoordinator
                 return;
             }
 
+            // The in-page button shows "检查中…" while waiting; clearing the
+            // state resets it even when nothing newer exists.
+            _available = null;
+            _dismissedVersion = null;
+            PostUpdateState();
             ShowInfo(
                 result.Error is null ? "当前已是最新版本。" : $"检查更新失败：{result.Error}",
                 result.Error is null ? MessageBoxImage.Information : MessageBoxImage.Warning);
@@ -123,78 +146,170 @@ internal sealed class UpdateCoordinator
     }
 
     /// <summary>
-    /// Silent startup path: installed editions download the installer and
-    /// portable editions download the zip bundle — both install without any
-    /// prompt. Startup checks stay quiet; the release-notes role moved to
-    /// the GitHub Pages announcement page, which the new build opens after
-    /// the restart.
+    /// Startup path: a newer release is announced inside the Harness page
+    /// instead of being installed silently. The user decides when to download
+    /// and restart, so an update can never kill a running agent turn on its own.
     /// </summary>
-    private async Task AutoInstallAsync(ReleaseInfo release, UpdateFeedSource source, bool installedEdition)
+    private Task PrepareReleaseAsync(ReleaseInfo release, UpdateFeedSource source, bool installedEdition)
     {
-        if (!installedEdition)
-        {
-            if (DevModeFlag.IsActive)
-            {
-                // A DEV binary runs out of the build tree; mirroring a
-                // release bundle over it would destroy the checkout. Only
-                // real portable installs self-replace.
-                _notify(
-                    "CETUS 更新",
-                    $"发现新版本 {release.TagName}。开发构建不做自动升级，点击查看更新公告。",
-                    OpenAnnouncementPage);
-                return;
-            }
+        _available ??= new AvailableUpdate(release, source, installedEdition);
 
+        if (!installedEdition && DevModeFlag.IsActive)
+        {
+            // A DEV binary runs out of the build tree; mirroring a release
+            // bundle over it would destroy the checkout.
             _notify(
                 "CETUS 更新",
-                $"发现新版本 {release.TagName}，正在后台下载便携更新包，完成后将自动升级并重启。",
-                null);
-            SetTaskbarProgress(Indeterminate);
+                $"发现新版本 {release.TagName}。开发构建不做自动升级，点击查看更新公告。",
+                OpenAnnouncementPage);
+        }
+        else
+        {
+            _notify("CETUS 更新", $"发现新版本 {release.TagName}，可在 DSH 界面内一键更新。", ShowWindowForUpdate);
+        }
+
+        PostUpdateState();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>True while a newer release is known and installable on demand.</summary>
+    public bool HasAvailableUpdate => _available is not null;
+
+    /// <summary>Renders the in-page notice again after the user dismissed it.</summary>
+    public void DismissNotice()
+    {
+        _dismissedVersion = _available?.Release.Version;
+        PostUpdateState();
+        _ = CheckForUpdatesAsync(interactive: false);
+    }
+
+    /// <summary>Opens the release page for the available (or latest known) release.</summary>
+    public void OpenAvailableReleasePage()
+    {
+        if (_available is { } update)
+        {
             try
             {
-                await ApplyPortableUpdateAsync(null, null, release, source);
+                Process.Start(new ProcessStartInfo(UpdateCheckResult.ReleasesPageFor(update.Source))
+                {
+                    UseShellExecute = true,
+                });
+                return;
             }
-            catch (Exception error)
+            catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception)
             {
-                _notify("CETUS 更新失败", $"便携更新没有完成：{error.Message}", null);
             }
-            finally
-            {
-                SetTaskbarProgress(null);
-            }
+        }
 
+        OpenReleasesPage();
+    }
+
+    /// <summary>
+    /// Entry point for the in-page "update now" button: downloads when needed,
+    /// then hands off to the installer or the portable takeover script.
+    /// </summary>
+    public async Task InstallAvailableAsync()
+    {
+        if (_available is not { } update || _updateBusy)
+        {
             return;
         }
 
-        _notify(
-            "CETUS 更新",
-            $"发现新版本 {release.TagName}，正在后台下载，完成后将自动安装并重启。",
-            null);
+        _dismissedVersion = null;
+        _updateBusy = true;
+        SetBusy(0);
         SetTaskbarProgress(Indeterminate);
         try
         {
-            UpdateDownloadResult download = await _service.DownloadInstallerWithFallbackAsync(
-                release.Version,
-                source,
-                new Progress<double>(ReportTaskbarProgress),
-                CancellationToken.None);
-            _settings.SetUpdateSource(ToSettingValue(download.Source));
-            _notify("CETUS 更新", "下载完成，正在安装更新，CETUS 即将退出。", null);
-            Process.Start(new ProcessStartInfo(download.Path)
+            if (update.InstalledEdition)
             {
-                UseShellExecute = true,
-                Arguments = "/SILENT",
-            });
-            _exitApplication();
+                string installer = await _service.DownloadInstallerWithFallbackAsync(
+                    update.Release.Version,
+                    update.Source,
+                    new Progress<double>(ReportProgress),
+                    CancellationToken.None).ContinueWith(
+                        static task => task.Result.Path,
+                        TaskScheduler.Default);
+                _settings.SetUpdateSource(ToSettingValue(update.Source));
+                UpdateRejection.Clear(update.Release.Version);
+                Process.Start(new ProcessStartInfo(installer)
+                {
+                    UseShellExecute = true,
+                    Arguments = "/SILENT",
+                });
+                _exitApplication();
+                return;
+            }
+
+            UpdateDownloadResult bundle = await _service.DownloadPortableBundleWithFallbackAsync(
+                update.Release.Version,
+                update.Source,
+                new Progress<double>(ReportProgress),
+                CancellationToken.None);
+            _settings.SetUpdateSource(ToSettingValue(bundle.Source));
+            UpdateRejection.Clear(update.Release.Version);
+            SetBusy(0.999);
+            await ApplyPortableUpdateAsync(null, null, update.Release, update.Source);
         }
         catch (Exception error)
         {
-            _notify("CETUS 更新失败", $"自动更新没有完成：{error.Message}", null);
+            _notify("CETUS 更新失败", $"更新没有完成：{error.Message}", null);
+            _updateBusy = false;
+            SetBusy(0);
         }
         finally
         {
             SetTaskbarProgress(null);
         }
+    }
+
+    private void ReportProgress(double value)
+    {
+        SetTaskbarProgress(value);
+        SetBusy(value);
+    }
+
+    private void SetBusy(double progress)
+    {
+        _updateBusy = true;
+        _updateProgress = progress;
+        PostUpdateState();
+    }
+
+    private void ShowWindowForUpdate() => _showWindow?.Invoke();
+
+    /// <summary>Update state consumed by the injected page notice.</summary>
+    public string UpdateStateJson()
+    {
+        if (_available is not { } update)
+        {
+            return UpdateNoticeState.Unavailable();
+        }
+
+        return UpdateNoticeState.For(
+            update.Release,
+            update.Source,
+            _currentVersion,
+            _updateBusy,
+            _updateProgress,
+            _dismissedVersion is not null && _dismissedVersion == update.Release.Version);
+    }
+
+    /// <summary>Pushes the current update state into the Harness page.</summary>
+    public void PostUpdateState() => _browser?.PostUpdateState();
+
+    /// <summary>Pushes the current update state only when a notice can change.</summary>
+    private void PostUpdateStateIfKnown()
+    {
+        if (_available is not null)
+        {
+            PostUpdateState();
+        }
+    }
+
+    private async Task AutoInstallAsync(ReleaseInfo release, UpdateFeedSource source, bool installedEdition)
+    {
+        await PrepareReleaseAsync(release, source, installedEdition);
     }
 
     private static string ToSettingValue(UpdateFeedSource source) => source switch
