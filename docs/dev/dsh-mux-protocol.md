@@ -1,6 +1,6 @@
 # DSH 流复用协议笔记（/api/remote.mux）
 
-研究目的：评估"任务等待输入"托盘通知的可行性。结论：协议可逆向、可由 .NET `ClientWebSocket` 实现，但等待输入的判定字段还需跟进会话事件类型枚举，整体按 3-4 小时独立立项。本文记录 2026-09-20 对 `@deepseek-ai/dsh@0.1.6-alpha.2` 的逆向结果（`dsh-api-gateway/lib/index.js`）。
+研究目的：评估"任务等待输入"托盘通知的可行性。结论：协议可逆向、可由 .NET `ClientWebSocket` 实现。基础协议客户端已落地为 `Cetus.Runtime/Hosting/DshStreamMuxClient.cs`（真实 WebSocket 端到端测试见 `DshStreamMuxClientTests`）；"等待输入"业务接线仍需跟进会话事件类型枚举，按 2-3 小时独立立项。本文记录 2026-09-20 对 `@deepseek-ai/dsh@0.1.6-alpha.2` 的逆向结果（`dsh-api-gateway/lib/index.js`）。
 
 ## 传输
 
