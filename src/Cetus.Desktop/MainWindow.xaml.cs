@@ -590,6 +590,8 @@ public partial class MainWindow : Window
                 RetentionCleaner.PruneLogs(CetusPaths.LogDirectory);
                 RetentionCleaner.PruneStaleFiles(
                     CetusPaths.UpdateCacheDirectory, "*.exe", RetentionCleaner.DefaultUpdateCacheMaxAge);
+                RetentionCleaner.PruneStaleFiles(
+                    CetusPaths.UpdateCacheDirectory, "*.zip", RetentionCleaner.DefaultUpdateCacheMaxAge);
                 RetentionCleaner.PruneStaleDirectories(
                     CetusPaths.UpdateCacheDirectory, "staging-", RetentionCleaner.DefaultUpdateCacheMaxAge);
             });
