@@ -307,11 +307,6 @@ internal sealed class UpdateCoordinator
         }
     }
 
-    private async Task AutoInstallAsync(ReleaseInfo release, UpdateFeedSource source, bool installedEdition)
-    {
-        await PrepareReleaseAsync(release, source, installedEdition);
-    }
-
     private static string ToSettingValue(UpdateFeedSource source) => source switch
     {
         UpdateFeedSource.GitCode => "gitcode",

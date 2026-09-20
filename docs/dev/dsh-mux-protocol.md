@@ -36,9 +36,11 @@
 
 ## 待跟进（实现"等待输入"前必查）
 
-1. **判定字段仍未完全定位**（截至本文）：会话事件类型没有集中枚举，分散在 `dsh-agent-loop`（tool-call 调度）与 `dsh-client-ui-conversation`（事件归并渲染）中。已确认的线索：
-   - UI 存在 Ask question（向用户提问）机制，i18n 含 `ask.waiting`（"waiting"）/`ask.cancelled`/`ask.answered` 等状态——这是"等待用户输入"最直接的信号源，需继续定位其承载的投影/事件；
-   - 会话相位 `conversationPhase` 在 `!running && promptAttempted` 时为 `engaging`（空闲等待用户）——与 `session.list` 的 `running` 字段组合即可区分"空闲等待用户"与"从未开始"，可作为轮询版的粗粒度判定。
-2. 快照/增量事件的具体 envelope（`{type:"event", event}` 的内部结构）。
+1. **判定路径已收敛，实现按 2-3 小时立项**：
+   - "等待输入"源自 **`@deepseek-ai/dsh-user-questions`** 的 `user-questions/request` waterfall 服务：agent 提问时**同步挂起等待 answerer**，期间 `running` 大概率保持 true——因此 `session.list` 轮询（当前任务完成通知的机制）**原理上检测不到等待审批**，必须订阅 `session/follow` 事件流；
+   - 问题状态在内存 waterfall 中、不进 `session.list` 投影（投影仅有 title/sessionListMetadata{blank,lastPromptAt}/subagent/agentPreset 等）；
+   - **判定规则（待事件 envelope 确认后实现）**：follow 流中出现未闭合的 ask 展示事件（无 answered/cancelled 对应）即"等待输入"；UI 侧 i18n 确认存在 `ask.waiting`（"waiting"）状态；
+   - 会话相位 `conversationPhase` 在 `!running && promptAttempted` 时为 `engaging`（空闲等待用户）——可作为"空闲等待下一条消息"的粗粒度判定。
+2. 快照/增量事件的具体 envelope（`{type:"event", event}` 的内部结构）与 ask 展示事件的字段。
 3. 心跳参数：`websocketHeartbeatIntervalMs` 默认值；`MAX_MISSED_HEARTBEATS = 2`，客户端需响应 ping（`ClientWebSocket` 自动处理）。
 4. 帧中 `value` 的 typert 解码（controller 用 strict codec，字段名以 typert.host.js 为准）。
