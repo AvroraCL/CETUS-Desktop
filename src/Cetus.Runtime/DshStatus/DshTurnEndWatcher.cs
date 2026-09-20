@@ -18,7 +18,7 @@ public sealed record DshTurnEndedEventArgs(string SessionId, string Title, strin
 public sealed class DshTurnEndWatcher : IDisposable
 {
     private static readonly TimeSpan SessionDiscoveryInterval = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan FollowHoldInterval = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan FollowHoldInterval = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(5);
 
     private readonly DshSessionClient _sessions;

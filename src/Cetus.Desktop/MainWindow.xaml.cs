@@ -845,6 +845,8 @@ public partial class MainWindow : Window
         _backgroundHeartbeat?.Stop();
         _backgroundHeartbeat = null;
         SaveWindowPlacement();
+        _turnEndWatcher?.Dispose();
+        _turnEndWatcher = null;
         _tray?.Dispose();
         _tray = null;
         _hotkeys?.Dispose();
@@ -869,6 +871,8 @@ public partial class MainWindow : Window
         _hotkeys = null;
         _sessionWatcher?.Dispose();
         _sessionWatcher = null;
+        _turnEndWatcher?.Dispose();
+        _turnEndWatcher = null;
         _dshSessionClient?.Dispose();
         _dshSessionClient = null;
         _windowComposition?.Dispose();
