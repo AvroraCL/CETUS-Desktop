@@ -25,7 +25,7 @@ CETUS 把官方 Web UI、Agent 能力和插件生态装进一个开箱即用的 
 - 关闭窗口后驻留系统托盘，随时重新打开
 - 保证应用单实例运行，避免重复启动多个 Harness
 - 退出 CETUS 时自动回收由它启动的 Node 子进程
-- 启动时自动检查新版本并静默升级：安装版走静默安装器，便携版自动镜像替换当前目录并重启；下载前对 GitHub/GitCode 双源测速、从更快的源下载，失败自动回退
+- 启动时自动检查新版本并静默升级：并发检查 GitHub/GitCode 并选择最高版本，下载失败自动切换同版本备用源；安装版走静默安装器，便携版保留用户文件并在升级失败时自动回滚
 - 完整复用 DeepSeek Harness 的 Agent 能力与插件生态
 - 工作区直达：`Cetus.exe <目录>`、任务栏 Jump List、托盘「最近工作区」或 `cetus://open?path=…` 链接，均可一步打开指定目录的会话；已运行时自动转发给现有窗口
 - 会话任务完成时弹出托盘通知（仅当 CETUS 不在前台时提醒，点击气泡直接回到那个会话）；更新下载进度显示在任务栏图标上
@@ -33,12 +33,12 @@ CETUS 把官方 Web UI、Agent 能力和插件生态装进一个开箱即用的 
 - 可选开机自启：登录 Windows 后 CETUS 在后台启动并驻留托盘，DSH 提前就绪、点开即用
 - DSH 设置页内建「CETUS设置」：启动检查更新、手动检查更新、任务完成提醒、全局快捷键、开机自启、关闭按钮行为（托盘/退出）、DSH 端口、DSH 版本查询，改动实时保存
 
-### 下载 v0.3.1
+### 下载 v0.3.2
 
 | 文件 | 说明 |
 |---|---|
-| [Cetus-Setup-0.3.1.exe](https://github.com/AvroraCL/CETUS-Desktop/releases/download/v0.3.1/Cetus-Setup-0.3.1.exe) | 中文安装向导，按当前用户安装，无需管理员权限 |
-| [Cetus-0.3.1-win-x64-portable.zip](https://github.com/AvroraCL/CETUS-Desktop/releases/download/v0.3.1/Cetus-0.3.1-win-x64-portable.zip) | 便携版，解压后直接运行 |
+| [Cetus-Setup-0.3.2.exe](https://github.com/AvroraCL/CETUS-Desktop/releases/download/v0.3.2/Cetus-Setup-0.3.2.exe) | 中文安装向导，按当前用户安装，无需管理员权限 |
+| [Cetus-0.3.2-win-x64-portable.zip](https://github.com/AvroraCL/CETUS-Desktop/releases/download/v0.3.2/Cetus-0.3.2-win-x64-portable.zip) | 便携版，解压后直接运行 |
 
 历史版本与更新日志见 [Releases](https://github.com/AvroraCL/CETUS-Desktop/releases)。
 
@@ -200,9 +200,9 @@ scripts\installer-smoke.ps1 -InstallerPath dist\Cetus-Setup-<版本>.exe -Expect
 
 版本信息：
 
-- 文件版本：`0.0.2.0`
+- 文件版本：`0.0.3.2`
 - 产品名称：`CETUS鲸鱼座`
-- 产品版本：`0.2.0`
+- 产品版本：`0.3.2`
 - 版权：`AvroraCL`
 
 ### 验证场景
