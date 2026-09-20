@@ -35,7 +35,11 @@ class Element {
     this.dataset = {};
     this.attributes = {};
     this.listeners = {};
-    this.style = {};
+    this.style = {
+      _props: {},
+      setProperty(name, value) { this._props[name] = value; },
+      getPropertyValue(name) { return this._props[name] ?? ''; },
+    };
     this.textContent = '';
     this.disabled = false;
     this._id = '';
@@ -51,6 +55,7 @@ class Element {
   }
   get className() { return this._className; }
   get parentElement() { return this.parent; }
+  getBoundingClientRect() { return { right: 0, width: 0, top: 0, left: 0, bottom: 0, height: 0 }; }
   setAttribute(name, value) { this.attributes[name] = String(value); if (name === 'id') this._id = String(value); }
   getAttribute(name) { return this.attributes[name] ?? null; }
   removeAttribute(name) { delete this.attributes[name]; }
@@ -120,13 +125,7 @@ const document = {
   addEventListener(type, handler) { (this._listeners[type] ||= []).push(handler); },
   dispatch(type, event = {}) { (this._listeners[type] || []).forEach((h) => h(event)); },
   dispatch(type, event = {}) { (this._listeners[type] || []).forEach((h) => h(event)); },
-  querySelectorAll: (selector) => {
-    const result = queryFrom(document.documentElement, selector);
-    if (selector.includes('dialog') || selector.includes('settings.general') || selector.includes('cetus-settings-group')) {
-      console.log('probe query', JSON.stringify(selector), '->', result.length);
-    }
-    return result;
-  },
+  querySelectorAll: (selector) => queryFrom(document.documentElement, selector),
   querySelector: (selector) => queryFrom(document.documentElement, selector)[0] ?? null,
 };
 document.documentElement.appendChild(document.head);
@@ -160,16 +159,11 @@ sandbox.window = {
     },
   },
   matchMedia: () => ({ matches: false, addEventListener() {} }),
+  innerWidth: 1400,
+  innerHeight: 900,
 };
 sandbox.globalThis = sandbox;
 
-// Probe every selector the bridge is about to use, before it runs.
-const bridgedQuery = document.querySelectorAll.bind(document);
-document.querySelectorAll = (selector) => {
-  const result = bridgedQuery(selector);
-  console.log('probe query', JSON.stringify(selector), '->', result.length);
-  return result;
-};
 vm.createContext(sandbox);
 vm.runInContext(source, sandbox, { filename: 'bridge.js' });
 
@@ -225,9 +219,6 @@ check('close button present', closeButton !== undefined);
 const cardBefore = card();
 closeButton.dispatch('click');
 const cardAfter = card();
-console.log('probe: after click body kids=', document.body.children.length,
-  '| card.parent=', cardAfter ? (cardAfter.parent ? cardAfter.parent.tagName : 'null') : 'no-element',
-  '| body has it=', cardAfter ? document.body.children.includes(cardAfter) : 'n/a');
 check('card removed after dismiss', cardAfter === null, cardBefore === cardAfter ? 'same node still mounted' : 'other');
 check('dismiss message posted', posted.some((m) => m.type === 'cetus-update-dismiss'));
 
@@ -238,10 +229,6 @@ receive({
   type: 'cetus-update-state',
   update: { available: true, dismissed: false, version: 'v0.3.4', current: '0.3.3', notes: '', installing: false, progress: 0 },
 });
-console.log('probe: dialog=', document.querySelectorAll('div[role="dialog"][aria-modal="true"]').length,
-  'slot=', document.querySelectorAll('[data-slot="settings.general.item"]').length,
-  'bodyKids=', document.body.children.length,
-  'known ids=', JSON.stringify(allElements.map((e) => e.id).filter(Boolean)));
 const pill = document.getElementById('cetus-setting-update');
 check('settings row built inside the dialog', pill !== null);
 

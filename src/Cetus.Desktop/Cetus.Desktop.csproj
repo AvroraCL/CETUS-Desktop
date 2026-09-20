@@ -21,6 +21,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Embedded so tests/bridge can run the exact script the page receives. -->
+    <EmbeddedResource Include="Browser\BridgeScript.js" LogicalName="Cetus.BridgeScript.js" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Cetus.Runtime\Cetus.Runtime.csproj" />
   </ItemGroup>
 

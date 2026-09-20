@@ -40,6 +40,19 @@ Cetus 只有两把"刀"，其余都是触发条件：
 | 打开工作区 / Jump List / `cetus://` / 任务栏跳转后页面重载、会话变空 | `FocusSessionCoreAsync` 会 `NavigateHomeAsync()` 并**新建会话** | 预期行为（不是主机重启）；若托盘"重试连接 DSH"变灰，是被 `LoadingBrowser` 卡住，已修复 |
 | `session/list` 每 10 秒失败一次 | 参数形状过时（`{}` → 需 `_request`） | 已修复 |
 | 主机在长任务中被杀、进度丢失 | 事件循环被同步 SQLite 等操作阻塞，2 秒探针 ×3 次即判死 | 已放宽：超时 5s、间隔 3s、阈值 10 次，并在杀之前加一次复核探测 |
+| DSH 侧边栏的"浏览器"打不开网页、一片空白 | `OnFrameNavigationStarting` 取消了**一切**非回环帧导航，而该面板正是 `<iframe src="外部网址">` | 已修复：帧导航放行 http/https，仅拒绝 `file:`/`javascript:`/`data:`/外部协议；顶层导航仍严格限制在 DSH 源 |
+
+## 3. 嵌入式浏览器的导航边界
+
+两套策略刻意不同，改动时不要合并：
+
+| 场景 | 处理 | 代码 |
+| --- | --- | --- |
+| 顶层导航（整个界面被替换） | 必须是配置的 DSH 回环源，其它一律取消并交给系统浏览器打开 | `OnTopLevelNavigationStarting` + `LoopbackNavigationPolicy` |
+| 帧导航（侧边栏浏览器、页面内嵌 frame） | 放行 http/https；拒绝 `file:`、`javascript:`、`data:`、`about:`、外部协议处理器 | `OnFrameNavigationStarting` + `IsWebDocument` |
+| 新窗口请求 | 一律交给系统浏览器（`window.open` 从侧边栏"逃出"） | `OnNewWindowRequested` |
+
+回归测试在 `BrowserFramePolicyTests`：它同时钉住"帧可上网"和"顶层不可离开 DSH 源"两侧，避免以后为了修一边而破坏另一边。
 
 ## 3. 健康判定语义（修改后）
 
