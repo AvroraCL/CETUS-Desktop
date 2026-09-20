@@ -271,7 +271,8 @@ internal sealed class UpdateCoordinator
 
     private void SetBusy(double progress)
     {
-        _updateBusy = true;
+        // Only mirrors state for the page notice; _updateBusy is owned by
+        // the install flow itself (set on entry, cleared on failure).
         _updateProgress = progress;
         PostUpdateState();
     }
