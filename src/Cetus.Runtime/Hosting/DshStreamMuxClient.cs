@@ -35,6 +35,9 @@ public sealed class DshStreamMuxClient : IDisposable
 
     public bool IsConnected => _socket is { State: WebSocketState.Open };
 
+    /// <summary>The error that ended the receive loop, if any.</summary>
+    public Exception? LastError { get; private set; }
+
     /// <summary>Raised on the receive loop thread for every stream item.</summary>
     public event Action<DshMuxItem>? Item;
 
@@ -145,13 +148,11 @@ public sealed class DshStreamMuxClient : IDisposable
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
         }
-        catch (WebSocketException)
-        {
-        }
-        catch (JsonException)
+        catch (Exception error) when (error is WebSocketException or JsonException)
         {
             // A malformed frame ends the connection the same way the server
             // treats one of ours: drop the socket instead of guessing.
+            LastError = error;
         }
         finally
         {
