@@ -12,6 +12,23 @@ public sealed class LaunchArgsTests
 
         Assert.False(request.StartInBackground);
         Assert.Null(request.WorkspacePath);
+        Assert.Null(request.UpdateHealthPath);
+    }
+
+    [Fact]
+    public void Parse_UpdateHealth_AcceptsOnlyRandomFileBelowUpdateCache()
+    {
+        string valid = System.IO.Path.Combine(
+            CetusPaths.UpdateCacheDirectory,
+            $"update-health-{Guid.NewGuid():N}.ready");
+        string validNameOutsideCache = System.IO.Path.Combine(
+            System.IO.Path.GetDirectoryName(CetusPaths.UpdateCacheDirectory)!,
+            "outside",
+            $"update-health-{Guid.NewGuid():N}.ready");
+
+        Assert.Equal(valid, LaunchArgs.Parse([$"--update-health={valid}"]).UpdateHealthPath);
+        Assert.Null(LaunchArgs.Parse([$"--update-health={validNameOutsideCache}"]).UpdateHealthPath);
+        Assert.Null(LaunchArgs.Parse([$"--update-health={System.IO.Path.Combine(CetusPaths.UpdateCacheDirectory, "predictable.ready")}"]).UpdateHealthPath);
     }
 
     [Fact]

@@ -142,14 +142,23 @@ end;
 function GetDefaultDir(Param: String): String;
 var
   RecordFile: String;
-  Recorded: AnsiString;
+  RecordedLines: TArrayOfString;
   RecordedPath: String;
+  I: Integer;
 begin
   Result := ExpandConstant('{localappdata}\Cetus');
   RecordFile := ExpandConstant('{localappdata}\Cetus\portable-install.txt');
   if not FileExists(RecordFile) then exit;
-  if not LoadStringFromFile(RecordFile, Recorded) then exit;
-  RecordedPath := Trim(String(Recorded));
+  if not LoadStringsFromFile(RecordFile, RecordedLines) then exit;
+  RecordedPath := '';
+  for I := 0 to GetArrayLength(RecordedLines) - 1 do
+  begin
+    if Trim(RecordedLines[I]) <> '' then
+    begin
+      RecordedPath := Trim(RecordedLines[I]);
+      break;
+    end;
+  end;
   if (Length(RecordedPath) > 3) and
      DirExists(RecordedPath) and
      FileExists(RecordedPath + '\Cetus.exe') then

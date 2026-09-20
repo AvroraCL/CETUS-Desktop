@@ -3,9 +3,9 @@ using Cetus.Configuration;
 
 namespace Cetus;
 
-internal sealed record LaunchRequest(bool StartInBackground, string? WorkspacePath)
+internal sealed record LaunchRequest(bool StartInBackground, string? WorkspacePath, string? UpdateHealthPath)
 {
-    public static readonly LaunchRequest Empty = new(false, null);
+    public static readonly LaunchRequest Empty = new(false, null, null);
 }
 
 /// <summary>
@@ -20,6 +20,7 @@ internal static class LaunchArgs
     {
         bool startInBackground = false;
         string? workspacePath = null;
+        string? updateHealthPath = null;
 
         foreach (string rawArg in args)
         {
@@ -29,10 +30,41 @@ internal static class LaunchArgs
                 continue;
             }
 
+            if (rawArg.StartsWith("--update-health=", StringComparison.OrdinalIgnoreCase))
+            {
+                updateHealthPath ??= ValidateUpdateHealthPath(rawArg["--update-health=".Length..]);
+                continue;
+            }
+
             workspacePath ??= ResolveWorkspacePath(rawArg);
         }
 
-        return new LaunchRequest(startInBackground, workspacePath);
+        return new LaunchRequest(startInBackground, workspacePath, updateHealthPath);
+    }
+
+    internal static string? ValidateUpdateHealthPath(string candidate)
+    {
+        try
+        {
+            string fullPath = Path.GetFullPath(candidate);
+            string cacheRoot = Path.GetFullPath(CetusPaths.UpdateCacheDirectory)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                + Path.DirectorySeparatorChar;
+            string fileName = Path.GetFileName(fullPath);
+            bool validName = fileName.StartsWith("update-health-", StringComparison.OrdinalIgnoreCase)
+                && fileName.EndsWith(".ready", StringComparison.OrdinalIgnoreCase)
+                && Guid.TryParseExact(
+                    fileName["update-health-".Length..^".ready".Length],
+                    "N",
+                    out _);
+            return validName && fullPath.StartsWith(cacheRoot, StringComparison.OrdinalIgnoreCase)
+                ? fullPath
+                : null;
+        }
+        catch (Exception error) when (error is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null;
+        }
     }
 
     /// <summary>Directory path, or null when the argument is not an existing directory.</summary>

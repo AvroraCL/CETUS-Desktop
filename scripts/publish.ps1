@@ -80,6 +80,19 @@ Copy-Item $runtimeLayout.DshRoot (Join-Path $appDir "runtime\dsh") -Recurse -For
     "built=$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss zzz')"
 ) | Set-Content (Join-Path $appDir "runtime\VERSIONS.txt") -Encoding UTF8
 
+$managedManifestName = ".cetus-managed-files.json"
+$managedFiles = @(
+    Get-ChildItem -LiteralPath $appDir -Recurse -File |
+        ForEach-Object { $_.FullName.Substring($appDir.Length + 1).Replace('\', '/') }
+) + $managedManifestName
+$managedManifest = [ordered]@{
+    schemaVersion = 1
+    fullyManagedDirectories = @("runtime")
+    files = @($managedFiles | Sort-Object -Unique)
+}
+$managedManifest | ConvertTo-Json -Depth 4 |
+    Set-Content -LiteralPath (Join-Path $appDir $managedManifestName) -Encoding utf8NoBOM
+
 $defaultInstallRoot = Join-Path $env:LOCALAPPDATA "Cetus"
 $longestInstalledPath = Get-ChildItem -LiteralPath $appDir -Recurse -File |
     ForEach-Object {

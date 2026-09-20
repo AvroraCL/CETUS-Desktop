@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Cetus.Configuration;
 
 namespace Cetus.DshStatus;
 
@@ -21,6 +22,7 @@ public sealed class DshSessionWatcher : IDisposable
     private readonly TimeProvider _timeProvider;
     private readonly TimeSpan _pollInterval;
     private readonly TimeSpan _completionCooldown;
+    private readonly Action<string> _log;
     private readonly object _gate = new();
 
     private Dictionary<string, bool> _runningBySession = new(StringComparer.Ordinal);
@@ -29,19 +31,22 @@ public sealed class DshSessionWatcher : IDisposable
     private Task? _loop;
     private bool _hasBaseline;
     private bool _disposed;
+    private int _consecutiveFailures;
 
     public DshSessionWatcher(
         DshSessionClient client,
         Func<Uri> endpoint,
         TimeProvider? timeProvider = null,
         TimeSpan? pollInterval = null,
-        TimeSpan? completionCooldown = null)
+        TimeSpan? completionCooldown = null,
+        Action<string>? log = null)
     {
         _client = client;
         _endpoint = endpoint;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _pollInterval = pollInterval ?? DefaultPollInterval;
         _completionCooldown = completionCooldown ?? DefaultCompletionCooldown;
+        _log = log ?? RuntimeLog.Append;
     }
 
     /// <summary>Raised on the poll loop thread after each completion is detected.</summary>
@@ -71,29 +76,52 @@ public sealed class DshSessionWatcher : IDisposable
                 try
                 {
                     await PollOnceAsync(token);
+                    if (_consecutiveFailures > 0)
+                    {
+                        _log($"DSH session polling recovered after {_consecutiveFailures} failure(s).");
+                        _consecutiveFailures = 0;
+                    }
                 }
-                catch (IOException)
+                catch (IOException error)
                 {
-                    // Transient transport failures simply retry next tick.
+                    RecordTransientFailure(error);
                 }
-                catch (HttpRequestException)
+                catch (HttpRequestException error)
                 {
+                    RecordTransientFailure(error);
                 }
-                catch (InvalidOperationException)
+                catch (InvalidOperationException error)
                 {
+                    RecordTransientFailure(error);
                 }
-                catch (JsonException)
+                catch (JsonException error)
                 {
+                    RecordTransientFailure(error);
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested)
                 {
                     return;
+                }
+                catch (OperationCanceledException error)
+                {
+                    // HttpClient reports its own request timeout as cancellation.
+                    // Preserve the last state and retry on the next tick.
+                    RecordTransientFailure(error);
                 }
             }
         }
         catch (OperationCanceledException)
         {
             // Expected on Dispose.
+        }
+    }
+
+    private void RecordTransientFailure(Exception error)
+    {
+        int count = ++_consecutiveFailures;
+        if (count == 1 || count % 6 == 0)
+        {
+            _log($"DSH session polling failed ({count} consecutive): {error.Message}");
         }
     }
 

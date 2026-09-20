@@ -115,6 +115,44 @@ public sealed class DshSessionWatcherTests
         Assert.Equal("新会话", finished.Title);
     }
 
+    [Fact]
+    public async Task PollLoop_RequestTimeoutKeepsStateAndLaterReportsCompletion()
+    {
+        var handler = new TimeoutThenSessionsHandler();
+        var logs = new List<string>();
+        using var watcher = new DshSessionWatcher(
+            new DshSessionClient(handler: handler),
+            () => Endpoint,
+            pollInterval: TimeSpan.FromMilliseconds(15),
+            completionCooldown: TimeSpan.FromMinutes(2),
+            log: message => logs.Add(message));
+        var completed = new TaskCompletionSource<DshAgentFinishedEventArgs>(TaskCreationOptions.RunContinuationsAsynchronously);
+        watcher.AgentFinished += (_, args) => completed.TrySetResult(args);
+
+        watcher.Start();
+        DshAgentFinishedEventArgs result = await completed.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+        Assert.Equal("s1", result.SessionId);
+        Assert.Contains(logs, entry => entry.Contains("polling failed", StringComparison.Ordinal));
+        Assert.Contains(logs, entry => entry.Contains("recovered", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Dispose_CancelsAnActivePollImmediately()
+    {
+        var handler = new CancellationAwareHandler();
+        var watcher = new DshSessionWatcher(
+            new DshSessionClient(handler: handler),
+            () => Endpoint,
+            pollInterval: TimeSpan.FromMilliseconds(10));
+
+        watcher.Start();
+        await handler.Started.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        watcher.Dispose();
+
+        await handler.Cancelled.Task.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
     private static DshSessionWatcher CreateWatcher(
         FakeDshHandler handler,
         MutableTimeProvider? time = null,
@@ -180,6 +218,49 @@ public sealed class DshSessionWatcherTests
                 Responses.Count > 0
                     ? Responses.Dequeue()
                     : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") });
+        }
+    }
+
+    private sealed class TimeoutThenSessionsHandler : HttpMessageHandler
+    {
+        private int _requestCount;
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            int count = Interlocked.Increment(ref _requestCount);
+            if (count == 1)
+            {
+                throw new TaskCanceledException("simulated request timeout");
+            }
+
+            return Task.FromResult(count == 2
+                ? SessionsJson(("s1", "任务一", Running: true))
+                : SessionsJson(("s1", "任务一", Running: false)));
+        }
+    }
+
+    private sealed class CancellationAwareHandler : HttpMessageHandler
+    {
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Cancelled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Started.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                throw new InvalidOperationException("The cancellation test unexpectedly resumed.");
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                Cancelled.TrySetResult();
+                throw;
+            }
         }
     }
 }

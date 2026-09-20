@@ -11,6 +11,8 @@ public enum UpdateFeedSource
     GitCode,
 }
 
+public sealed record UpdateDownloadResult(string Path, UpdateFeedSource Source);
+
 public sealed record UpdateCheckResult(
     bool UpdateAvailable,
     ReleaseInfo? Release,
@@ -35,10 +37,9 @@ public sealed record UpdateCheckResult(
 }
 
 /// <summary>
-/// Multi-source update feed: GitHub first, GitCode as the fallback when
-/// GitHub is unreachable. The last source that answered is remembered in
-/// settings so later checks try it first. Every network failure degrades to
-/// the next source instead of aborting.
+/// Multi-source update feed. Checks GitHub and GitCode concurrently, chooses
+/// the highest version, and downloads from the preferred source with an
+/// automatic same-version fallback.
 /// </summary>
 public sealed class UpdateService : IDisposable
 {
@@ -79,42 +80,55 @@ public sealed class UpdateService : IDisposable
         string preferredSource,
         CancellationToken cancellationToken)
     {
-        string? lastError = null;
-        foreach (UpdateFeedSource source in OrderedSources(preferredSource))
+        UpdateFeedSource preferred = ParseSource(preferredSource);
+        Task<FeedResult> githubTask = FetchAsync(UpdateFeedSource.GitHub, cancellationToken);
+        Task<FeedResult> gitCodeTask = FetchAsync(UpdateFeedSource.GitCode, cancellationToken);
+        FeedResult[] feeds = await Task.WhenAll(githubTask, gitCodeTask);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        FeedResult[] available = feeds.Where(feed => feed.Release is not null).ToArray();
+        if (available.Length == 0)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            try
-            {
-                ReleaseInfo? release = source switch
-                {
-                    UpdateFeedSource.GitHub => await GetGitHubLatestAsync(cancellationToken),
-                    _ => await GetGitCodeLatestAsync(cancellationToken),
-                };
-
-                if (release is null)
-                {
-                    lastError = "更新源没有可用版本。";
-                    continue;
-                }
-
-                if (release.Version <= currentVersion)
-                {
-                    return UpdateCheckResult.UpToDate(source);
-                }
-
-                return new UpdateCheckResult(true, release, null, source, UpdateCheckResult.ReleasesPageFor(source));
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception error)
-            {
-                lastError = error.Message;
-            }
+            string details = string.Join("；", feeds.Select(feed => $"{SourceName(feed.Source)}：{feed.Error}"));
+            return UpdateCheckResult.Failed(details);
         }
 
-        return UpdateCheckResult.Failed(lastError ?? "更新源不可用。");
+        FeedResult selected = available
+            .OrderByDescending(feed => feed.Release!.Version)
+            .ThenBy(feed => feed.Source == preferred ? 0 : 1)
+            .First();
+        if (selected.Release!.Version <= currentVersion)
+        {
+            return UpdateCheckResult.UpToDate(selected.Source);
+        }
+
+        return new UpdateCheckResult(
+            true,
+            selected.Release,
+            null,
+            selected.Source,
+            UpdateCheckResult.ReleasesPageFor(selected.Source));
+    }
+
+    private async Task<FeedResult> FetchAsync(UpdateFeedSource source, CancellationToken cancellationToken)
+    {
+        try
+        {
+            ReleaseInfo? release = source == UpdateFeedSource.GitHub
+                ? await GetGitHubLatestAsync(cancellationToken)
+                : await GetGitCodeLatestAsync(cancellationToken);
+            return release is null
+                ? new FeedResult(source, null, "更新源没有可用版本。")
+                : new FeedResult(source, release, null);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception error)
+        {
+            return new FeedResult(source, null, error.Message);
+        }
     }
 
     /// <summary>
@@ -190,6 +204,93 @@ public sealed class UpdateService : IDisposable
         return DownloadBundleAsync(release, source, UpdateFeed.SelectPortableBundleAsset, progress, cancellationToken);
     }
 
+    public Task<UpdateDownloadResult> DownloadInstallerWithFallbackAsync(
+        Version version,
+        UpdateFeedSource preferred,
+        IProgress<double>? progress,
+        CancellationToken cancellationToken) =>
+        DownloadWithFallbackAsync(version, preferred, UpdateFeed.SelectInstallerAsset, progress, cancellationToken);
+
+    public Task<UpdateDownloadResult> DownloadPortableBundleWithFallbackAsync(
+        Version version,
+        UpdateFeedSource preferred,
+        IProgress<double>? progress,
+        CancellationToken cancellationToken) =>
+        DownloadWithFallbackAsync(version, preferred, UpdateFeed.SelectPortableBundleAsset, progress, cancellationToken);
+
+    private async Task<UpdateDownloadResult> DownloadWithFallbackAsync(
+        Version version,
+        UpdateFeedSource preferred,
+        Func<ReleaseInfo, ReleaseAsset?> selectAsset,
+        IProgress<double>? progress,
+        CancellationToken cancellationToken)
+    {
+        var failures = new List<string>();
+        foreach (UpdateFeedSource source in OrderedSources(preferred))
+        {
+            try
+            {
+                ReleaseInfo release = await ResolveReleaseAsync(source, version, cancellationToken);
+                string path = await DownloadResolvedBundleAsync(release, selectAsset, progress, cancellationToken);
+                return new UpdateDownloadResult(path, source);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception error)
+            {
+                failures.Add($"{SourceName(source)}：{error.Message}");
+            }
+        }
+
+        throw new InvalidOperationException($"两个更新源下载均失败：{string.Join("；", failures)}");
+    }
+
+    private async Task<ReleaseInfo> ResolveReleaseAsync(
+        UpdateFeedSource source,
+        Version version,
+        CancellationToken cancellationToken)
+    {
+        if (source == UpdateFeedSource.GitHub)
+        {
+            ReleaseInfo? release = await GetGitHubLatestAsync(cancellationToken);
+            if (release?.Version == version)
+            {
+                return release;
+            }
+
+            string? tagFeed = BuildGitHubTagFeed(version);
+            if (tagFeed is null)
+            {
+                throw new InvalidOperationException($"GitHub 没有版本 {version} 的发布资源。");
+            }
+
+            using HttpResponseMessage response = await _client.GetAsync(tagFeed, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException($"GitHub 没有版本 {version} 的发布资源（HTTP {(int)response.StatusCode}）。");
+            }
+
+            ReleaseInfo? exact = UpdateFeed.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+            return exact?.Version == version
+                ? exact
+                : throw new InvalidOperationException($"GitHub 返回了错误的版本，期望 {version}。");
+        }
+
+        var requested = new ReleaseInfo($"v{version.ToString(3)}", version, null, Array.Empty<ReleaseAsset>());
+        return await ResolveGitCodeAssetsAsync(requested, cancellationToken)
+            ?? throw new InvalidOperationException($"GitCode 没有版本 {version} 的发布资源。");
+    }
+
+    private string? BuildGitHubTagFeed(Version version)
+    {
+        const string latestSuffix = "/releases/latest";
+        return _githubFeed.EndsWith(latestSuffix, StringComparison.OrdinalIgnoreCase)
+            ? _githubFeed[..^latestSuffix.Length] + $"/releases/tags/v{version.ToString(3)}"
+            : null;
+    }
+
     private async Task<string> DownloadBundleAsync(
         ReleaseInfo release,
         UpdateFeedSource source,
@@ -201,7 +302,17 @@ public sealed class UpdateService : IDisposable
             ? await ResolveGitCodeAssetsAsync(release, cancellationToken) ?? release
             : release;
 
-        ReleaseAsset? installer = selectAsset(effective)
+        return await DownloadResolvedBundleAsync(effective, selectAsset, progress, cancellationToken);
+    }
+
+    private async Task<string> DownloadResolvedBundleAsync(
+        ReleaseInfo release,
+        Func<ReleaseInfo, ReleaseAsset?> selectAsset,
+        IProgress<double>? progress,
+        CancellationToken cancellationToken)
+    {
+
+        ReleaseAsset? installer = selectAsset(release)
             ?? throw new InvalidOperationException("发布中没有找到安装器文件。");
 
         Directory.CreateDirectory(CetusPaths.UpdateCacheDirectory);
@@ -209,7 +320,7 @@ public sealed class UpdateService : IDisposable
         try
         {
             await DownloadToFileAsync(installer, targetPath, progress, cancellationToken);
-            await VerifyDownloadAsync(effective, installer.Name, targetPath, cancellationToken);
+            await VerifyDownloadAsync(release, installer.Name, targetPath, cancellationToken);
             return targetPath;
         }
         catch
@@ -377,20 +488,24 @@ public sealed class UpdateService : IDisposable
         return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 
-    private static IEnumerable<UpdateFeedSource> OrderedSources(string preferred)
-    {
-        bool gitCodeFirst = preferred.Equals("gitcode", StringComparison.OrdinalIgnoreCase);
-        if (gitCodeFirst)
-        {
-            yield return UpdateFeedSource.GitCode;
-        }
+    private static IEnumerable<UpdateFeedSource> OrderedSources(string preferred) =>
+        OrderedSources(ParseSource(preferred));
 
-        yield return UpdateFeedSource.GitHub;
-        if (!gitCodeFirst)
-        {
-            yield return UpdateFeedSource.GitCode;
-        }
+    private static IEnumerable<UpdateFeedSource> OrderedSources(UpdateFeedSource preferred)
+    {
+        yield return preferred;
+        yield return preferred == UpdateFeedSource.GitHub ? UpdateFeedSource.GitCode : UpdateFeedSource.GitHub;
     }
+
+    private static UpdateFeedSource ParseSource(string preferred) =>
+        preferred.Equals("gitcode", StringComparison.OrdinalIgnoreCase)
+            ? UpdateFeedSource.GitCode
+            : UpdateFeedSource.GitHub;
+
+    private static string SourceName(UpdateFeedSource source) =>
+        source == UpdateFeedSource.GitCode ? "GitCode" : "GitHub";
+
+    private sealed record FeedResult(UpdateFeedSource Source, ReleaseInfo? Release, string? Error);
 
     private static void TryDelete(string path)
     {

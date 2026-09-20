@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Net.Http;
 using System.Reflection;
 using System.Windows;
 using Cetus.Platform;
@@ -24,7 +23,9 @@ internal sealed class UpdateCoordinator
     private readonly Version _currentVersion;
     private readonly Action<string, string, Action?> _notify;
     private readonly Action<string>? _openAnnouncement;
+    private readonly Action<string, MessageBoxImage>? _showInfo;
     private string _releasesPageUrl = UpdateCheckResult.Failed("x").ReleasesPageUrl;
+    private int _updateTaskRunning;
 
     public UpdateCoordinator(
         Window owner,
@@ -50,7 +51,8 @@ internal sealed class UpdateCoordinator
         CetusSettings settings,
         Version currentVersion,
         Action<string, string, Action?>? notify = null,
-        Action<string>? openAnnouncement = null)
+        Action<string>? openAnnouncement = null,
+        Action<string, MessageBoxImage>? showInfo = null)
     {
         _owner = owner;
         _exitApplication = exitApplication;
@@ -59,42 +61,54 @@ internal sealed class UpdateCoordinator
         _currentVersion = currentVersion;
         _notify = notify ?? ((_, _, _) => { });
         _openAnnouncement = openAnnouncement;
+        _showInfo = showInfo;
     }
 
     public async Task CheckForUpdatesAsync(bool interactive)
     {
-        UpdateCheckResult result = await _service.CheckAsync(
-            _currentVersion,
-            _settings.UpdateSource,
-            CancellationToken.None);
-        _releasesPageUrl = result.ReleasesPageUrl;
-
-        if (result.UpdateAvailable && result.Release is { } found)
+        if (Interlocked.CompareExchange(ref _updateTaskRunning, 1, 0) != 0)
         {
-            // Remember the source that answered so later checks try it first.
-            _settings.SetUpdateSource(result.Source switch
+            if (interactive)
             {
-                UpdateFeedSource.GitCode => "gitcode",
-                _ => "github",
-            });
-            if (!interactive)
+                ShowInfo("更新任务正在进行，请稍候。", MessageBoxImage.Information);
+            }
+
+            return;
+        }
+
+        try
+        {
+            UpdateCheckResult result = await _service.CheckAsync(
+                _currentVersion,
+                _settings.UpdateSource,
+                CancellationToken.None);
+            _releasesPageUrl = result.ReleasesPageUrl;
+
+            if (result.UpdateAvailable && result.Release is { } found)
             {
-                await AutoInstallAsync(found, result.Source, InstalledEdition.IsInstalled());
+                if (!interactive)
+                {
+                    await AutoInstallAsync(found, result.Source, InstalledEdition.IsInstalled());
+                    return;
+                }
+
+                await PresentAsync(found, InstalledEdition.IsInstalled(), result.Source);
                 return;
             }
 
-            await PresentAsync(found, InstalledEdition.IsInstalled(), result.Source);
-            return;
-        }
+            if (!interactive)
+            {
+                return;
+            }
 
-        if (!interactive)
+            ShowInfo(
+                result.Error is null ? "当前已是最新版本。" : $"检查更新失败：{result.Error}",
+                result.Error is null ? MessageBoxImage.Information : MessageBoxImage.Warning);
+        }
+        finally
         {
-            return;
+            Volatile.Write(ref _updateTaskRunning, 0);
         }
-
-        ShowInfo(
-            result.Error is null ? "当前已是最新版本。" : $"检查更新失败：{result.Error}",
-            result.Error is null ? MessageBoxImage.Information : MessageBoxImage.Warning);
     }
 
     /// <summary>
@@ -148,14 +162,14 @@ internal sealed class UpdateCoordinator
         SetTaskbarProgress(Indeterminate);
         try
         {
-            UpdateFeedSource downloadSource = await PickDownloadSourceAsync(source);
-            string installerPath = await _service.DownloadInstallerAsync(
-                release,
-                downloadSource,
+            UpdateDownloadResult download = await _service.DownloadInstallerWithFallbackAsync(
+                release.Version,
+                source,
                 new Progress<double>(ReportTaskbarProgress),
                 CancellationToken.None);
+            _settings.SetUpdateSource(ToSettingValue(download.Source));
             _notify("CETUS 更新", "下载完成，正在安装更新，CETUS 即将退出。", null);
-            Process.Start(new ProcessStartInfo(installerPath)
+            Process.Start(new ProcessStartInfo(download.Path)
             {
                 UseShellExecute = true,
                 Arguments = "/SILENT",
@@ -170,34 +184,6 @@ internal sealed class UpdateCoordinator
         {
             SetTaskbarProgress(null);
         }
-    }
-
-    /// <summary>
-    /// Downloads from whichever feed answers faster right now (large payloads
-    /// amplify a slow check). The winner is remembered as the preferred
-    /// source; probe failure keeps the source that already answered.
-    /// </summary>
-    private async Task<UpdateFeedSource> PickDownloadSourceAsync(UpdateFeedSource source)
-    {
-        try
-        {
-            UpdateFeedSource? faster = await _service.ProbeFasterSourceAsync(source, CancellationToken.None);
-            if (faster is { } picked)
-            {
-                if (picked != source)
-                {
-                    _settings.SetUpdateSource(ToSettingValue(picked));
-                }
-
-                return picked;
-            }
-        }
-        catch (Exception error) when (error is HttpRequestException or TaskCanceledException or InvalidOperationException)
-        {
-            // Speed probing is advisory; fall through to the known source.
-        }
-
-        return source;
     }
 
     private static string ToSettingValue(UpdateFeedSource source) => source switch
@@ -217,20 +203,20 @@ internal sealed class UpdateCoordinator
         ReleaseInfo release,
         UpdateFeedSource source)
     {
-        UpdateFeedSource downloadSource = await PickDownloadSourceAsync(source);
-        string zipPath = await _service.DownloadPortableBundleAsync(
-            release,
-            downloadSource,
+        UpdateDownloadResult download = await _service.DownloadPortableBundleWithFallbackAsync(
+            release.Version,
+            source,
             new Progress<double>(value =>
             {
                 prompt?.ReportProgress(value);
                 ReportTaskbarProgress(value);
             }),
             cancellation?.Token ?? CancellationToken.None);
+        _settings.SetUpdateSource(ToSettingValue(download.Source));
         prompt?.ReportStatus("下载完成，正在解压并准备升级…", isError: false);
-        string staging = PortableUpdateApplier.PrepareStaging(zipPath, release.Version);
+        string staging = PortableUpdateApplier.PrepareStaging(download.Path, release.Version);
         string script = PortableUpdateApplier.WriteApplyScript(
-            staging, AppContext.BaseDirectory, Environment.ProcessId, zipPath);
+            staging, AppContext.BaseDirectory, Environment.ProcessId, download.Path);
         PortableUpdateApplier.LaunchApplyScript(script);
         prompt?.Close();
         _notify("CETUS 更新", "便携更新已就绪，CETUS 即将退出并升级到新版本。", null);
@@ -305,13 +291,13 @@ internal sealed class UpdateCoordinator
         {
             if (installedEdition)
             {
-                UpdateFeedSource downloadSource = await PickDownloadSourceAsync(source);
-                string installerPath = await _service.DownloadInstallerAsync(
-                    release,
-                    downloadSource,
+                UpdateDownloadResult download = await _service.DownloadInstallerWithFallbackAsync(
+                    release.Version,
+                    source,
                     progress,
                     cancellation.Token);
-                Process.Start(new ProcessStartInfo(installerPath)
+                _settings.SetUpdateSource(ToSettingValue(download.Source));
+                Process.Start(new ProcessStartInfo(download.Path)
                 {
                     UseShellExecute = true,
                     Arguments = "/SILENT",
@@ -346,8 +332,16 @@ internal sealed class UpdateCoordinator
         }
     }
 
-    private void ShowInfo(string message, MessageBoxImage image) =>
+    private void ShowInfo(string message, MessageBoxImage image)
+    {
+        if (_showInfo is { } showInfo)
+        {
+            showInfo(message, image);
+            return;
+        }
+
         _ = MessageBox.Show(_owner, message, "CETUS · 更新", MessageBoxButton.OK, image);
+    }
 
     private void OpenReleasesPage()
     {

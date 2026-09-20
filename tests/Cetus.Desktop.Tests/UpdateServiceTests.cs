@@ -51,7 +51,10 @@ public sealed class UpdateServiceTests
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
-            Requests.Add(request.RequestUri?.ToString());
+            lock (Requests)
+            {
+                Requests.Add(request.RequestUri?.ToString());
+            }
             if (Throw is not null)
             {
                 throw Throw;
@@ -76,7 +79,7 @@ public sealed class UpdateServiceTests
         Assert.Equal(new Version(0, 2, 1), result.Release!.Version);
         Assert.Equal(UpdateFeedSource.GitHub, result.Source);
         Assert.Equal(UpdateCheckResult.GitHubReleasesPage, result.ReleasesPageUrl);
-        Assert.Equal(UpdateService.DefaultGitHubFeed, handler.Requests[0]);
+        Assert.Contains(UpdateService.DefaultGitHubFeed, handler.Requests);
     }
 
     [Fact]
@@ -110,23 +113,59 @@ public sealed class UpdateServiceTests
         Assert.True(result.UpdateAvailable, $"diag: available={result.UpdateAvailable} error={result.Error} src={result.Source}");
         Assert.Equal(UpdateFeedSource.GitCode, result.Source);
         Assert.Equal(UpdateCheckResult.GitCodeReleasesPage, result.ReleasesPageUrl);
-        Assert.Equal(UpdateService.DefaultGitCodeTags, handler.Requests[1]);
+        Assert.Contains(UpdateService.DefaultGitCodeTags, handler.Requests);
     }
 
     [Fact]
-    public async Task CheckAsync_PrefersTheRememberedSource()
+    public async Task CheckAsync_SameVersionPrefersTheRememberedSource()
     {
         var handler = new FakeHandler
         {
             Responder = request => request.RequestUri!.Host == "gitcode.com"
                 ? Json(GitCodeTagsJson)
-                : new HttpResponseMessage(HttpStatusCode.InternalServerError),
+                : Json(GitHubReleaseJson),
         };
         using var service = new UpdateService(handler);
 
-        await service.CheckAsync(Current, "gitcode", CancellationToken.None);
+        UpdateCheckResult result = await service.CheckAsync(Current, "gitcode", CancellationToken.None);
 
-        Assert.Equal(UpdateService.DefaultGitCodeTags, handler.Requests[0]);
+        Assert.Equal(UpdateFeedSource.GitCode, result.Source);
+        Assert.Contains(UpdateService.DefaultGitCodeTags, handler.Requests);
+        Assert.Contains(UpdateService.DefaultGitHubFeed, handler.Requests);
+    }
+
+    [Fact]
+    public async Task CheckAsync_SelectsHigherGitHubVersionWhenGitCodeLags()
+    {
+        var handler = new FakeHandler
+        {
+            Responder = request => request.RequestUri!.Host == "gitcode.com"
+                ? Json("""[{"name":"v0.2.0"}]""")
+                : Json(GitHubReleaseJson),
+        };
+        using var service = new UpdateService(handler);
+
+        UpdateCheckResult result = await service.CheckAsync(new Version(0, 1, 9), "gitcode", CancellationToken.None);
+
+        Assert.Equal(UpdateFeedSource.GitHub, result.Source);
+        Assert.Equal(new Version(0, 2, 1), result.Release!.Version);
+    }
+
+    [Fact]
+    public async Task CheckAsync_SelectsHigherGitCodeVersionWhenGitHubLags()
+    {
+        var handler = new FakeHandler
+        {
+            Responder = request => request.RequestUri!.Host == "gitcode.com"
+                ? Json(GitCodeTagsJson)
+                : Json("""{"tag_name":"v0.2.0","assets":[]}"""),
+        };
+        using var service = new UpdateService(handler);
+
+        UpdateCheckResult result = await service.CheckAsync(new Version(0, 1, 9), "github", CancellationToken.None);
+
+        Assert.Equal(UpdateFeedSource.GitCode, result.Source);
+        Assert.Equal(new Version(0, 2, 1), result.Release!.Version);
     }
 
     [Fact]
@@ -382,6 +421,161 @@ public sealed class UpdateServiceTests
                 UpdateFeedSource.GitHub,
                 progress: null,
                 CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task DownloadInstallerWithFallbackAsync_ChecksumFailureUsesOtherSource()
+    {
+        string? originalDir = Environment.GetEnvironmentVariable("CETUS_UPDATE_DIR");
+        using var directory = new TemporaryDirectory();
+        try
+        {
+            Environment.SetEnvironmentVariable("CETUS_UPDATE_DIR", directory.Path);
+            var handler = new FakeHandler
+            {
+                Responder = request =>
+                {
+                    string url = request.RequestUri!.ToString();
+                    if (url == UpdateService.DefaultGitCodeTags) return Json(GitCodeTagsJson);
+                    if (url == UpdateService.DefaultGitCodeReleases) return Json(GitCodeReleasesJson);
+                    if (url == UpdateService.DefaultGitHubFeed) return Json(GitHubReleaseJson);
+                    if (url.Contains("gitcode.com", StringComparison.Ordinal)
+                        && url.EndsWith(InstallerName, StringComparison.Ordinal))
+                    {
+                        return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent("bad"u8.ToArray()) };
+                    }
+
+                    if (url.EndsWith("SHA256SUMS.txt", StringComparison.Ordinal))
+                    {
+                        return new HttpResponseMessage(HttpStatusCode.OK)
+                        {
+                            Content = new StringContent($"{InstallerHash}  {InstallerName}\n"),
+                        };
+                    }
+
+                    return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(InstallerBytes) };
+                },
+            };
+            using var service = new UpdateService(handler);
+
+            UpdateDownloadResult result = await service.DownloadInstallerWithFallbackAsync(
+                new Version(0, 2, 1), UpdateFeedSource.GitCode, null, CancellationToken.None);
+
+            Assert.Equal(UpdateFeedSource.GitHub, result.Source);
+            Assert.Equal(InstallerBytes, await File.ReadAllBytesAsync(result.Path));
+            Assert.Contains(UpdateService.DefaultGitCodeReleases, handler.Requests);
+            Assert.Contains(UpdateService.DefaultGitHubFeed, handler.Requests);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("CETUS_UPDATE_DIR", originalDir);
+        }
+    }
+
+    [Fact]
+    public async Task DownloadInstallerWithFallbackAsync_MissingGitHubAssetUsesGitCode()
+    {
+        string? originalDir = Environment.GetEnvironmentVariable("CETUS_UPDATE_DIR");
+        using var directory = new TemporaryDirectory();
+        try
+        {
+            Environment.SetEnvironmentVariable("CETUS_UPDATE_DIR", directory.Path);
+            var handler = new FakeHandler
+            {
+                Responder = request =>
+                {
+                    string url = request.RequestUri!.ToString();
+                    if (url == UpdateService.DefaultGitHubFeed)
+                    {
+                        return Json("""{"tag_name":"v0.2.1","assets":[]}""");
+                    }
+
+                    if (url == UpdateService.DefaultGitCodeTags) return Json(GitCodeTagsJson);
+                    if (url == UpdateService.DefaultGitCodeReleases) return Json(GitCodeReleasesJson);
+                    if (url.EndsWith("SHA256SUMS.txt", StringComparison.Ordinal))
+                    {
+                        return new HttpResponseMessage(HttpStatusCode.OK)
+                        {
+                            Content = new StringContent($"{InstallerHash}  {InstallerName}\n"),
+                        };
+                    }
+
+                    return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(InstallerBytes) };
+                },
+            };
+            using var service = new UpdateService(handler);
+
+            UpdateDownloadResult result = await service.DownloadInstallerWithFallbackAsync(
+                new Version(0, 2, 1), UpdateFeedSource.GitHub, null, CancellationToken.None);
+
+            Assert.Equal(UpdateFeedSource.GitCode, result.Source);
+            Assert.Equal(InstallerBytes, await File.ReadAllBytesAsync(result.Path));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("CETUS_UPDATE_DIR", originalDir);
+        }
+    }
+
+    [Fact]
+    public async Task DownloadWithFallbackAsync_ReportsBothSourceFailures()
+    {
+        var handler = new FakeHandler
+        {
+            Responder = _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable),
+        };
+        using var service = new UpdateService(handler);
+
+        InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.DownloadInstallerWithFallbackAsync(
+                new Version(0, 2, 1), UpdateFeedSource.GitHub, null, CancellationToken.None));
+
+        Assert.Contains("GitHub", error.Message, StringComparison.Ordinal);
+        Assert.Contains("GitCode", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DownloadWithFallbackAsync_ResolvesRequestedGitHubTagWhenLatestChanged()
+    {
+        string? originalDir = Environment.GetEnvironmentVariable("CETUS_UPDATE_DIR");
+        using var directory = new TemporaryDirectory();
+        try
+        {
+            Environment.SetEnvironmentVariable("CETUS_UPDATE_DIR", directory.Path);
+            var handler = new FakeHandler
+            {
+                Responder = request =>
+                {
+                    string url = request.RequestUri!.ToString();
+                    if (url == UpdateService.DefaultGitHubFeed)
+                    {
+                        return Json("""{"tag_name":"v0.2.2","assets":[]}""");
+                    }
+
+                    if (url.Contains("/releases/tags/v0.2.1", StringComparison.Ordinal)) return Json(GitHubReleaseJson);
+                    if (url.EndsWith("SHA256SUMS.txt", StringComparison.Ordinal))
+                    {
+                        return new HttpResponseMessage(HttpStatusCode.OK)
+                        {
+                            Content = new StringContent($"{InstallerHash}  {InstallerName}\n"),
+                        };
+                    }
+
+                    return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(InstallerBytes) };
+                },
+            };
+            using var service = new UpdateService(handler);
+
+            UpdateDownloadResult result = await service.DownloadInstallerWithFallbackAsync(
+                new Version(0, 2, 1), UpdateFeedSource.GitHub, null, CancellationToken.None);
+
+            Assert.Equal(UpdateFeedSource.GitHub, result.Source);
+            Assert.Contains(handler.Requests, url => url!.Contains("/releases/tags/v0.2.1", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("CETUS_UPDATE_DIR", originalDir);
+        }
     }
 
     private static HttpResponseMessage JsonResponse(string body) => new(HttpStatusCode.OK)

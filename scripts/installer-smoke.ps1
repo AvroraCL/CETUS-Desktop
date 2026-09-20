@@ -120,6 +120,7 @@ try {
 
     $requiredRuntimeFiles = @(
         "Cetus.Runtime.dll",
+        ".cetus-managed-files.json",
         "runtime\node.exe",
         "runtime\VERSIONS.txt",
         "runtime\dsh\node_modules\@deepseek-ai\dsh\package.json"

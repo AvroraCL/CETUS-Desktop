@@ -72,7 +72,7 @@ public partial class App : System.Windows.Application
         _mainWindow = new MainWindow();
         MainWindow = _mainWindow;
         _mainWindow.SplashDismissRequested += (_, _) => DismissSplash();
-        _mainWindow.StartStartup(startInBackground);
+        _mainWindow.StartStartup(startInBackground, launch.UpdateHealthPath);
         if (launch.WorkspacePath is { } workspacePath)
         {
             _mainWindow.ActivateWorkspace(workspacePath);
@@ -103,18 +103,27 @@ public partial class App : System.Windows.Application
             }
 
             Directory.CreateDirectory(Cetus.Configuration.CetusPaths.UserDataDirectory);
-            // ANSI on purpose: Inno Setup's LoadStringFromFile reads the
-            // user's default code page.
-            File.WriteAllText(
-                Cetus.Configuration.CetusPaths.PortableInstallRecord,
-                installDirectory,
-                System.Text.Encoding.Default);
+            WritePortableInstallRecord(Cetus.Configuration.CetusPaths.PortableInstallRecord, installDirectory);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
             // Recording is advisory; a missed record only means the Setup
             // falls back to the default directory.
         }
+    }
+
+    internal static void WritePortableInstallRecord(string recordPath, string installDirectory)
+    {
+        string? directory = Path.GetDirectoryName(recordPath);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        File.WriteAllText(
+            recordPath,
+            installDirectory,
+            new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
     }
 
     private void DismissSplash()

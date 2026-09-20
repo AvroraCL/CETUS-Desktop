@@ -91,7 +91,7 @@ public partial class MainWindow : Window
     /// appears only after the runtime settles. With <paramref name="startInBackground"/>
     /// there is no splash and the window stays hidden (autostart path).
     /// </summary>
-    public void StartStartup(bool startInBackground = false)
+    public void StartStartup(bool startInBackground = false, string? updateHealthPath = null)
     {
         if (_startupStarted || _isExiting)
         {
@@ -133,7 +133,7 @@ public partial class MainWindow : Window
             }
         }
 
-        _ = RunStartupAsync(startInBackground);
+        _ = RunStartupAsync(startInBackground, updateHealthPath);
         if (_settings.CheckUpdatesOnStartup)
         {
             EnsureUpdateCoordinator();
@@ -141,7 +141,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task RunStartupAsync(bool startInBackground = false)
+    private async Task RunStartupAsync(bool startInBackground = false, string? updateHealthPath = null)
     {
         // Splash phase: bring the DSH host up with the window still hidden —
         // WebView2 cannot initialize on a window that was never shown.
@@ -169,10 +169,13 @@ public partial class MainWindow : Window
         try
         {
             await _runtime.NavigateHomeAsync();
+            WriteUpdateHealthMarker(updateHealthPath);
+            ShowPortableUpdateFailureIfPresent();
         }
         catch (Exception error)
         {
             ShowRuntimeError(DesktopRuntimeResult.Failed(error), "Cetus · 启动失败");
+            return;
         }
 
         ShowUpdateAnnouncementIfDue();
@@ -182,6 +185,49 @@ public partial class MainWindow : Window
         if (ConsumePendingWorkspace() is { } pendingWorkspace)
         {
             _ = OpenWorkspaceAsync(pendingWorkspace);
+        }
+    }
+
+    private static void WriteUpdateHealthMarker(string? path)
+    {
+        if (path is null)
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            string temporary = path + ".tmp";
+            File.WriteAllText(temporary, "ready", new System.Text.UTF8Encoding(false));
+            File.Move(temporary, path, overwrite: true);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            RuntimeLog.Append($"Unable to write update health marker: {error.Message}");
+        }
+    }
+
+    private void ShowPortableUpdateFailureIfPresent()
+    {
+        string path = PortableUpdateApplier.FailureNoticePath;
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        try
+        {
+            string detail = File.ReadAllText(path).Trim();
+            _tray?.ShowBalloonTip(
+                "CETUS 更新失败",
+                string.IsNullOrWhiteSpace(detail) ? "新版本启动失败，已恢复旧版本。" : detail,
+                null);
+            File.Delete(path);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            RuntimeLog.Append($"Unable to read portable update failure notice: {error.Message}");
         }
     }
 

@@ -82,7 +82,7 @@ public sealed class PortableUpdateApplierTests : IDisposable
     }
 
     [Fact]
-    public void WriteApplyScript_WaitsMirrorsRelaunchesAndSelfDeletes()
+    public void WriteApplyScript_UsesTransactionalPowerShellAndHealthCheck()
     {
         using var directory = new TemporaryDirectory();
         string staging = System.IO.Path.Combine(directory.Path, "staging");
@@ -92,37 +92,42 @@ public sealed class PortableUpdateApplierTests : IDisposable
             staging, System.IO.Path.Combine(directory.Path, "target"), processId: 4242);
 
         string content = File.ReadAllText(script);
-        Assert.Contains("tasklist /FI \"PID eq 4242\"", content, StringComparison.Ordinal);
-        Assert.Contains("taskkill /PID 4242 /F", content, StringComparison.Ordinal);
-        Assert.Contains("robocopy", content, StringComparison.Ordinal);
-        Assert.Contains("/MIR", content, StringComparison.Ordinal);
-        // Staging (hundreds of MB) must not outlive a successful apply.
-        Assert.Contains($"rd /s /q \"{staging}\"", content, StringComparison.Ordinal);
-        Assert.Contains("Cetus.exe", content, StringComparison.Ordinal);
-        Assert.EndsWith("del \"%~f0\"", content.TrimEnd(), StringComparison.Ordinal);
+        Assert.True(File.ReadAllBytes(script).AsSpan().StartsWith(Encoding.UTF8.Preamble));
+        Assert.EndsWith(".ps1", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("$oldPid = 4242", content, StringComparison.Ordinal);
+        Assert.Contains("Read-ManagedFiles", content, StringComparison.Ordinal);
+        Assert.Contains("Restore-Backup", content, StringComparison.Ordinal);
+        Assert.Contains("--update-health=", content, StringComparison.Ordinal);
+        Assert.Contains("within 90 seconds", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("/MIR", content, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Remove-Item -LiteralPath $PSCommandPath", content, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void ApplyScript_EndToEnd_MirrorsTargetAndCleansUp()
+    public void ApplyScript_FailedNewExecutable_RollsBackAndPreservesUnknownFiles()
     {
         using var directory = new TemporaryDirectory();
-        string staging = System.IO.Path.Combine(directory.Path, "staging-9.9.9");
-        string target = System.IO.Path.Combine(directory.Path, "install");
+        string staging = System.IO.Path.Combine(directory.Path, "暂存 更新 🧪");
+        string target = System.IO.Path.Combine(directory.Path, "安装 目录 🐋");
         Directory.CreateDirectory(staging);
         Directory.CreateDirectory(target);
         Directory.CreateDirectory(System.IO.Path.Combine(target, "runtime"));
         File.WriteAllText(System.IO.Path.Combine(staging, "Cetus.exe"), "new-exe");
         File.WriteAllText(System.IO.Path.Combine(staging, "new-file.txt"), "new");
-        File.WriteAllText(System.IO.Path.Combine(target, "old-file.txt"), "old");
+        File.WriteAllText(System.IO.Path.Combine(target, "Cetus.exe"), "old-exe");
+        File.WriteAllText(System.IO.Path.Combine(target, "user-file.txt"), "mine");
         File.WriteAllText(System.IO.Path.Combine(target, "runtime", "junk.txt"), "junk");
+        WriteManifest(staging, "Cetus.exe", "new-file.txt", "runtime/VERSIONS.txt");
+        WriteManifest(target, "Cetus.exe", "retired.txt", "runtime/junk.txt");
+        File.WriteAllText(System.IO.Path.Combine(target, "retired.txt"), "old-managed");
 
         // A PID that cannot exist: the wait loop must fall straight through.
         string script = PortableUpdateApplier.WriteApplyScript(staging, target, processId: int.MaxValue);
 
         using (var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
         {
-            FileName = "cmd.exe",
-            Arguments = $"/c \"{script}\"",
+            FileName = "powershell.exe",
+            Arguments = $"-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{script}\"",
             UseShellExecute = false,
             CreateNoWindow = true,
         }))
@@ -131,14 +136,12 @@ public sealed class PortableUpdateApplierTests : IDisposable
             Assert.True(process!.WaitForExit(30_000), "the takeover script did not finish");
         }
 
-        // The mirror replaced the old tree content and dropped retired files.
-        Assert.True(File.Exists(System.IO.Path.Combine(target, "Cetus.exe")));
-        Assert.True(File.Exists(System.IO.Path.Combine(target, "new-file.txt")));
-        Assert.False(File.Exists(System.IO.Path.Combine(target, "old-file.txt")));
-        Assert.False(File.Exists(System.IO.Path.Combine(target, "runtime", "junk.txt")));
-        // Cleanup: staging removed, script self-deleted.
-        Assert.False(Directory.Exists(staging));
-        Assert.False(File.Exists(script));
+        Assert.Equal("old-exe", File.ReadAllText(System.IO.Path.Combine(target, "Cetus.exe")));
+        Assert.Equal("mine", File.ReadAllText(System.IO.Path.Combine(target, "user-file.txt")));
+        Assert.Equal("junk", File.ReadAllText(System.IO.Path.Combine(target, "runtime", "junk.txt")));
+        Assert.Equal("old-managed", File.ReadAllText(System.IO.Path.Combine(target, "retired.txt")));
+        Assert.False(File.Exists(System.IO.Path.Combine(target, "new-file.txt")));
+        Assert.True(File.Exists(PortableUpdateApplier.FailureNoticePath));
     }
 
     private static void AddEntry(ZipArchive archive, string name, string content)
@@ -146,6 +149,20 @@ public sealed class PortableUpdateApplierTests : IDisposable
         ZipArchiveEntry entry = archive.CreateEntry(name);
         using var writer = new StreamWriter(entry.Open(), new UTF8Encoding(false));
         writer.Write(content);
+    }
+
+    private static void WriteManifest(string directory, params string[] files)
+    {
+        string json = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            schemaVersion = 1,
+            fullyManagedDirectories = new[] { "runtime" },
+            files = files.Append(PortableUpdateApplier.ManagedFilesManifestName).ToArray(),
+        });
+        File.WriteAllText(
+            System.IO.Path.Combine(directory, PortableUpdateApplier.ManagedFilesManifestName),
+            json,
+            new UTF8Encoding(false));
     }
 
     private sealed class TemporaryDirectory : IDisposable
