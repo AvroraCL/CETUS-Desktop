@@ -32,6 +32,14 @@ public static class CetusPaths
         "CETUS_RECENT_WORKSPACES_PATH",
         Path.Combine(UserDataDirectory, "recent-workspaces.json"));
 
+    /// <summary>
+    /// Where a portable copy records its own install directory, so the Setup
+    /// can upgrade that copy in place instead of installing a second one.
+    /// </summary>
+    public static string PortableInstallRecord => ResolveOverride(
+        "CETUS_PORTABLE_INSTALL_RECORD",
+        Path.Combine(UserDataDirectory, "portable-install.txt"));
+
     private static string ResolveOverride(string variableName, string fallback)
     {
         string? value = Environment.GetEnvironmentVariable(variableName);

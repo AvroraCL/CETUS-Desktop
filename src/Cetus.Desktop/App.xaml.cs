@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Threading;
 using Cetus.Application;
@@ -47,6 +48,8 @@ public partial class App : System.Windows.Application
 
         base.OnStartup(e);
 
+        RecordPortableInstallPath();
+
         if (!DevModeFlag.IsActive)
         {
             CetusProtocolManager.EnsureRegistered();
@@ -73,6 +76,44 @@ public partial class App : System.Windows.Application
         if (launch.WorkspacePath is { } workspacePath)
         {
             _mainWindow.ActivateWorkspace(workspacePath);
+        }
+    }
+
+    /// <summary>
+    /// Portable copies (no installer registry entry) record their own
+    /// directory so a later Cetus-Setup run can upgrade that copy in place
+    /// instead of installing a second one next to it.
+    /// </summary>
+    private static void RecordPortableInstallPath()
+    {
+        if (DevModeFlag.IsActive || Cetus.Platform.InstalledEdition.IsInstalled())
+        {
+            return;
+        }
+
+        try
+        {
+            string? executablePath = Environment.ProcessPath;
+            string? installDirectory = string.IsNullOrWhiteSpace(executablePath)
+                ? null
+                : System.IO.Path.GetDirectoryName(executablePath);
+            if (string.IsNullOrWhiteSpace(installDirectory))
+            {
+                return;
+            }
+
+            Directory.CreateDirectory(Cetus.Configuration.CetusPaths.UserDataDirectory);
+            // ANSI on purpose: Inno Setup's LoadStringFromFile reads the
+            // user's default code page.
+            File.WriteAllText(
+                Cetus.Configuration.CetusPaths.PortableInstallRecord,
+                installDirectory,
+                System.Text.Encoding.Default);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            // Recording is advisory; a missed record only means the Setup
+            // falls back to the default directory.
         }
     }
 

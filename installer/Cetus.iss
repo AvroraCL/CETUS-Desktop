@@ -19,7 +19,11 @@ AppVersion={#Version}
 AppVerName=CETUS鲸鱼座 {#Version}
 AppPublisher=AvroraCL
 AppComments=DeepSeek Harness Windows 桌面壳
-DefaultDirName={localappdata}\Cetus
+; DefaultDirName resolves through GetDefaultDir: an installed copy is
+; tracked by the uninstall registry (UsePreviousAppDir), while a portable
+; copy self-records its directory in portable-install.txt so the Setup can
+; upgrade that copy in place instead of installing a second one.
+DefaultDirName={code:GetDefaultDir}
 DefaultGroupName=CETUS鲸鱼座
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
@@ -129,8 +133,28 @@ begin
   StopProcessesAtPath(ExpandConstant('{app}\runtime\node.exe'));
 end;
 
-function PrepareToInstall(var NeedsRestart: Boolean): String;
+// Resolve the target directory: prefer the self-recorded portable copy
+// (kept valid only while its Cetus.exe still exists), then fall back to
+// the default per-user location. Installed copies follow the registry
+// through UsePreviousAppDir, which overrides DefaultDirName anyway.
+function GetDefaultDir(Param: String): String;
+var
+  RecordFile: String;
+  Recorded: AnsiString;
+  RecordedPath: String;
 begin
+  Result := ExpandConstant('{localappdata}\Cetus');
+  RecordFile := ExpandConstant('{localappdata}\Cetus\portable-install.txt');
+  if not FileExists(RecordFile) then exit;
+  if not LoadStringFromFile(RecordFile, Recorded) then exit;
+  RecordedPath := Trim(String(Recorded));
+  if (Length(RecordedPath) > 3) and
+     DirExists(RecordedPath) and
+     FileExists(RecordedPath + '\Cetus.exe') then
+    Result := RecordedPath;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;begin
   Result := '';
   if IsCetusRunning() then
   begin
