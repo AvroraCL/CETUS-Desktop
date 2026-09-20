@@ -172,9 +172,16 @@ public sealed class DshStreamMuxClientTests : IAsyncLifetime
             JsonSerializer.Deserialize<JsonElement>("{\"args\":{\"request\":{\"address\":{\"kind\":\"session\",\"sessionId\":\"s1\"}}}}"),
             CancellationToken.None);
 
-        Assert.True(
-            turnEnd.Task.Wait(TimeSpan.FromSeconds(10)),
-            "no turn/end seen; items: [" + string.Join(" ;; ", seen) + "] serverError: " + serverError?.Message + " disconnected: " + (disconnectReason ?? "still connected"));
+        try
+        {
+            Assert.Equal("completed", await turnEnd.Task.WaitAsync(TimeSpan.FromSeconds(10)));
+        }
+        catch (TimeoutException)
+        {
+            Assert.Fail(
+                "no turn/end seen; items: [" + string.Join(" ;; ", seen) + "] serverError: "
+                + serverError?.Message + " disconnected: " + (disconnectReason ?? "still connected"));
+        }
         JsonElement open = await openReceived.Task;
         Assert.Equal("session/follow", open.GetProperty("endpoint").GetString());
         await serverTask.WaitAsync(TimeSpan.FromSeconds(10));
