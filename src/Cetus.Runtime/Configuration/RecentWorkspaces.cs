@@ -138,7 +138,15 @@ public sealed class RecentWorkspaces
                 .ToList(),
         }, new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(temporaryPath, json);
-        File.Move(temporaryPath, _filePath, overwrite: true);
+        try
+        {
+            File.Move(temporaryPath, _filePath, overwrite: true);
+        }
+        catch
+        {
+            File.Delete(temporaryPath);
+            throw;
+        }
     }
 
     private sealed class RecentWorkspaceFile

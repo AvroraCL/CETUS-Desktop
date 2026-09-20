@@ -240,7 +240,15 @@ public sealed class CetusSettings
         },
             new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(temporaryPath, json);
-        File.Move(temporaryPath, _settingsPath, overwrite: true);
+        try
+        {
+            File.Move(temporaryPath, _settingsPath, overwrite: true);
+        }
+        catch
+        {
+            File.Delete(temporaryPath);
+            throw;
+        }
     }
 
     private sealed class SettingsFile

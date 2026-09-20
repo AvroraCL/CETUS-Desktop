@@ -621,4 +621,58 @@ public sealed class UpdateServiceTests
             }
         }
     }
+
+    [Fact]
+    public async Task Download_SlowBody_OutlivesCheckTimeout_StillSucceeds()
+    {
+        // Regression for the 10s check timeout aborting large payload reads:
+        // the download client must not inherit the short check timeout.
+        string? originalDir = Environment.GetEnvironmentVariable("CETUS_UPDATE_DIR");
+        using var directory = new TemporaryDirectory();
+        try
+        {
+            Environment.SetEnvironmentVariable("CETUS_UPDATE_DIR", directory.Path);
+            byte[] payload = new byte[4096];
+            string sums = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(payload)).ToLowerInvariant()
+                + "  " + InstallerName + "\n";
+            var handler = new FakeHandler
+            {
+                Responder = request =>
+                {
+                    if (request.RequestUri!.ToString().EndsWith("SHA256SUMS.txt", StringComparison.Ordinal))
+                    {
+                        return new HttpResponseMessage(HttpStatusCode.OK)
+                        {
+                            Content = new StringContent(sums, Encoding.UTF8, "text/plain"),
+                        };
+                    }
+
+                    return new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new StreamContent(new SlowStream(payload, TimeSpan.FromMilliseconds(150))),
+                    };
+                },
+            };
+            using var service = new UpdateService(handler, githubFeed: null, requestTimeout: TimeSpan.FromMilliseconds(100));
+
+            string path = await service.DownloadInstallerAsync(
+                GitHubRelease, UpdateFeedSource.GitHub, null, CancellationToken.None);
+
+            Assert.Equal(await File.ReadAllBytesAsync(path), payload);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("CETUS_UPDATE_DIR", originalDir);
+        }
+    }
+
+    private sealed class SlowStream(byte[] data, TimeSpan delayPerRead) : MemoryStream(data)
+    {
+        public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            await Task.Delay(delayPerRead, cancellationToken);
+            return await base.ReadAsync(buffer, offset, count, cancellationToken);
+        }
+    }
+
 }

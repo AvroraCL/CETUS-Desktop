@@ -53,13 +53,20 @@ public sealed class UpdateService : IDisposable
         "https://gitcode.com/api/v5/repos/HelenaSG/CETUS-Desktop/releases";
 
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan DownloadTimeout = TimeSpan.FromMinutes(30);
 
     private readonly HttpClient _client;
+    private readonly HttpClient _downloadClient;
     private readonly string _githubFeed;
     private readonly string _gitCodeTags;
     private readonly string _gitCodeReleases;
 
     public UpdateService(HttpMessageHandler? handler = null, string? githubFeed = null)
+        : this(handler, githubFeed, RequestTimeout)
+    {
+    }
+
+    internal UpdateService(HttpMessageHandler? handler, string? githubFeed, TimeSpan requestTimeout)
     {
         _githubFeed = githubFeed
             ?? ReadEnvironmentFeed()
@@ -67,9 +74,15 @@ public sealed class UpdateService : IDisposable
         _gitCodeTags = DefaultGitCodeTags;
         _gitCodeReleases = DefaultGitCodeReleases;
         _client = handler is null ? new HttpClient() : new HttpClient(handler);
-        _client.Timeout = RequestTimeout;
+        _client.Timeout = requestTimeout;
         _client.DefaultRequestHeaders.UserAgent.ParseAdd("cetus-desktop-update-check");
         _client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+        // A separate long-timeout client for release payloads: HttpClient's
+        // timeout covers the whole body read even with ResponseHeadersRead,
+        // so the 10s check timeout would abort every large download.
+        _downloadClient = handler is null ? new HttpClient() : new HttpClient(handler);
+        _downloadClient.Timeout = DownloadTimeout;
+        _downloadClient.DefaultRequestHeaders.UserAgent.ParseAdd("cetus-desktop-update-check");
     }
 
     /// <summary>The configured GitHub feed; CETUS_UPDATE_FEED overrides it.</summary>
@@ -436,7 +449,7 @@ public sealed class UpdateService : IDisposable
         IProgress<double>? progress,
         CancellationToken cancellationToken)
     {
-        using HttpResponseMessage response = await _client.GetAsync(
+        using HttpResponseMessage response = await _downloadClient.GetAsync(
             asset.DownloadUrl,
             HttpCompletionOption.ResponseHeadersRead,
             cancellationToken);
@@ -474,7 +487,7 @@ public sealed class UpdateService : IDisposable
             return;
         }
 
-        string sums = await _client.GetStringAsync(checksum.DownloadUrl, cancellationToken);
+        string sums = await _downloadClient.GetStringAsync(checksum.DownloadUrl, cancellationToken);
         string actualHash = UpdateFeed.ComputeFileHash(targetPath);
         if (!UpdateFeed.VerifyChecksum(sums, installerName, actualHash, out string? error))
         {
@@ -519,5 +532,9 @@ public sealed class UpdateService : IDisposable
         }
     }
 
-    public void Dispose() => _client.Dispose();
+    public void Dispose()
+    {
+        _client.Dispose();
+        _downloadClient.Dispose();
+    }
 }
