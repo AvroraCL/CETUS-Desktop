@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.IO;
+using System.Net.Http;
 using System.Text.Json;
 using System.Windows;
 using Cetus.Configuration;
@@ -33,6 +35,9 @@ internal sealed class BrowserSession : IBrowserSession, IUpdateNoticeSink, IDisp
     private readonly Action? _dismissUpdate;
     private readonly Func<string?>? _updateStateProvider;
     private LoopbackNavigationPolicy? _navigationPolicy;
+    private CoreWebView2Environment? _environment;
+    private HttpClient? _frameFetch;
+    private readonly List<object> _pinned = new();
     private bool _initialized;
     private bool _disposed;
 
@@ -82,6 +87,7 @@ internal sealed class BrowserSession : IBrowserSession, IUpdateNoticeSink, IDisp
             CoreWebView2Environment environment = await CoreWebView2Environment.CreateAsync(
                 browserExecutableFolder: null,
                 userDataFolder: CetusPaths.WebView2UserDataDirectory);
+            _environment = environment;
             await _view.EnsureCoreWebView2Async(environment);
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -94,6 +100,11 @@ internal sealed class BrowserSession : IBrowserSession, IUpdateNoticeSink, IDisp
             core.NewWindowRequested += OnNewWindowRequested;
             core.NavigationCompleted += OnNavigationCompleted;
             core.WebMessageReceived += OnWebMessageReceived;
+            // Serve framed web documents without the embed-blocking headers
+            // (X-Frame-Options / CSP frame-ancestors) so the Harness sidebar
+            // browser can render sites like GitHub that refuse iframing.
+            core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.Document);
+            core.WebResourceRequested += OnWebResourceRequested;
             await core.AddScriptToExecuteOnDocumentCreatedAsync(WindowBridgeScript);
             _initialized = true;
         }
@@ -220,6 +231,98 @@ internal sealed class BrowserSession : IBrowserSession, IUpdateNoticeSink, IDisp
     internal static bool IsWebDocument(string uriText) =>
         Uri.TryCreate(uriText, UriKind.Absolute, out Uri? uri)
         && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+
+    /// <summary>
+    /// Serves framed web documents fetched by Cetus with the embed-blocking
+    /// headers (X-Frame-Options, CSP frame-ancestors) stripped, so the
+    /// Harness sidebar browser can render sites like GitHub that refuse
+    /// iframing. DSH-origin documents (the Harness page itself and its
+    /// reloads) always pass through untouched, as do non-GET requests.
+    /// </summary>
+    private void OnWebResourceRequested(
+        object? sender,
+        CoreWebView2WebResourceRequestedEventArgs e)
+    {
+        if (e.ResourceContext != CoreWebView2WebResourceContext.Document
+            || e.Request.Method != "GET"
+            || !IsWebDocument(e.Request.Uri)
+            || _navigationPolicy?.Allows(e.Request.Uri) == true)
+        {
+            return;
+        }
+
+        var deferral = e.GetDeferral();
+        _ = ServeStrippedAsync(e, e.Request.Uri, deferral);
+    }
+
+    private async Task ServeStrippedAsync(
+        CoreWebView2WebResourceRequestedEventArgs e,
+        string uriText,
+        CoreWebView2Deferral deferral)
+    {
+        try
+        {
+            if (_navigationPolicy?.Allows(uriText) == true)
+            {
+                return; // DSH origin: pass through untouched
+            }
+
+            _frameFetch ??= new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+            using HttpResponseMessage upstream =
+                await _frameFetch.GetAsync(uriText, HttpCompletionOption.ResponseHeadersRead);
+
+            var headers = new System.Text.StringBuilder();
+            foreach (var header in upstream.Headers)
+            {
+                if (EmbedBlockers.Contains(header.Key, StringComparer.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                foreach (var value in header.Value)
+                {
+                    headers.Append(header.Key).Append(": ").Append(value).Append('\n');
+                }
+            }
+
+            foreach (var header in upstream.Content.Headers)
+            {
+                if (EmbedBlockers.Contains(header.Key, StringComparer.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                foreach (var value in header.Value)
+                {
+                    headers.Append(header.Key).Append(": ").Append(value).Append('\n');
+                }
+            }
+
+            Stream body = await upstream.Content.ReadAsStreamAsync();
+            _pinned.Add(body);
+            _pinned.Add(upstream);
+
+            e.Response = _environment?.CreateWebResourceResponse(
+                body, (int)upstream.StatusCode, upstream.ReasonPhrase, headers.ToString());
+        }
+        catch (Exception error) when (error is HttpRequestException or TaskCanceledException)
+        {
+            // Let WebView2 render its own network error for the frame.
+            _ = error;
+        }
+        finally
+        {
+            deferral.Complete();
+        }
+    }
+
+    /// <summary>Header names whose presence prevents iframe embedding.</summary>
+    internal static readonly HashSet<string> EmbedBlockers = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "X-Frame-Options",
+        "Content-Security-Policy",
+    };
+
 
     private static void OnNewWindowRequested(
         object? sender,
