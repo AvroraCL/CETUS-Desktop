@@ -121,8 +121,6 @@ public sealed class DshTurnEndWatcher : IDisposable
             }
             catch (Exception error) when (error is HttpRequestException or InvalidOperationException)
             {
-                Configuration.RuntimeLog.Append(
-                    "DshTurnEndWatcher discovery failed: " + error.Message);
                 await SleepAsync(ReconnectDelay, token);
             }
         }
