@@ -146,30 +146,55 @@ public sealed class CetusSettings
             throw new ArgumentOutOfRangeException(nameof(port), "端口必须介于 1 和 65535 之间。");
         }
 
+        if (_configuredPort == port)
+        {
+            return;
+        }
+
         _configuredPort = port;
         Persist();
     }
 
     public void SetCheckUpdatesOnStartup(bool enabled)
     {
+        if (_checkUpdatesOnStartup == enabled)
+        {
+            return;
+        }
+
         _checkUpdatesOnStartup = enabled;
         Persist();
     }
 
     public void SetCloseToTray(bool enabled)
     {
+        if (_closeToTray == enabled)
+        {
+            return;
+        }
+
         _closeToTray = enabled;
         Persist();
     }
 
     public void SetNotifyOnAgentComplete(bool enabled)
     {
+        if (_notifyOnAgentComplete == enabled)
+        {
+            return;
+        }
+
         _notifyOnAgentComplete = enabled;
         Persist();
     }
 
     public void SetGlobalHotkeyEnabled(bool enabled)
     {
+        if (_globalHotkeyEnabled == enabled)
+        {
+            return;
+        }
+
         _globalHotkeyEnabled = enabled;
         Persist();
     }
