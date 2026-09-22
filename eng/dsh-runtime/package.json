@@ -4,5 +4,8 @@
   "private": true,
   "dependencies": {
     "@deepseek-ai/dsh": "0.1.7-alpha.1"
+  },
+  "overrides": {
+    "fflate": "0.8.3"
   }
 }
