@@ -98,12 +98,12 @@ public sealed class UpdateServiceTests
     }
 
     [Fact]
-    public async Task CheckAsync_FallsBackToGitCodeTagsWhenGitHubFails()
+    public async Task CheckAsync_FallsBackToGitCodeReleaseWhenGitHubFails()
     {
         var handler = new FakeHandler
         {
             Responder = request => request.RequestUri!.Host == "gitcode.com"
-                ? Json(GitCodeTagsJson)
+                ? Json(GitCodeReleasesJson)
                 : new HttpResponseMessage(HttpStatusCode.InternalServerError),
         };
         using var service = new UpdateService(handler);
@@ -113,7 +113,7 @@ public sealed class UpdateServiceTests
         Assert.True(result.UpdateAvailable, $"diag: available={result.UpdateAvailable} error={result.Error} src={result.Source}");
         Assert.Equal(UpdateFeedSource.GitCode, result.Source);
         Assert.Equal(UpdateCheckResult.GitCodeReleasesPage, result.ReleasesPageUrl);
-        Assert.Contains(UpdateService.DefaultGitCodeTags, handler.Requests);
+        Assert.Contains(UpdateService.DefaultGitCodeReleases, handler.Requests);
     }
 
     [Fact]
@@ -122,7 +122,7 @@ public sealed class UpdateServiceTests
         var handler = new FakeHandler
         {
             Responder = request => request.RequestUri!.Host == "gitcode.com"
-                ? Json(GitCodeTagsJson)
+                ? Json(GitCodeReleasesJson)
                 : Json(GitHubReleaseJson),
         };
         using var service = new UpdateService(handler);
@@ -130,7 +130,7 @@ public sealed class UpdateServiceTests
         UpdateCheckResult result = await service.CheckAsync(Current, "gitcode", CancellationToken.None);
 
         Assert.Equal(UpdateFeedSource.GitCode, result.Source);
-        Assert.Contains(UpdateService.DefaultGitCodeTags, handler.Requests);
+        Assert.Contains(UpdateService.DefaultGitCodeReleases, handler.Requests);
         Assert.Contains(UpdateService.DefaultGitHubFeed, handler.Requests);
     }
 
@@ -140,7 +140,7 @@ public sealed class UpdateServiceTests
         var handler = new FakeHandler
         {
             Responder = request => request.RequestUri!.Host == "gitcode.com"
-                ? Json("""[{"name":"v0.2.0"}]""")
+                ? Json("""[{"tag_name":"v0.2.0","assets":[{"name":"Cetus-Setup-0.2.0.exe","browser_download_url":"https://gitcode.com/setup.exe"},{"name":"SHA256SUMS.txt","browser_download_url":"https://gitcode.com/SHA256SUMS.txt"}]}]""")
                 : Json(GitHubReleaseJson),
         };
         using var service = new UpdateService(handler);
@@ -152,12 +152,82 @@ public sealed class UpdateServiceTests
     }
 
     [Fact]
+    public async Task CheckAsync_GitHubRateLimitUsesPublicLatestRelease()
+    {
+        var handler = new FakeHandler
+        {
+            Responder = request => request.RequestUri!.ToString() switch
+            {
+                UpdateService.DefaultGitHubFeed => new HttpResponseMessage(HttpStatusCode.Forbidden),
+                UpdateService.DefaultGitCodeReleases => Json("""[{"tag_name":"v0.2.0","assets":[{"name":"Cetus-Setup-0.2.0.exe","browser_download_url":"https://gitcode.com/setup.exe"},{"name":"SHA256SUMS.txt","browser_download_url":"https://gitcode.com/SHA256SUMS.txt"}]}]"""),
+                UpdateService.GitHubLatestPage => Redirect("https://github.com/AvroraCL/CETUS-Desktop/releases/tag/v0.2.1"),
+                _ => new HttpResponseMessage(HttpStatusCode.NotFound),
+            },
+        };
+        using var service = new UpdateService(handler);
+
+        UpdateCheckResult result = await service.CheckAsync(new Version(0, 1, 9), "gitcode", CancellationToken.None);
+
+        Assert.True(result.UpdateAvailable);
+        Assert.Equal(UpdateFeedSource.GitHub, result.Source);
+        Assert.Equal(new Version(0, 2, 1), result.Release!.Version);
+        Assert.Equal(
+            "https://github.com/AvroraCL/CETUS-Desktop/releases/download/v0.2.1/Cetus-Setup-0.2.1.exe",
+            UpdateFeed.SelectInstallerAsset(result.Release)?.DownloadUrl);
+    }
+
+    [Fact]
+    public async Task CheckAsync_GitCodeTagWithoutReleaseDoesNotOfferUpdate()
+    {
+        var handler = new FakeHandler
+        {
+            Responder = request => request.RequestUri!.ToString() switch
+            {
+                UpdateService.DefaultGitHubFeed => new HttpResponseMessage(HttpStatusCode.Forbidden),
+                UpdateService.GitHubLatestPage => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable),
+                UpdateService.DefaultGitCodeTags => Json(GitCodeTagsJson),
+                UpdateService.DefaultGitCodeReleases => Json("""[{"tag_name":"v0.2.0","assets":[{"name":"Cetus-Setup-0.2.0.exe","browser_download_url":"https://gitcode.com/setup.exe"},{"name":"SHA256SUMS.txt","browser_download_url":"https://gitcode.com/SHA256SUMS.txt"}]}]"""),
+                _ => new HttpResponseMessage(HttpStatusCode.NotFound),
+            },
+        };
+        using var service = new UpdateService(handler);
+
+        UpdateCheckResult result = await service.CheckAsync(Current, "gitcode", CancellationToken.None);
+
+        Assert.False(result.UpdateAvailable);
+        Assert.Null(result.Error);
+        Assert.Contains(UpdateService.DefaultGitCodeReleases, handler.Requests);
+        Assert.DoesNotContain(UpdateService.DefaultGitCodeTags, handler.Requests);
+    }
+
+    [Fact]
+    public async Task CheckAsync_RateLimitDoesNotTrustAnUnrelatedRedirect()
+    {
+        var handler = new FakeHandler
+        {
+            Responder = request => request.RequestUri!.ToString() switch
+            {
+                UpdateService.DefaultGitHubFeed => new HttpResponseMessage(HttpStatusCode.Forbidden),
+                UpdateService.DefaultGitCodeReleases => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable),
+                UpdateService.GitHubLatestPage => Redirect("https://example.com/releases/tag/v9.9.9"),
+                _ => new HttpResponseMessage(HttpStatusCode.NotFound),
+            },
+        };
+        using var service = new UpdateService(handler);
+
+        UpdateCheckResult result = await service.CheckAsync(Current, "github", CancellationToken.None);
+
+        Assert.False(result.UpdateAvailable);
+        Assert.NotNull(result.Error);
+    }
+
+    [Fact]
     public async Task CheckAsync_SelectsHigherGitCodeVersionWhenGitHubLags()
     {
         var handler = new FakeHandler
         {
             Responder = request => request.RequestUri!.Host == "gitcode.com"
-                ? Json(GitCodeTagsJson)
+                ? Json(GitCodeReleasesJson)
                 : Json("""{"tag_name":"v0.2.0","assets":[]}"""),
         };
         using var service = new UpdateService(handler);
@@ -511,6 +581,47 @@ public sealed class UpdateServiceTests
     }
 
     [Fact]
+    public async Task DownloadInstallerWithFallbackAsync_GitCodeHasNoAssetAndGitHubApiIsRateLimited()
+    {
+        string? originalDir = Environment.GetEnvironmentVariable("CETUS_UPDATE_DIR");
+        using var directory = new TemporaryDirectory();
+        try
+        {
+            Environment.SetEnvironmentVariable("CETUS_UPDATE_DIR", directory.Path);
+            var handler = new FakeHandler
+            {
+                Responder = request => request.RequestUri!.ToString() switch
+                {
+                    UpdateService.DefaultGitCodeTags => Json(GitCodeTagsJson),
+                    UpdateService.DefaultGitCodeReleases => Json("[]"),
+                    UpdateService.DefaultGitHubFeed => new HttpResponseMessage(HttpStatusCode.Forbidden),
+                    UpdateService.GitHubLatestPage => Redirect("https://github.com/AvroraCL/CETUS-Desktop/releases/tag/v0.2.1"),
+                    var url when url.EndsWith("SHA256SUMS.txt", StringComparison.Ordinal) =>
+                        new HttpResponseMessage(HttpStatusCode.OK)
+                        {
+                            Content = new StringContent($"{InstallerHash}  {InstallerName}\n"),
+                        },
+                    var url when url.EndsWith(InstallerName, StringComparison.Ordinal) =>
+                        new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(InstallerBytes) },
+                    _ => new HttpResponseMessage(HttpStatusCode.NotFound),
+                },
+            };
+            using var service = new UpdateService(handler);
+
+            UpdateDownloadResult result = await service.DownloadInstallerWithFallbackAsync(
+                new Version(0, 2, 1), UpdateFeedSource.GitCode, null, CancellationToken.None);
+
+            Assert.Equal(UpdateFeedSource.GitHub, result.Source);
+            Assert.Equal(InstallerBytes, await File.ReadAllBytesAsync(result.Path));
+            Assert.Contains(UpdateService.GitHubLatestPage, handler.Requests);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("CETUS_UPDATE_DIR", originalDir);
+        }
+    }
+
+    [Fact]
     public async Task DownloadInstallerWithFallbackAsync_MissingGitHubAssetUsesGitCode()
     {
         string? originalDir = Environment.GetEnvironmentVariable("CETUS_UPDATE_DIR");
@@ -616,12 +727,66 @@ public sealed class UpdateServiceTests
         }
     }
 
+    [Fact]
+    public async Task DownloadWithFallbackAsync_RateLimitedTagApiUsesExactPublicTag()
+    {
+        string? originalDir = Environment.GetEnvironmentVariable("CETUS_UPDATE_DIR");
+        using var directory = new TemporaryDirectory();
+        try
+        {
+            Environment.SetEnvironmentVariable("CETUS_UPDATE_DIR", directory.Path);
+            var handler = new FakeHandler
+            {
+                Responder = request => request.RequestUri!.ToString() switch
+                {
+                    UpdateService.DefaultGitHubFeed => Json("""{"tag_name":"v0.2.2","assets":[]}"""),
+                    UpdateService.DefaultGitCodeTags => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable),
+                    "https://api.github.com/repos/AvroraCL/CETUS-Desktop/releases/tags/v0.2.1" =>
+                        new HttpResponseMessage(HttpStatusCode.Forbidden),
+                    "https://github.com/AvroraCL/CETUS-Desktop/releases/tag/v0.2.1" =>
+                        new HttpResponseMessage(HttpStatusCode.OK)
+                        {
+                            RequestMessage = new HttpRequestMessage(
+                                HttpMethod.Head,
+                                "https://github.com/AvroraCL/CETUS-Desktop/releases/tag/v0.2.1"),
+                        },
+                    var url when url.EndsWith("SHA256SUMS.txt", StringComparison.Ordinal) =>
+                        new HttpResponseMessage(HttpStatusCode.OK)
+                        {
+                            Content = new StringContent($"{InstallerHash}  {InstallerName}\n"),
+                        },
+                    var url when url.EndsWith(InstallerName, StringComparison.Ordinal) =>
+                        new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(InstallerBytes) },
+                    _ => new HttpResponseMessage(HttpStatusCode.NotFound),
+                },
+            };
+            using var service = new UpdateService(handler);
+
+            UpdateDownloadResult result = await service.DownloadInstallerWithFallbackAsync(
+                new Version(0, 2, 1), UpdateFeedSource.GitHub, null, CancellationToken.None);
+
+            Assert.Equal(UpdateFeedSource.GitHub, result.Source);
+            Assert.Equal(InstallerBytes, await File.ReadAllBytesAsync(result.Path));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("CETUS_UPDATE_DIR", originalDir);
+        }
+    }
+
     private static HttpResponseMessage JsonResponse(string body) => new(HttpStatusCode.OK)
     {
         Content = new StringContent(body, Encoding.UTF8, "application/json"),
     };
 
     private static HttpResponseMessage Json(string body) => JsonResponse(body);
+
+    private static HttpResponseMessage Redirect(string destination)
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.Redirect);
+        response.Headers.Location = new Uri(destination);
+        return response;
+    }
 
     private static HttpResponseMessage Respond(HttpRequestMessage request, string sums)
     {

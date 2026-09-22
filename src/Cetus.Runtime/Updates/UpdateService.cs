@@ -46,6 +46,9 @@ public sealed class UpdateService : IDisposable
     public const string DefaultGitHubFeed =
         "https://api.github.com/repos/AvroraCL/CETUS-Desktop/releases/latest";
 
+    public const string GitHubLatestPage =
+        "https://github.com/AvroraCL/CETUS-Desktop/releases/latest";
+
     public const string DefaultGitCodeTags =
         "https://gitcode.com/api/v5/repos/HelenaSG/CETUS-Desktop/tags";
 
@@ -58,7 +61,6 @@ public sealed class UpdateService : IDisposable
     private readonly HttpClient _client;
     private readonly HttpClient _downloadClient;
     private readonly string _githubFeed;
-    private readonly string _gitCodeTags;
     private readonly string _gitCodeReleases;
 
     public UpdateService(HttpMessageHandler? handler = null, string? githubFeed = null)
@@ -71,7 +73,6 @@ public sealed class UpdateService : IDisposable
         _githubFeed = githubFeed
             ?? ReadEnvironmentFeed()
             ?? DefaultGitHubFeed;
-        _gitCodeTags = DefaultGitCodeTags;
         _gitCodeReleases = DefaultGitCodeReleases;
         _client = handler is null ? new HttpClient() : new HttpClient(handler);
         _client.Timeout = requestTimeout;
@@ -153,8 +154,15 @@ public sealed class UpdateService : IDisposable
         UpdateFeedSource preferred,
         CancellationToken cancellationToken)
     {
-        Task<(bool Reachable, TimeSpan Elapsed)> github = MeasureAsync(_githubFeed, cancellationToken);
-        Task<(bool Reachable, TimeSpan Elapsed)> gitcode = MeasureAsync(_gitCodeTags, cancellationToken);
+        bool publicGitHubFeed = _githubFeed == DefaultGitHubFeed;
+        Task<(bool Reachable, TimeSpan Elapsed)> github = MeasureAsync(
+            publicGitHubFeed ? GitHubLatestPage : _githubFeed,
+            publicGitHubFeed ? HttpMethod.Head : HttpMethod.Get,
+            cancellationToken);
+        Task<(bool Reachable, TimeSpan Elapsed)> gitcode = MeasureAsync(
+            _gitCodeReleases,
+            HttpMethod.Get,
+            cancellationToken);
         await Task.WhenAll(github, gitcode);
         (bool githubOk, TimeSpan githubTime) = github.Result;
         (bool gitcodeOk, TimeSpan gitcodeTime) = gitcode.Result;
@@ -171,16 +179,23 @@ public sealed class UpdateService : IDisposable
             _ => null,
         };
 
-        async Task<(bool Reachable, TimeSpan Elapsed)> MeasureAsync(string url, CancellationToken token)
+        async Task<(bool Reachable, TimeSpan Elapsed)> MeasureAsync(
+            string url,
+            HttpMethod method,
+            CancellationToken token)
         {
             try
             {
                 var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-                using HttpResponseMessage response = await _client.GetAsync(
-                    url,
+                using var request = new HttpRequestMessage(method, url);
+                using HttpResponseMessage response = await _client.SendAsync(
+                    request,
                     HttpCompletionOption.ResponseHeadersRead,
                     token);
-                return (response.IsSuccessStatusCode, stopwatch.Elapsed);
+                bool reachable = response.IsSuccessStatusCode ||
+                    ((int)response.StatusCode is >= 300 and < 400 &&
+                        response.Headers.Location is not null);
+                return (reachable, stopwatch.Elapsed);
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
@@ -309,16 +324,32 @@ public sealed class UpdateService : IDisposable
                 throw new InvalidOperationException($"GitHub 没有版本 {version} 的发布资源。");
             }
 
-            using HttpResponseMessage response = await _client.GetAsync(tagFeed, cancellationToken);
-            if (!response.IsSuccessStatusCode)
+            HttpResponseMessage response;
+            try
             {
-                throw new InvalidOperationException($"GitHub 没有版本 {version} 的发布资源（HTTP {(int)response.StatusCode}）。");
+                response = await _client.GetAsync(tagFeed, cancellationToken);
+            }
+            catch (HttpRequestException) when (_githubFeed == DefaultGitHubFeed)
+            {
+                return await GetGitHubPublicReleaseAsync(version, cancellationToken);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && _githubFeed == DefaultGitHubFeed)
+            {
+                return await GetGitHubPublicReleaseAsync(version, cancellationToken);
             }
 
-            ReleaseInfo? exact = UpdateFeed.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
-            return exact?.Version == version
-                ? exact
-                : throw new InvalidOperationException($"GitHub 返回了错误的版本，期望 {version}。");
+            using (response)
+            {
+                if (!response.IsSuccessStatusCode)
+                {
+                    return await GetGitHubPublicReleaseAsync(version, cancellationToken);
+                }
+
+                ReleaseInfo? exact = UpdateFeed.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+                return exact?.Version == version
+                    ? exact
+                    : await GetGitHubPublicReleaseAsync(version, cancellationToken);
+            }
         }
 
         var requested = new ReleaseInfo($"v{version.ToString(3)}", version, null, Array.Empty<ReleaseAsset>());
@@ -375,47 +406,124 @@ public sealed class UpdateService : IDisposable
 
     private async Task<ReleaseInfo?> GetGitHubLatestAsync(CancellationToken cancellationToken)
     {
-        using HttpResponseMessage response = await _client.GetAsync(_githubFeed, cancellationToken);
-        if (!response.IsSuccessStatusCode)
+        HttpResponseMessage response;
+        try
         {
-            throw new InvalidOperationException($"更新服务器返回 {(int)response.StatusCode}。");
+            response = await _client.GetAsync(_githubFeed, cancellationToken);
+        }
+        catch (HttpRequestException) when (_githubFeed == DefaultGitHubFeed)
+        {
+            return await GetGitHubPublicReleaseAsync(null, cancellationToken);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && _githubFeed == DefaultGitHubFeed)
+        {
+            return await GetGitHubPublicReleaseAsync(null, cancellationToken);
         }
 
-        return UpdateFeed.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
+            {
+                if (_githubFeed != DefaultGitHubFeed)
+                {
+                    throw new InvalidOperationException($"更新服务器返回 {(int)response.StatusCode}。");
+                }
+
+                return await GetGitHubPublicReleaseAsync(null, cancellationToken);
+            }
+
+            ReleaseInfo? release = UpdateFeed.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+            return release ?? (_githubFeed == DefaultGitHubFeed
+                ? await GetGitHubPublicReleaseAsync(null, cancellationToken)
+                : null);
+        }
+    }
+
+    private async Task<ReleaseInfo> GetGitHubPublicReleaseAsync(
+        Version? requestedVersion,
+        CancellationToken cancellationToken)
+    {
+        if (_githubFeed != DefaultGitHubFeed)
+        {
+            throw new InvalidOperationException("自定义 GitHub 更新源没有可用的发布元数据。");
+        }
+
+        string pageUrl = requestedVersion is null
+            ? GitHubLatestPage
+            : $"{UpdateCheckResult.GitHubReleasesPage}/tag/v{requestedVersion.ToString(3)}";
+        using var request = new HttpRequestMessage(HttpMethod.Head, pageUrl);
+        using HttpResponseMessage response = await _client.SendAsync(
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken);
+
+        bool isRedirect = (int)response.StatusCode is >= 300 and < 400
+            && response.Headers.Location is not null;
+        if (!response.IsSuccessStatusCode && !isRedirect)
+        {
+            throw new InvalidOperationException($"GitHub 发布页返回 {(int)response.StatusCode}。");
+        }
+
+        Uri? releaseUri = isRedirect
+            ? new Uri(new Uri(pageUrl), response.Headers.Location!)
+            : response.RequestMessage?.RequestUri;
+        const string tagPrefix = "/AvroraCL/CETUS-Desktop/releases/tag/";
+        if (releaseUri is null
+            || releaseUri.Scheme != Uri.UriSchemeHttps
+            || releaseUri.Host != "github.com"
+            || !releaseUri.AbsolutePath.StartsWith(tagPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("GitHub 发布页没有返回有效的版本标签。");
+        }
+
+        string tag = Uri.UnescapeDataString(releaseUri.AbsolutePath[tagPrefix.Length..]);
+        if (tag.Contains('/')
+            || !UpdateFeed.TryParseTag(tag, out Version version)
+            || requestedVersion is not null && version != requestedVersion)
+        {
+            throw new InvalidOperationException("GitHub 发布页返回了错误的版本标签。");
+        }
+
+        string root = $"{UpdateCheckResult.GitHubReleasesPage}/download/{tag}/";
+        string installerName = $"Cetus-Setup-{version.ToString(3)}.exe";
+        string portableName = $"Cetus-{version.ToString(3)}-win-x64-portable.zip";
+        return new ReleaseInfo(
+            tag,
+            version,
+            null,
+            [
+                new ReleaseAsset(installerName, root + installerName, 0),
+                new ReleaseAsset(portableName, root + portableName, 0),
+                new ReleaseAsset("SHA256SUMS.txt", root + "SHA256SUMS.txt", 0),
+            ]);
     }
 
     /// <summary>
-    /// GitCode does not mirror GitHub's releases/latest: the newest known
-    /// version comes from the tag list, and release assets are resolved from
-    /// the releases list only when a download is actually requested.
+    /// A pushed tag is not enough to update from GitCode. Only published
+    /// releases with a package and checksum can be offered to the user.
     /// </summary>
     private async Task<ReleaseInfo?> GetGitCodeLatestAsync(CancellationToken cancellationToken)
     {
-        using HttpResponseMessage response = await _client.GetAsync(_gitCodeTags, cancellationToken);
+        using HttpResponseMessage response = await _client.GetAsync(_gitCodeReleases, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException($"更新服务器返回 {(int)response.StatusCode}。");
         }
 
         using JsonDocument document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
-        Version? best = null;
-        string? bestTag = null;
-        if (document.RootElement.ValueKind == JsonValueKind.Array)
+        if (document.RootElement.ValueKind != JsonValueKind.Array)
         {
-            foreach (JsonElement tag in document.RootElement.EnumerateArray())
-            {
-                if (tag.ValueKind == JsonValueKind.Object
-                    && tag.TryGetProperty("name", out var nameElement)
-                    && UpdateFeed.TryParseTag(nameElement.GetString(), out Version version)
-                    && (best is null || version > best))
-                {
-                    best = version;
-                    bestTag = nameElement.GetString();
-                }
-            }
+            return null;
         }
 
-        return bestTag is null ? null : new ReleaseInfo(bestTag, best!, null, Array.Empty<ReleaseAsset>());
+        return document.RootElement.EnumerateArray()
+            .Select(ParseGitCodeRelease)
+            .Where(release => release is not null
+                && UpdateFeed.SelectChecksumAsset(release) is not null
+                && (UpdateFeed.SelectInstallerAsset(release) is not null
+                    || UpdateFeed.SelectPortableBundleAsset(release) is not null))
+            .OrderByDescending(release => release!.Version)
+            .FirstOrDefault();
     }
 
     private async Task<ReleaseInfo?> ResolveGitCodeAssetsAsync(ReleaseInfo release, CancellationToken cancellationToken)
@@ -434,43 +542,56 @@ public sealed class UpdateService : IDisposable
 
         foreach (JsonElement releaseElement in document.RootElement.EnumerateArray())
         {
-            if (releaseElement.ValueKind != JsonValueKind.Object
-                || !releaseElement.TryGetProperty("tag_name", out var tagElement)
-                || !UpdateFeed.TryParseTag(tagElement.GetString(), out Version version)
-                || version != release.Version)
+            ReleaseInfo? candidate = ParseGitCodeRelease(releaseElement);
+            if (candidate?.Version != release.Version)
             {
                 continue;
             }
 
-            var assets = new List<ReleaseAsset>();
-            if (releaseElement.TryGetProperty("assets", out var assetsElement)
-                && assetsElement.ValueKind == JsonValueKind.Array)
-            {
-                foreach (JsonElement asset in assetsElement.EnumerateArray())
-                {
-                    string? name = asset.ValueKind == JsonValueKind.Object
-                        && asset.TryGetProperty("name", out var nameElement)
-                            ? nameElement.GetString()
-                            : null;
-                    string? url = asset.ValueKind == JsonValueKind.Object
-                        && asset.TryGetProperty("browser_download_url", out var urlElement)
-                            ? urlElement.GetString()
-                            : null;
-                    if (name is not null && url is not null)
-                    {
-                        assets.Add(new ReleaseAsset(name, url, 0));
-                    }
-                }
-            }
-
-            string? notes = releaseElement.TryGetProperty("body", out var bodyElement)
-                && bodyElement.ValueKind == JsonValueKind.String
-                ? bodyElement.GetString()
-                : release.Notes;
-            return new ReleaseInfo(release.TagName, release.Version, notes, assets);
+            return candidate with { TagName = release.TagName, Notes = candidate.Notes ?? release.Notes };
         }
 
         return release;
+    }
+
+    private static ReleaseInfo? ParseGitCodeRelease(JsonElement releaseElement)
+    {
+        if (releaseElement.ValueKind != JsonValueKind.Object
+            || !releaseElement.TryGetProperty("tag_name", out JsonElement tagElement)
+            || tagElement.ValueKind != JsonValueKind.String
+            || !UpdateFeed.TryParseTag(tagElement.GetString(), out Version version))
+        {
+            return null;
+        }
+
+        var assets = new List<ReleaseAsset>();
+        if (releaseElement.TryGetProperty("assets", out JsonElement assetsElement)
+            && assetsElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement asset in assetsElement.EnumerateArray())
+            {
+                string? name = asset.ValueKind == JsonValueKind.Object
+                    && asset.TryGetProperty("name", out JsonElement nameElement)
+                    && nameElement.ValueKind == JsonValueKind.String
+                        ? nameElement.GetString()
+                        : null;
+                string? url = asset.ValueKind == JsonValueKind.Object
+                    && asset.TryGetProperty("browser_download_url", out JsonElement urlElement)
+                    && urlElement.ValueKind == JsonValueKind.String
+                        ? urlElement.GetString()
+                        : null;
+                if (name is not null && url is not null)
+                {
+                    assets.Add(new ReleaseAsset(name, url, 0));
+                }
+            }
+        }
+
+        string? notes = releaseElement.TryGetProperty("body", out JsonElement bodyElement)
+            && bodyElement.ValueKind == JsonValueKind.String
+            ? bodyElement.GetString()
+            : null;
+        return new ReleaseInfo(tagElement.GetString()!, version, notes, assets);
     }
 
     private async Task DownloadToFileAsync(
