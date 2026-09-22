@@ -11,9 +11,18 @@
 #ifndef AppSourceDir
   #define AppSourceDir "..\dist\app-" + Version
 #endif
+#ifdef SmokeTest
+  ; A smoke package must be a different product. It can then install and
+  ; uninstall without taking over the user's AppId, shortcuts, or protocol.
+  #define CetusAppId "{{B337C5F3-353C-4BA1-A071-789326B8CC54}"
+  #define StartMenuShortcutRoot "{userprograms}\CETUS installation smoke"
+#else
+  #define CetusAppId "{{588C7C05-5114-479B-90D3-0FB5829FB0EF}"
+  #define StartMenuShortcutRoot "{userprograms}"
+#endif
 
 [Setup]
-AppId={{588C7C05-5114-479B-90D3-0FB5829FB0EF}
+AppId={#CetusAppId}
 AppName=CETUS鲸鱼座
 AppVersion={#Version}
 AppVerName=CETUS鲸鱼座 {#Version}
@@ -62,13 +71,19 @@ Source: "{#AppSourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdi
 Type: filesandordirs; Name: "{app}\runtime"
 
 [Icons]
-Name: "{userprograms}\Cetus 鲸鱼座"; Filename: "{app}\Cetus.exe"; WorkingDir: "{app}"
+Name: "{#StartMenuShortcutRoot}\Cetus 鲸鱼座"; Filename: "{app}\Cetus.exe"; WorkingDir: "{app}"
 Name: "{userdesktop}\Cetus 鲸鱼座"; Filename: "{app}\Cetus.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
+#ifdef SmokeTest
+; The isolated smoke package validates the installer layout; it must not run
+; the app or modify protocol and portable-install state during a silent test.
+Filename: "{app}\Cetus.exe"; Description: "启动 Cetus 鲸鱼座"; Flags: nowait postinstall skipifsilent
+#else
 ; No skipifsilent: the auto-update flow relies on the silent install
 ; relaunching CETUS so the new build can show the announcement page.
 Filename: "{app}\Cetus.exe"; Description: "启动 Cetus 鲸鱼座"; Flags: nowait postinstall
+#endif
 
 [UninstallDelete]
 ; Legacy WebView2 default profile location (pre-0.1.0 installs wrote it next to the exe).
@@ -178,9 +193,11 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;begin
 end;
 
 // The cetus:// protocol registration is written by the app at first run
-// (so portable copies get it too); the uninstaller removes it again.
+// (so portable copies get it too); the production uninstaller removes it.
+#ifndef SmokeTest
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usPostUninstall then
     RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER, 'Software\Classes\cetus');
 end;
+#endif

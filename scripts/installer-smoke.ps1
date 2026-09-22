@@ -4,6 +4,10 @@
     Installs and uninstalls a Cetus setup executable in an isolated directory.
 
 .DESCRIPTION
+    The input must be an installer compiled with /DSmokeTest=1. That variant
+    has its own AppId and Start menu directory, so this test cannot alter a
+    user's CETUS installation.
+
     Waits for both Cetus.exe and its uninstaller after Setup exits. This avoids
     a false result when Inno Setup's worker is still finalizing files after the
     launcher process has returned.
@@ -101,13 +105,17 @@ $cetusExe = Join-Path $InstallDirectory "Cetus.exe"
 $uninstaller = Join-Path $InstallDirectory "unins000.exe"
 $installLog = "$InstallDirectory-install.log"
 $uninstallLog = "$InstallDirectory-uninstall.log"
+$smokeStartMenuGroup = "CETUS installation smoke"
+$smokeShortcut = Join-Path (Join-Path $env:APPDATA (
+    "Microsoft\Windows\Start Menu\Programs\$smokeStartMenuGroup")) "Cetus 鲸鱼座.lnk"
 $installed = $false
 $validated = $false
 
 try {
     $installProcess = Start-Process -FilePath $installer -ArgumentList @(
         "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-",
-        "/DIR=$InstallDirectory", "/LOG=$installLog"
+        "/DIR=$InstallDirectory",
+        "/LOG=$installLog"
     ) -PassThru
     $installProcess.WaitForExit()
     if ($installProcess.ExitCode -ne 0) {
@@ -117,6 +125,8 @@ try {
     $installTimer = [System.Diagnostics.Stopwatch]::StartNew()
     Wait-ForFile -Path $cetusExe -Timer $installTimer -TimeoutSeconds $TimeoutSeconds -Description "Cetus.exe"
     Wait-ForFile -Path $uninstaller -Timer $installTimer -TimeoutSeconds $TimeoutSeconds -Description "the Cetus uninstaller"
+    Wait-ForFile -Path $smokeShortcut -Timer $installTimer -TimeoutSeconds $TimeoutSeconds `
+        -Description "the smoke Start menu shortcut"
     $installed = $true
     Wait-ForLogMarker -Path $installLog -Pattern '\bInstallation process succeeded\.\s*$' `
         -Timer $installTimer -TimeoutSeconds $TimeoutSeconds `
@@ -133,6 +143,11 @@ try {
         $installedPath = Join-Path $InstallDirectory $relativePath
         Wait-ForFile -Path $installedPath -Timer $installTimer `
             -TimeoutSeconds $TimeoutSeconds -Description $relativePath
+    }
+
+    $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($smokeShortcut)
+    if (-not [string]::Equals($shortcut.TargetPath, $cetusExe, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Smoke Start menu shortcut targets '$($shortcut.TargetPath)' instead of '$cetusExe'."
     }
 
     if ($ExpectedVersion) {
@@ -173,7 +188,8 @@ try {
         $secondLog = "$InstallDirectory-install-2.log"
         $secondInstallProcess = Start-Process -FilePath $installer -ArgumentList @(
             "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-",
-            "/DIR=$InstallDirectory", "/LOG=$secondLog"
+            "/DIR=$InstallDirectory",
+            "/LOG=$secondLog"
         ) -PassThru
         $secondInstallProcess.WaitForExit()
         if ($secondInstallProcess.ExitCode -ne 0) {
@@ -201,7 +217,8 @@ finally {
     Stop-SmokeCetus
     if ($installed -and (Test-Path -LiteralPath $uninstaller -PathType Leaf)) {
         $uninstallProcess = Start-Process -FilePath $uninstaller -ArgumentList @(
-            "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LOG=$uninstallLog"
+            "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
+            "/LOG=$uninstallLog"
         ) -PassThru
         $uninstallProcess.WaitForExit()
         if ($uninstallProcess.ExitCode -ne 0) {
@@ -222,6 +239,9 @@ finally {
 
         if (Test-Path -LiteralPath $InstallDirectory) {
             throw "Install directory remained after uninstall: $InstallDirectory"
+        }
+        if (Test-Path -LiteralPath $smokeShortcut) {
+            throw "Smoke Start menu shortcut remained after uninstall: $smokeShortcut"
         }
     }
 
