@@ -81,6 +81,10 @@ jobs:
           CETUS_VERSION: ${{ inputs.version }}
         run: |
           $tag = "v$env:CETUS_VERSION"
+          $isDraft = gh release view $tag --json isDraft --jq .isDraft
+          if ($LASTEXITCODE -ne 0 -or $isDraft -ne 'true') {
+            throw "Release $tag must exist as a draft; published releases are immutable"
+          }
           $installer = "dist/Cetus-Setup-$env:CETUS_VERSION.exe"
           $portable = "dist/Cetus-$env:CETUS_VERSION-win-x64-portable.zip"
           foreach ($path in @($installer, $portable, 'dist/SHA256SUMS.txt')) {

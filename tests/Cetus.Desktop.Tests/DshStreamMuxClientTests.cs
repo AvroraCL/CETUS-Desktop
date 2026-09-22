@@ -77,8 +77,11 @@ public sealed class DshStreamMuxClientTests : IAsyncLifetime
     [Fact]
     public async Task Connect_OpenStream_ReceivesItemsThenEnd()
     {
+        using var dshHome = new TemporaryDirectory();
+        DshAuth.EnsureSessionSecret(dshHome.Path);
         string? cookieHeader = null;
         JsonElement? openFrame = null;
+        TaskCompletionSource<bool> endSeen = new(TaskCreationOptions.RunContinuationsAsynchronously);
         _listener.Start();
 
         Task serverTask = Task.Run(async () =>
@@ -95,13 +98,19 @@ public sealed class DshStreamMuxClientTests : IAsyncLifetime
                 value = new { running = true },
             });
             await SendJson(server, new { type = "end", streamId = "mux-1" });
+            // Keep the socket open until the receive loop handles the end frame.
+            await endSeen.Task.WaitAsync(TimeSpan.FromSeconds(10));
         });
 
         TaskCompletionSource<DshMuxItem> item = new(TaskCreationOptions.RunContinuationsAsynchronously);
         TaskCompletionSource<string> ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var client = new DshStreamMuxClient();
+        using var client = new DshStreamMuxClient(dshHome.Path);
         client.Item += i => item.TrySetResult(i);
-        client.StreamEnded += s => ended.TrySetResult(s);
+        client.StreamEnded += s =>
+        {
+            ended.TrySetResult(s);
+            endSeen.TrySetResult(true);
+        };
         await client.ConnectAsync(Origin, CancellationToken.None);
         await client.OpenStreamAsync(
             "mux-1", "session/follow",
@@ -263,5 +272,15 @@ public sealed class DshStreamMuxClientTests : IAsyncLifetime
         Assert.Equal("session/unknown", error.Code);
         Assert.Equal("no such session", error.Message);
         await serverTask.WaitAsync(TimeSpan.FromSeconds(10));
+    }
+
+    private sealed class TemporaryDirectory : IDisposable
+    {
+        public string Path { get; } = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(), "cetus-mux-" + Guid.NewGuid().ToString("N"));
+
+        public TemporaryDirectory() => Directory.CreateDirectory(Path);
+
+        public void Dispose() => Directory.Delete(Path, recursive: true);
     }
 }
