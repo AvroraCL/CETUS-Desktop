@@ -4,9 +4,9 @@
     Installs and uninstalls a Cetus setup executable in an isolated directory.
 
 .DESCRIPTION
-    The input must be an installer compiled with /DSmokeTest=1. That variant
-    has its own AppId and Start menu directory, so this test cannot alter a
-    user's CETUS installation.
+    Pass -Version and -AppSourceDirectory to build a fast, isolated installer
+    automatically. The smoke variant has its own AppId and Start menu
+    directory, so this test cannot alter a user's CETUS installation.
 
     Waits for both Cetus.exe and its uninstaller after Setup exits. This avoids
     a false result when Inno Setup's worker is still finalizing files after the
@@ -14,9 +14,20 @@
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)]
+    [Parameter(Mandatory, ParameterSetName = "Installer")]
     [ValidateScript({ Test-Path -LiteralPath $_ -PathType Leaf })]
     [string]$InstallerPath,
+
+    [Parameter(Mandatory, ParameterSetName = "Build")]
+    [ValidatePattern('^\d+\.\d+\.\d+$')]
+    [string]$Version,
+
+    [Parameter(Mandatory, ParameterSetName = "Build")]
+    [ValidateScript({ Test-Path -LiteralPath $_ -PathType Container })]
+    [string]$AppSourceDirectory,
+
+    [Parameter(ParameterSetName = "Build")]
+    [string]$IsccPath,
 
     [ValidateRange(30, 600)]
     [int]$TimeoutSeconds = 300,
@@ -36,7 +47,46 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$generatedSmokeDirectory = $null
+if ($PSCmdlet.ParameterSetName -eq "Build") {
+    $root = Split-Path -Parent $PSScriptRoot
+    $sourceDirectory = (Resolve-Path -LiteralPath $AppSourceDirectory).Path
+    $iscc = if ($IsccPath) { $IsccPath } else { Join-Path $root "tools\innosetup\ISCC.exe" }
+    if (-not (Test-Path -LiteralPath $iscc -PathType Leaf)) {
+        throw "Inno Setup compiler was not found: $iscc"
+    }
+
+    $generatedSmokeDirectory = Join-Path ([System.IO.Path]::GetTempPath()) (
+        "Cetus-installer-smoke-" + [guid]::NewGuid().ToString("N"))
+    $smokeName = "Cetus-Setup-$Version-smoke"
+    $smokePath = Join-Path $generatedSmokeDirectory "$smokeName.exe"
+    New-Item -ItemType Directory -Force -Path $generatedSmokeDirectory | Out-Null
+
+    try {
+        Write-Host "Building fast isolated installer smoke package..."
+        & $iscc "/Q" (Join-Path $root "installer\Cetus.iss") "/DVersion=$Version" `
+            "/DFileVersion=0.$Version" "/DAppSourceDir=$sourceDirectory" "/DSmokeTest=1" `
+            "/O$generatedSmokeDirectory" "/F$smokeName"
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $smokePath -PathType Leaf)) {
+            throw "Smoke installer compilation failed."
+        }
+        $InstallerPath = $smokePath
+        if ([string]::IsNullOrWhiteSpace($ExpectedVersion)) { $ExpectedVersion = $Version }
+    }
+    catch {
+        Remove-Item -LiteralPath $generatedSmokeDirectory -Recurse -Force -ErrorAction SilentlyContinue
+        throw
+    }
+}
+
 $installer = (Resolve-Path -LiteralPath $InstallerPath).Path
+$productName = (Get-Item -LiteralPath $installer).VersionInfo.ProductName
+if ($productName.Trim() -ne "CETUS Installer Smoke") {
+    if ($generatedSmokeDirectory) {
+        Remove-Item -LiteralPath $generatedSmokeDirectory -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    throw "Installer smoke refuses the production installer. Pass -Version and -AppSourceDirectory to build an isolated smoke package."
+}
 if (Test-Path -LiteralPath $InstallDirectory) {
     throw "InstallDirectory must not already exist: $InstallDirectory"
 }
@@ -87,9 +137,8 @@ function Wait-ForLogMarker {
 }
 
 function Stop-SmokeCetus {
-    # The installer's [Run] postinstall entry launches Cetus.exe even under
-    # /VERYSILENT, and a running app locks files the uninstall assertions
-    # need. Only this smoke's own install directory is ever touched.
+    # The smoke variant skips app launch under /VERYSILENT. This guard keeps
+    # cleanup safe if a future test option launches it after all.
     $stopped = Get-Process Cetus -ErrorAction SilentlyContinue | Where-Object {
         $_.Path -and $_.Path.StartsWith($InstallDirectory, [StringComparison]::OrdinalIgnoreCase)
     }
@@ -248,5 +297,8 @@ finally {
     if ($validated -and -not (Test-Path -LiteralPath $InstallDirectory)) {
         Remove-Item -LiteralPath $installLog -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $uninstallLog -Force -ErrorAction SilentlyContinue
+    }
+    if ($generatedSmokeDirectory) {
+        Remove-Item -LiteralPath $generatedSmokeDirectory -Recurse -Force -ErrorAction SilentlyContinue
     }
 }

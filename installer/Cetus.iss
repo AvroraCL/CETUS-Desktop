@@ -40,8 +40,13 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\dist
 OutputBaseFilename=Cetus-Setup-{#Version}
+#ifdef SmokeTest
+Compression=lzma2/fast
+SolidCompression=no
+#else
 Compression=lzma2/ultra64
 SolidCompression=yes
+#endif
 WizardStyle=modern
 UninstallDisplayIcon={app}\Cetus.exe
 SetupIconFile=..\src\Cetus.Desktop\Assets\cetus.ico
@@ -50,7 +55,11 @@ WizardSmallImageFile=wizard-small.bmp
 CloseApplications=no
 RestartApplications=no
 VersionInfoVersion={#FileVersion}
+#ifdef SmokeTest
+VersionInfoProductName=CETUS Installer Smoke
+#else
 VersionInfoProductName=CETUS鲸鱼座
+#endif
 VersionInfoProductVersion={#Version}
 VersionInfoCopyright=AvroraCL
 

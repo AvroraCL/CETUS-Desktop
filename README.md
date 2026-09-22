@@ -172,7 +172,15 @@ tests/Cetus.Desktop.Tests/          # Runtime、状态机与桌面策略回归�
 
 ### 构建与打包
 
-运行一键发布脚本：
+日常验证使用快速包：
+
+```powershell
+scripts\publish.ps1 -Fast
+```
+
+它只生成可直接运行的自包含目录 `.dev\packages\app-win-x64\`，跳过回归测试、zip、安装器和哈希文件。首次会复制 Node/DSH 运行时；之后只要运行时版本未变就会复用该副本，适合频繁修改后的本机验证。
+
+准备发布时才运行完整脚本：
 
 ```powershell
 scripts\publish.ps1
@@ -198,8 +206,10 @@ scripts\publish.ps1
 
 ```powershell
 scripts\package-smoke.ps1 -ApplicationPath dist\app-<版本>\Cetus.exe
-scripts\installer-smoke.ps1 -InstallerPath dist\Cetus-Setup-<版本>.exe -ExpectedVersion <版本>
+scripts\installer-smoke.ps1 -Version <版本> -AppSourceDirectory dist\app-<版本> -ExpectedVersion <版本> -VerifyRuntimeRebuild
 ```
+
+安装器烟测会自动构建一个快速压缩的专用测试安装包；正式安装包仍只构建一次并保留最高压缩率。测试包使用独立的 AppId、开始菜单目录和协议处理，不会影响已安装的 CETUS。
 
 版本信息：
 

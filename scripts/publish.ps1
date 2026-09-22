@@ -14,7 +14,12 @@
 param(
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64",
-    [string]$Version = ""
+    [string]$Version = "",
+
+    # Build a runnable self-contained folder for local verification. This
+    # deliberately skips the regression suite, portable archive, installer,
+    # and checksums; use the default release mode before publishing.
+    [switch]$Fast
 )
 
 $ErrorActionPreference = "Stop"
@@ -31,6 +36,32 @@ $runtimeLayout = Initialize-CetusRuntime
 $nodeVersion = [string]$runtimeManifest.node.version
 $dshVersion = [string]$runtimeManifest.dsh.version
 
+function Test-FastPackagedRuntime {
+    param([Parameter(Mandatory)][string]$PackageDirectory)
+
+    $runtimeDirectory = Join-Path $PackageDirectory "runtime"
+    $versionsPath = Join-Path $runtimeDirectory "VERSIONS.txt"
+    $nodePath = Join-Path $runtimeDirectory "node.exe"
+    $dshEntry = Join-Path $runtimeDirectory "dsh\node_modules\@deepseek-ai\dsh\lib\bin.js"
+    if (-not (Test-Path -LiteralPath $versionsPath -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $nodePath -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $dshEntry -PathType Leaf)) {
+        return $false
+    }
+
+    $versions = @{}
+    foreach ($line in (Get-Content -LiteralPath $versionsPath)) {
+        $separator = $line.IndexOf('=')
+        if ($separator -gt 0) {
+            $versions[$line.Substring(0, $separator)] = $line.Substring($separator + 1)
+        }
+    }
+    return $versions['node'] -eq $nodeVersion -and
+        $versions['dsh'] -eq $dshVersion -and
+        $versions['node.sha256'] -eq $runtimeManifest.node.executableSha256 -and
+        $versions['dsh.integrity'] -eq $runtimeManifest.dsh.integrity
+}
+
 if ([string]::IsNullOrWhiteSpace($Version)) {
     $Version = (& $dotnet msbuild (Join-Path $src "Cetus.Desktop.csproj") `
         -nologo -getProperty:Version | Select-Object -Last 1).Trim()
@@ -40,17 +71,30 @@ if ($Version -notmatch '^\d+\.\d+\.\d+$') {
     throw "Version must use the semantic major.minor.patch form (for example, 0.1.8)."
 }
 $fileVersion = "0.$Version"
-$appDir = Join-Path $dist "app-$Version"
+$appDir = if ($Fast) {
+    Join-Path $root ".dev\packages\app-$Runtime"
+}
+else {
+    Join-Path $dist "app-$Version"
+}
 
-Write-Host "==> [1/7] locked restore + regression suite ($Configuration)"
+Write-Host "==> [1/7] locked restore$(if ($Fast) { '' } else { ' + regression suite' }) ($Configuration)"
 & $dotnet restore $solution --locked-mode -v minimal
 if ($LASTEXITCODE -ne 0) { throw "locked restore failed" }
-& $dotnet test $solution -c $Configuration --no-restore -v minimal
-if ($LASTEXITCODE -ne 0) { throw "regression suite failed" }
+if (-not $Fast) {
+    & $dotnet test $solution -c $Configuration --no-restore -v minimal
+    if ($LASTEXITCODE -ne 0) { throw "regression suite failed" }
+}
 
 Write-Host "==> [2/7] publish (self-contained, $Runtime, $Configuration)"
 if (Test-Path $appDir) {
-    throw "Release app directory already exists: $appDir. Bump Version instead of replacing an existing release."
+    if (-not $Fast) {
+        throw "Release app directory already exists: $appDir. Bump Version instead of replacing an existing release."
+    }
+    # This directory is owned by -Fast. Keep a matching bundled runtime, which
+    # avoids recopying its large Node/DSH tree for ordinary code-only changes.
+    Get-ChildItem -LiteralPath $appDir -Force | Where-Object Name -ne "runtime" |
+        Remove-Item -Recurse -Force
 }
 & $dotnet restore $src -r $Runtime --locked-mode -v minimal
 if ($LASTEXITCODE -ne 0) { throw "runtime-specific locked restore failed" }
@@ -65,12 +109,18 @@ Write-Host "==> [4/7] locked DSH runtime ($dshVersion)"
 $bundledNode = $runtimeLayout.NodeExe
 
 Write-Host "==> [5/7] copy runtime into app output + manifest"
-# Wipe the previous copy first: Copy-Item -Recurse onto an existing directory
-# nests the source folder instead of replacing it (dsh\dsh\... duplication).
-Remove-Item (Join-Path $appDir "runtime") -Recurse -Force -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Force -Path (Join-Path $appDir "runtime") | Out-Null
-Copy-Item $bundledNode (Join-Path $appDir "runtime\node.exe") -Force
-Copy-Item $runtimeLayout.DshRoot (Join-Path $appDir "runtime\dsh") -Recurse -Force
+if ($Fast -and (Test-FastPackagedRuntime -PackageDirectory $appDir)) {
+    Write-Host "      reusing matching bundled runtime"
+}
+else {
+    # Wipe the previous copy first: Copy-Item -Recurse onto an existing
+    # directory nests the source folder instead of replacing it
+    # (dsh\dsh\... duplication).
+    Remove-Item (Join-Path $appDir "runtime") -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force -Path (Join-Path $appDir "runtime") | Out-Null
+    Copy-Item $bundledNode (Join-Path $appDir "runtime\node.exe") -Force
+    Copy-Item $runtimeLayout.DshRoot (Join-Path $appDir "runtime\dsh") -Recurse -Force
+}
 @(
     "cetus=$Version",
     "node=$nodeVersion",
@@ -105,6 +155,15 @@ if ($longestInstalledPath.Length -ge 240) {
 }
 Write-Host "      longest default install path: $($longestInstalledPath.Length) characters"
 
+if ($Fast) {
+    Write-Host ""
+    Write-Host "FAST PACKAGE READY"
+    Write-Host "  app dir : $appDir"
+    Write-Host ""
+    Write-Host "This mode skips tests, zip, installer, and SHA256SUMS. Use scripts\\publish.ps1 for a releasable package."
+    exit 0
+}
+
 Write-Host "==> [6/7] zip"
 $zip = Join-Path $dist "Cetus-$Version-$Runtime-portable.zip"
 if (Test-Path $zip) {
@@ -123,7 +182,7 @@ if ($iscc) {
     if (Test-Path $setupExe) {
         throw "Installer release already exists: $setupExe. Bump Version instead of replacing an existing release."
     }
-    & $iscc (Join-Path $root "installer\Cetus.iss") "/DVersion=$Version" `
+    & $iscc "/Q" (Join-Path $root "installer\Cetus.iss") "/DVersion=$Version" `
         "/DFileVersion=$fileVersion" "/DAppSourceDir=$appDir"
     if ($LASTEXITCODE -ne 0) { throw "ISCC compile failed" }
 } else {
