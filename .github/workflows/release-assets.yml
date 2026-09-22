@@ -1,0 +1,73 @@
+name: Build release assets
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Patch version to package (for example 0.3.9)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check version input
+        env:
+          CETUS_VERSION: ${{ inputs.version }}
+        run: |
+          if ($env:CETUS_VERSION -notmatch '^\d+\.\d+\.\d+$') {
+            throw 'version must have major.minor.patch form'
+          }
+
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          ref: v${{ inputs.version }}
+
+      - name: Install .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install Inno Setup
+        run: |
+          $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path -LiteralPath $iscc)) {
+            choco install innosetup --no-progress -y
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed' }
+          }
+          if (-not (Test-Path -LiteralPath $iscc)) { throw 'ISCC.exe is missing' }
+          "CETUS_ISCC=$iscc" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build and test release
+        env:
+          CETUS_VERSION: ${{ inputs.version }}
+        run: |
+          $projectVersion = (& dotnet msbuild src/Cetus.Desktop/Cetus.Desktop.csproj -nologo -getProperty:Version | Select-Object -Last 1).Trim()
+          if ($projectVersion -ne $env:CETUS_VERSION) {
+            throw "Tag project version $projectVersion does not match $env:CETUS_VERSION"
+          }
+          ./scripts/publish.ps1 -Version $env:CETUS_VERSION
+          if ($LASTEXITCODE -ne 0) { throw 'Release build failed' }
+
+      - name: Upload assets to existing draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CETUS_VERSION: ${{ inputs.version }}
+        run: |
+          $tag = "v$env:CETUS_VERSION"
+          $installer = "dist/Cetus-Setup-$env:CETUS_VERSION.exe"
+          $portable = "dist/Cetus-$env:CETUS_VERSION-win-x64-portable.zip"
+          foreach ($path in @($installer, $portable, 'dist/SHA256SUMS.txt')) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing release asset: $path" }
+          }
+          gh release upload $tag $installer $portable dist/SHA256SUMS.txt --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Release asset upload failed' }
