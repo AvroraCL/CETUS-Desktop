@@ -215,7 +215,7 @@ scripts\package-smoke.ps1 -ApplicationPath dist\app-<版本>\Cetus.exe
 scripts\installer-smoke.ps1 -Version <版本> -AppSourceDirectory dist\app-<版本> -ExpectedVersion <版本> -VerifyRuntimeRebuild
 ```
 
-安装器烟测会自动构建一个快速压缩的专用测试安装包；正式安装包仍只构建一次并保留最高压缩率。测试包使用独立的 AppId、开始菜单目录和协议处理，不会影响已安装的 CETUS。
+安装器烟测默认只打包 CETUS、Node 和 DSH 的关键文件，用于快速检查安装、覆盖安装与卸载；`package-smoke.ps1` 检查完整便携包的真实运行时。需要验证安装器对全部文件的处理时，可给 `installer-smoke.ps1` 加 `-FullPayload`。正式安装包仍只构建一次并保留最高压缩率。测试包使用独立的 AppId、开始菜单目录和协议处理，不会影响已安装的 CETUS。
 
 版本信息：
 

@@ -4,9 +4,11 @@
     Installs and uninstalls a Cetus setup executable in an isolated directory.
 
 .DESCRIPTION
-    Pass -Version and -AppSourceDirectory to build a fast, isolated installer
-    automatically. The smoke variant has its own AppId and Start menu
-    directory, so this test cannot alter a user's CETUS installation.
+    Pass -Version and -AppSourceDirectory to build an isolated installer
+    automatically. By default, the installer uses a small fixture with the
+    real Cetus and Node executables; use -FullPayload to exercise every bundled
+    file. The smoke variant has its own AppId and Start menu directory, so
+    this test cannot alter a user's CETUS installation.
 
     Waits for both Cetus.exe and its uninstaller after Setup exits. This avoids
     a false result when Inno Setup's worker is still finalizing files after the
@@ -28,6 +30,9 @@ param(
 
     [Parameter(ParameterSetName = "Build")]
     [string]$IsccPath,
+
+    [Parameter(ParameterSetName = "Build")]
+    [switch]$FullPayload,
 
     [ValidateRange(30, 600)]
     [int]$TimeoutSeconds = 300,
@@ -63,7 +68,35 @@ if ($PSCmdlet.ParameterSetName -eq "Build") {
     New-Item -ItemType Directory -Force -Path $generatedSmokeDirectory | Out-Null
 
     try {
-        Write-Host "Building fast isolated installer smoke package..."
+        if (-not $FullPayload) {
+            $fixtureDirectory = Join-Path $generatedSmokeDirectory "payload"
+            $fixtureFiles = @(
+                "Cetus.exe",
+                "Cetus.Runtime.dll",
+                "runtime\node.exe",
+                "runtime\VERSIONS.txt",
+                "runtime\dsh\node_modules\@deepseek-ai\dsh\package.json",
+                "runtime\dsh\node_modules\@deepseek-ai\dsh\lib\bin.js"
+            )
+            foreach ($relativePath in $fixtureFiles) {
+                $sourcePath = Join-Path $sourceDirectory $relativePath
+                if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+                    throw "App source is missing the smoke fixture file: $sourcePath"
+                }
+                $fixturePath = Join-Path $fixtureDirectory $relativePath
+                New-Item -ItemType Directory -Force -Path (Split-Path -Parent $fixturePath) | Out-Null
+                Copy-Item -LiteralPath $sourcePath -Destination $fixturePath -Force
+            }
+            [ordered]@{
+                schemaVersion = 1
+                fullyManagedDirectories = @("runtime")
+                files = @($fixtureFiles.ForEach({ $_.Replace('\', '/') }) + ".cetus-managed-files.json")
+            } | ConvertTo-Json -Depth 4 |
+                Set-Content -LiteralPath (Join-Path $fixtureDirectory ".cetus-managed-files.json") -Encoding utf8NoBOM
+            $sourceDirectory = $fixtureDirectory
+        }
+
+        Write-Host "Building isolated installer smoke package$(if ($FullPayload) { ' (full payload)' } else { ' (small fixture)' })..."
         & $iscc "/Q" (Join-Path $root "installer\Cetus.iss") "/DVersion=$Version" `
             "/DFileVersion=0.$Version" "/DAppSourceDir=$sourceDirectory" "/DSmokeTest=1" `
             "/O$generatedSmokeDirectory" "/F$smokeName"
