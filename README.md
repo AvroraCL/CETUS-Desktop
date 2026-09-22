@@ -172,13 +172,19 @@ tests/Cetus.Desktop.Tests/          # Runtime、状态机与桌面策略回归�
 
 ### 构建与打包
 
-日常验证使用快速包：
+日常改代码直接运行开发版：
+
+```powershell
+.\scripts\dev.ps1 run
+```
+
+需要验证用户拿到的自包含目录时，再生成快速包：
 
 ```powershell
 scripts\publish.ps1 -Fast
 ```
 
-它只生成可直接运行的自包含目录 `.dev\packages\app-win-x64\`，跳过回归测试、zip、安装器和哈希文件。首次会复制 Node/DSH 运行时；之后只要运行时版本未变就会复用该副本，适合频繁修改后的本机验证。
+它生成可直接运行的自包含目录 `.dev\packages\app-win-x64\`，跳过回归测试、zip、安装器和哈希文件。首次会复制 Node/DSH 运行时；之后只要运行时版本未变就会复用该副本。一般代码修改不需要运行此命令。
 
 准备发布时才运行完整脚本：
 
@@ -202,7 +208,7 @@ scripts\publish.ps1
 
 窗口使用真实的非分层 HWND：Windows 11 22H2 及以上启用系统 Desktop Acrylic，Windows 10 使用 DWM blur-behind。标题栏保持直角，并避开会让窗口拖动退回软件合成路径的透明分层窗口方案。
 
-发布后可分别验证便携包运行时和安装程序：
+发布时验证便携包运行时；安装器逻辑改动或正式发版前，再运行安装器烟测：
 
 ```powershell
 scripts\package-smoke.ps1 -ApplicationPath dist\app-<版本>\Cetus.exe
