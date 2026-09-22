@@ -223,7 +223,7 @@ check('card removed after dismiss', cardAfter === null, cardBefore === cardAfter
 check('dismiss message posted', posted.some((m) => m.type === 'cetus-update-dismiss'));
 
 // 6. the settings row keeps a way back to the notice
-receive({ source: 'cetus-window', type: 'cetus-settings-state', values: { dshPort: '3080', dshVersion: '0.1.6-alpha.2' } });
+receive({ source: 'cetus-window', type: 'cetus-settings-state', values: { dshPort: '3080', dshVersion: '0.1.7-alpha.1' } });
 receive({
   source: 'cetus-window',
   type: 'cetus-update-state',

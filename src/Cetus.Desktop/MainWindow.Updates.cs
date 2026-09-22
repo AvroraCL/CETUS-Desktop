@@ -161,9 +161,6 @@ public partial class MainWindow
             tags = await feed.FetchAsync(CancellationToken.None);
         }
 
-        string alphaLine = tags?.Alpha is { } alpha && alpha != tags.Latest
-            ? $"{Environment.NewLine}alpha 通道：{alpha}"
-            : string.Empty;
         if (tags is null)
         {
             _ = MessageBox.Show(
@@ -175,14 +172,29 @@ public partial class MainWindow
             return;
         }
 
-        bool upToDate = Version.TryParse(tags.Latest, out Version? latest)
-            && Version.TryParse(current, out Version? installed)
-            && installed >= latest;
-        if (upToDate || tags.Latest is null)
+        string tagLines = string.Join(
+            Environment.NewLine,
+            tags.EnumerateParsedTags().Select(tag => $"{tag.Channel} 通道：{tag.Version}"));
+        DshDistTag? highest = tags.HighestAvailable;
+        if (highest is null)
         {
             _ = MessageBox.Show(
                 this,
-                $"当前内嵌 DSH {current} 已是 npm 上游最新版本。{alphaLine}",
+                "npm 上游没有返回可识别的 DSH 版本，请稍后重试。",
+                "CETUS · DSH 版本",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
+        bool upToDate = DshVersion.TryParse(current, out DshVersion? installed)
+            && installed is not null
+            && DshVersion.Compare(installed, highest.ParsedVersion) >= 0;
+        if (upToDate)
+        {
+            _ = MessageBox.Show(
+                this,
+                $"当前内嵌 DSH {current} 已覆盖 npm 上游可识别的最高版本。{Environment.NewLine}{tagLines}",
                 "CETUS · DSH 版本",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
@@ -191,7 +203,7 @@ public partial class MainWindow
 
         MessageBoxResult choice = MessageBox.Show(
             this,
-            $"发现新的 DSH：{tags.Latest}（stable）{alphaLine}{Environment.NewLine}{Environment.NewLine}" +
+            $"发现新的 DSH：{highest.Version}（{highest.Channel} 通道）{Environment.NewLine}{tagLines}{Environment.NewLine}{Environment.NewLine}" +
             $"当前内嵌版本：{current}。DSH 随 CETUS 版本一起发布，请更新 CETUS 本体以获取新 Harness。",
             "CETUS · DSH 版本",
             MessageBoxButton.OKCancel,

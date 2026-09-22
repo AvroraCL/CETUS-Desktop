@@ -17,11 +17,11 @@ public sealed class DshRuntimeInfoTests
         [
             "cetus=0.3.0",
             "node=v24.14.0",
-            "dsh=0.1.6-alpha.2",
+            "dsh=0.1.7-alpha.1",
             "built=2026-09-20",
         ]);
 
-        Assert.Equal("0.1.6-alpha.2", DshRuntimeInfo.ReadVersionsFile(path));
+        Assert.Equal("0.1.7-alpha.1", DshRuntimeInfo.ReadVersionsFile(path));
     }
 
     [Fact]
@@ -75,6 +75,32 @@ public sealed class NpmDistTagFeedTests
         Assert.NotNull(tags);
         Assert.Equal("0.1.6-alpha.2", tags.Latest);
         Assert.Equal("0.1.7-alpha.1", tags.Alpha);
+    }
+
+    [Fact]
+    public void HighestAvailable_PrefersNewerAlphaOverAnOlderLatestTag()
+    {
+        var tags = new DshDistTags("0.1.5-rc.3", "0.1.7-alpha.1");
+
+        DshDistTag highest = Assert.IsType<DshDistTag>(tags.HighestAvailable);
+
+        Assert.Equal("alpha", highest.Channel);
+        Assert.Equal("0.1.7-alpha.1", highest.Version);
+    }
+
+    [Theory]
+    [InlineData("0.1.7-alpha.1", "0.1.6-alpha.2", 1)]
+    [InlineData("0.1.7-alpha.1", "0.1.7-alpha.2", -1)]
+    [InlineData("0.1.7", "0.1.7-rc.3", 1)]
+    [InlineData("0.1.7-beta.11", "0.1.7-beta.2", 1)]
+    public void DshVersion_OrdersPrereleaseVersions(string left, string right, int expectedSign)
+    {
+        Assert.True(DshVersion.TryParse(left, out DshVersion? parsedLeft));
+        Assert.True(DshVersion.TryParse(right, out DshVersion? parsedRight));
+        Assert.NotNull(parsedLeft);
+        Assert.NotNull(parsedRight);
+
+        Assert.Equal(expectedSign, Math.Sign(DshVersion.Compare(parsedLeft, parsedRight)));
     }
 
     [Fact]

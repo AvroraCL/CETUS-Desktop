@@ -3,7 +3,33 @@ using System.Text.Json;
 
 namespace Cetus.Hosting;
 
-public sealed record DshDistTags(string? Latest, string? Alpha);
+public sealed record DshDistTag(string Channel, string Version, DshVersion ParsedVersion);
+
+public sealed record DshDistTags(string? Latest, string? Alpha)
+{
+    /// <summary>Highest valid semantic version across the dist-tags CETUS tracks.</summary>
+    public DshDistTag? HighestAvailable =>
+        EnumerateParsedTags()
+            .OrderBy(tag => tag.ParsedVersion, DshVersion.SemanticComparer)
+            .LastOrDefault();
+
+    public IEnumerable<DshDistTag> EnumerateParsedTags()
+    {
+        if (Latest is { } latest
+            && DshVersion.TryParse(latest, out DshVersion? parsedLatest)
+            && parsedLatest is not null)
+        {
+            yield return new DshDistTag("latest", latest, parsedLatest);
+        }
+
+        if (Alpha is { } alpha
+            && DshVersion.TryParse(alpha, out DshVersion? parsedAlpha)
+            && parsedAlpha is not null)
+        {
+            yield return new DshDistTag("alpha", alpha, parsedAlpha);
+        }
+    }
+}
 
 /// <summary>
 /// Reads the npm registry dist-tags for the DSH package so the UI can tell

@@ -188,7 +188,7 @@ scripts\publish.ps1
 当前 Runtime 固定版本：
 
 - Node.js `v24.14.0`
-- `@deepseek-ai/dsh@0.1.6-alpha.2`（`--omit=dev`）
+- `@deepseek-ai/dsh@0.1.7-alpha.1`（`--omit=dev`）
 
 固定版本与校验值只在 `eng/runtime.json` 维护；发布包内的具体版本记录在 `runtime\VERSIONS.txt`。安装程序默认安装到 `%LOCALAPPDATA%\Cetus`，WebView2 数据、日志与更新缓存位于 `%LOCALAPPDATA%\Cetus` 下的同名子目录，卸载时会一并清理；每次安装都会重建 `runtime` 目录，避免新旧依赖混杂。安装前会自动关闭正在运行的 CETUS 及其残留 Node 进程。
 

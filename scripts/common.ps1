@@ -189,7 +189,10 @@ function Initialize-CetusRuntime {
         Copy-Item -LiteralPath $packageLock -Destination $dshStage
 
         Write-Host "Installing locked DSH runtime with Node-bundled npm..."
-        & $archiveNode $npmCli ci --prefix $dshStage --omit=dev --no-audit --no-fund
+        # Keep native npm output from escaping this function: callers expect
+        # exactly one runtime-layout object, even on a cache rebuild.
+        $npmOutput = & $archiveNode $npmCli ci --prefix $dshStage --omit=dev --no-audit --no-fund 2>&1
+        $npmOutput | ForEach-Object { Write-Host $_ }
         if ($LASTEXITCODE -ne 0) { throw "npm ci failed with exit code $LASTEXITCODE." }
 
         $installedPackage = Join-Path $dshStage "node_modules\@deepseek-ai\dsh\package.json"

@@ -26,7 +26,7 @@ public static class DshRuntimeInfo
 
             foreach (string line in File.ReadLines(path))
             {
-                // Lines look like "dsh=0.1.6-alpha.2".
+                // Lines look like "dsh=0.1.7-alpha.1".
                 if (line.StartsWith("dsh=", StringComparison.OrdinalIgnoreCase))
                 {
                     string value = line[4..].Trim();
