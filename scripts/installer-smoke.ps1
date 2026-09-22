@@ -105,9 +105,13 @@ $installed = $false
 $validated = $false
 
 try {
-    & $installer "/VERYSILENT" "/SUPPRESSMSGBOXES" "/NORESTART" "/SP-" "/DIR=$InstallDirectory" "/LOG=$installLog"
-    if ($LASTEXITCODE -ne 0) {
-        throw "Installer exited with code $LASTEXITCODE."
+    $installProcess = Start-Process -FilePath $installer -ArgumentList @(
+        "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-",
+        "/DIR=$InstallDirectory", "/LOG=$installLog"
+    ) -PassThru
+    $installProcess.WaitForExit()
+    if ($installProcess.ExitCode -ne 0) {
+        throw "Installer exited with code $($installProcess.ExitCode)."
     }
 
     $installTimer = [System.Diagnostics.Stopwatch]::StartNew()
@@ -167,9 +171,13 @@ try {
         Set-Content -LiteralPath $stalePackage -Value "leftover"
 
         $secondLog = "$InstallDirectory-install-2.log"
-        & $installer "/VERYSILENT" "/SUPPRESSMSGBOXES" "/NORESTART" "/SP-" "/DIR=$InstallDirectory" "/LOG=$secondLog"
-        if ($LASTEXITCODE -ne 0) {
-            throw "Second installer pass exited with code $LASTEXITCODE."
+        $secondInstallProcess = Start-Process -FilePath $installer -ArgumentList @(
+            "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-",
+            "/DIR=$InstallDirectory", "/LOG=$secondLog"
+        ) -PassThru
+        $secondInstallProcess.WaitForExit()
+        if ($secondInstallProcess.ExitCode -ne 0) {
+            throw "Second installer pass exited with code $($secondInstallProcess.ExitCode)."
         }
 
         $reinstallTimer = [System.Diagnostics.Stopwatch]::StartNew()
@@ -192,9 +200,12 @@ try {
 finally {
     Stop-SmokeCetus
     if ($installed -and (Test-Path -LiteralPath $uninstaller -PathType Leaf)) {
-        & $uninstaller "/VERYSILENT" "/SUPPRESSMSGBOXES" "/NORESTART" "/LOG=$uninstallLog"
-        if ($LASTEXITCODE -ne 0) {
-            throw "Uninstaller exited with code $LASTEXITCODE."
+        $uninstallProcess = Start-Process -FilePath $uninstaller -ArgumentList @(
+            "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LOG=$uninstallLog"
+        ) -PassThru
+        $uninstallProcess.WaitForExit()
+        if ($uninstallProcess.ExitCode -ne 0) {
+            throw "Uninstaller exited with code $($uninstallProcess.ExitCode)."
         }
 
         $uninstallTimer = [System.Diagnostics.Stopwatch]::StartNew()
