@@ -3,7 +3,7 @@ using Cetus.Configuration;
 
 namespace Cetus.Updates;
 
-/// <summary>An update the user has been told about and can install on demand.</summary>
+/// <summary>An update the user has been told about.</summary>
 internal sealed record AvailableUpdate(ReleaseInfo Release, UpdateFeedSource Source, bool InstalledEdition);
 
 /// <summary>
@@ -28,7 +28,8 @@ internal static class UpdateNoticeState
         Version currentVersion,
         bool installing,
         double progress,
-        bool dismissed)
+        bool dismissed,
+        bool installable = true)
     {
         string notes = NormalizeNotes(release.Notes);
         return JsonSerializer.Serialize(
@@ -41,6 +42,7 @@ internal static class UpdateNoticeState
                 current = currentVersion.ToString(3),
                 notes,
                 installing,
+                installable,
                 progress = Math.Clamp(progress, 0d, 1d),
                 source = source switch
                 {

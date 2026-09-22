@@ -263,7 +263,12 @@
     primary.type = 'button';
     primary.className = 'cetus-update-primary';
     primary.addEventListener('click', () => {
-      if (primary.disabled || primary.dataset.mode !== 'install') return;
+      if (primary.disabled) return;
+      if (primary.dataset.mode === 'details') {
+        postCetus({ type: 'cetus-update-details' });
+        return;
+      }
+      if (primary.dataset.mode !== 'install') return;
       primary.disabled = true;
       const ui = updateCard;
       if (ui) {
@@ -320,6 +325,7 @@
 
     const busy = state.installing === true || state.installing === 'true';
     const ready = state.ready === true || state.ready === 'true';
+    const installable = state.installable !== false && state.installable !== 'false';
     if (busy) {
       const progress = Number(state.progress);
       const known = Number.isFinite(progress) && progress > 0;
@@ -329,6 +335,11 @@
       ui.primary.textContent = known ? `${Math.round(progress * 100)}%` : '下载中…';
       ui.primary.disabled = true;
       ui.primary.dataset.mode = 'busy';
+    } else if (!installable) {
+      ui.title.textContent = '发现 CETUS 新版本';
+      ui.bar.style.display = 'none';
+      ui.primary.textContent = '查看发布页';
+      ui.primary.dataset.mode = 'details';
     } else {
       ui.title.textContent = '发现 CETUS 新版本';
       ui.bar.style.display = 'none';

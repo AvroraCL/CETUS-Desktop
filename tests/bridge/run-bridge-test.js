@@ -200,6 +200,24 @@ byClass('cetus-update-primary')[0].dispatch('click');
 check('install message posted', posted.some((m) => m.type === 'cetus-update-install'),
   JSON.stringify(posted.map((m) => m.type)));
 
+// A development build may show the release but cannot install over its build tree.
+const installCount = posted.filter((m) => m.type === 'cetus-update-install').length;
+receive({
+  source: 'cetus-window',
+  type: 'cetus-update-state',
+  update: {
+    available: true, version: 'v0.3.4', current: '0.3.3',
+    installing: false, progress: 0, installable: false,
+  },
+});
+const devAction = byClass('cetus-update-primary')[0];
+check('development action opens release page', devAction.textContent === '查看发布页');
+devAction.dispatch('click');
+check('development action never requests install',
+  posted.filter((m) => m.type === 'cetus-update-install').length === installCount);
+check('development action requests release details',
+  posted.some((m) => m.type === 'cetus-update-details'));
+
 // 4. busy state disables the button and shows progress
 receive({
   source: 'cetus-window',

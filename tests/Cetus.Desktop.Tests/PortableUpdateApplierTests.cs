@@ -157,6 +157,44 @@ public sealed class PortableUpdateApplierTests : IDisposable
         Assert.True(File.Exists(PortableUpdateApplier.FailureNoticePath));
     }
 
+    [Fact]
+    public void ApplyScript_MalformedOldManifest_ReportsFailureBeforeChangingTheInstallation()
+    {
+        using var directory = new TemporaryDirectory();
+        string staging = System.IO.Path.Combine(directory.Path, "staging");
+        string target = System.IO.Path.Combine(directory.Path, "target");
+        Directory.CreateDirectory(staging);
+        Directory.CreateDirectory(target);
+        File.WriteAllText(System.IO.Path.Combine(staging, "Cetus.exe"), "new-exe");
+        File.WriteAllText(System.IO.Path.Combine(target, "Cetus.exe"), "old-exe");
+        File.WriteAllText(System.IO.Path.Combine(target, PortableUpdateApplier.ManagedFilesManifestName), "{invalid");
+        WriteManifest(staging, "Cetus.exe");
+
+        string script = PortableUpdateApplier.WriteApplyScript(
+            staging, target, processId: int.MaxValue);
+        var startInfo = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = "powershell.exe",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-NonInteractive");
+        startInfo.ArgumentList.Add("-ExecutionPolicy");
+        startInfo.ArgumentList.Add("Bypass");
+        startInfo.ArgumentList.Add("-File");
+        startInfo.ArgumentList.Add(script);
+        using var process = System.Diagnostics.Process.Start(startInfo);
+
+        Assert.NotNull(process);
+        Assert.True(process.WaitForExit(30_000), "the takeover script did not finish");
+        Assert.Equal(1, process.ExitCode);
+        Assert.Equal("old-exe", File.ReadAllText(System.IO.Path.Combine(target, "Cetus.exe")));
+        Assert.True(File.Exists(PortableUpdateApplier.FailureNoticePath));
+        Assert.Contains("新版本升级失败", File.ReadAllText(PortableUpdateApplier.FailureNoticePath),
+            StringComparison.Ordinal);
+    }
+
     private static void AddEntry(ZipArchive archive, string name, string content)
     {
         ZipArchiveEntry entry = archive.CreateEntry(name);

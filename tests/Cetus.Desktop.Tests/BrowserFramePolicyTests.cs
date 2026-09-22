@@ -53,4 +53,24 @@ public sealed class BrowserFramePolicyTests
         Assert.False(policy.Allows("file:///C:/Windows/win.ini"));
         Assert.False(policy.Allows("http://user:pass@127.0.0.1:3080/"));
     }
+
+    [Fact]
+    public async Task FramedDocument_IsBufferedIndependentlyAndBounded()
+    {
+        byte[] content = "<html>sidebar</html>"u8.ToArray();
+        using var source = new MemoryStream(content);
+
+        using MemoryStream? buffered = await BrowserSession.BufferFrameDocumentAsync(
+            source, content.Length, CancellationToken.None);
+
+        Assert.NotNull(buffered);
+        Assert.Equal(content, buffered.ToArray());
+        Assert.Equal(0, buffered.Position);
+        Assert.Null(await BrowserSession.BufferFrameDocumentAsync(
+            Stream.Null, 33L * 1024 * 1024, CancellationToken.None));
+
+        using var untrustedLength = new MemoryStream(new byte[33 * 1024 * 1024]);
+        Assert.Null(await BrowserSession.BufferFrameDocumentAsync(
+            untrustedLength, declaredLength: null, CancellationToken.None));
+    }
 }

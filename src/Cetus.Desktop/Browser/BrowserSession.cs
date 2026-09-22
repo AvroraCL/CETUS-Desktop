@@ -37,7 +37,7 @@ internal sealed class BrowserSession : IBrowserSession, IUpdateNoticeSink, IDisp
     private LoopbackNavigationPolicy? _navigationPolicy;
     private CoreWebView2Environment? _environment;
     private HttpClient? _frameFetch;
-    private readonly List<object> _pinned = new();
+    private const int MaxFrameDocumentBytes = 32 * 1024 * 1024;
     private bool _initialized;
     private bool _disposed;
 
@@ -268,8 +268,9 @@ internal sealed class BrowserSession : IBrowserSession, IUpdateNoticeSink, IDisp
             }
 
             _frameFetch ??= new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             using HttpResponseMessage upstream =
-                await _frameFetch.GetAsync(uriText, HttpCompletionOption.ResponseHeadersRead);
+                await _frameFetch.GetAsync(uriText, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
 
             var headers = new System.Text.StringBuilder();
             foreach (var header in upstream.Headers)
@@ -298,14 +299,25 @@ internal sealed class BrowserSession : IBrowserSession, IUpdateNoticeSink, IDisp
                 }
             }
 
-            Stream body = await upstream.Content.ReadAsStreamAsync();
-            _pinned.Add(body);
-            _pinned.Add(upstream);
+            await using Stream source = await upstream.Content.ReadAsStreamAsync(timeout.Token);
+            MemoryStream? body = await BufferFrameDocumentAsync(
+                source, upstream.Content.Headers.ContentLength, timeout.Token);
+            if (_disposed || _environment is null)
+            {
+                body?.Dispose();
+                return;
+            }
 
-            e.Response = _environment?.CreateWebResourceResponse(
-                body, (int)upstream.StatusCode, upstream.ReasonPhrase, headers.ToString());
+            // WebView2 receives an independent, fully buffered stream. The
+            // upstream response can be disposed now instead of being pinned
+            // for the entire lifetime of the window.
+            e.Response = body is null
+                ? _environment.CreateWebResourceResponse(Stream.Null, 413, "Payload Too Large", string.Empty)
+                : _environment.CreateWebResourceResponse(
+                    body, (int)upstream.StatusCode, upstream.ReasonPhrase, headers.ToString());
         }
-        catch (Exception error) when (error is HttpRequestException or TaskCanceledException)
+        catch (Exception error) when (error is HttpRequestException or IOException
+            or OperationCanceledException or ObjectDisposedException)
         {
             // Let WebView2 render its own network error for the frame.
             _ = error;
@@ -313,6 +325,42 @@ internal sealed class BrowserSession : IBrowserSession, IUpdateNoticeSink, IDisp
         finally
         {
             deferral.Complete();
+        }
+    }
+
+    internal static async Task<MemoryStream?> BufferFrameDocumentAsync(
+        Stream source,
+        long? declaredLength,
+        CancellationToken cancellationToken)
+    {
+        if (declaredLength > MaxFrameDocumentBytes)
+        {
+            return null;
+        }
+
+        var body = new MemoryStream();
+        try
+        {
+            byte[] buffer = new byte[81920];
+            int read;
+            while ((read = await source.ReadAsync(buffer, cancellationToken)) > 0)
+            {
+                if (body.Length + read > MaxFrameDocumentBytes)
+                {
+                    body.Dispose();
+                    return null;
+                }
+
+                await body.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+            }
+
+            body.Position = 0;
+            return body;
+        }
+        catch
+        {
+            body.Dispose();
+            throw;
         }
     }
 
@@ -492,5 +540,6 @@ internal sealed class BrowserSession : IBrowserSession, IUpdateNoticeSink, IDisp
         _disposed = true;
         _view.Visibility = Visibility.Collapsed;
         _view.Dispose();
+        _frameFetch?.Dispose();
     }
 }

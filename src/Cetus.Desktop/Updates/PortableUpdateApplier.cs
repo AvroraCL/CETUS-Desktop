@@ -114,14 +114,8 @@ internal static class PortableUpdateApplier
                 Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction SilentlyContinue
             }
 
-            $newFiles = @(Read-ManagedFiles $staging)
-            if ($newFiles.Count -eq 0) {
-                $newFiles = @(Get-ChildItem -LiteralPath $staging -Recurse -File | ForEach-Object {
-                    $_.FullName.Substring($staging.Length + 1).Replace('\', '/')
-                })
-            }
-            $oldFiles = @(Read-ManagedFiles $target)
-            $backupFiles = if ($oldFiles.Count -gt 0) { $oldFiles } else { $newFiles }
+            $newFiles = @()
+            $backupFiles = @()
             $newProcess = $null
             $copyStarted = $false
 
@@ -137,6 +131,15 @@ internal static class PortableUpdateApplier
                     Stop-Process -Id $oldPid -Force -ErrorAction Stop
                     (Get-Process -Id $oldPid -ErrorAction SilentlyContinue) | Wait-Process -Timeout 10 -ErrorAction SilentlyContinue
                 }
+
+                $newFiles = @(Read-ManagedFiles $staging)
+                if ($newFiles.Count -eq 0) {
+                    $newFiles = @(Get-ChildItem -LiteralPath $staging -Recurse -File | ForEach-Object {
+                        $_.FullName.Substring($staging.Length + 1).Replace('\', '/')
+                    })
+                }
+                $oldFiles = @(Read-ManagedFiles $target)
+                $backupFiles = if ($oldFiles.Count -gt 0) { $oldFiles } else { $newFiles }
 
                 New-Item -ItemType Directory -Path $backup -Force | Out-Null
                 $oldRuntime = Join-Path $target 'runtime'

@@ -72,6 +72,21 @@ public sealed class UpdateNoticeStateTests
     }
 
     [Fact]
+    public void For_DevelopmentBuild_DisablesInPageInstall()
+    {
+        JsonElement state = Parse(UpdateNoticeState.For(
+            Release("v0.4.0", "notes"),
+            UpdateFeedSource.GitHub,
+            new Version(0, 3, 3),
+            installing: false,
+            progress: 0,
+            dismissed: false,
+            installable: false));
+
+        Assert.False(state.GetProperty("installable").GetBoolean());
+    }
+
+    [Fact]
     public void For_ProgressOutOfRange_IsClamped()
     {
         JsonElement over = Parse(UpdateNoticeState.For(

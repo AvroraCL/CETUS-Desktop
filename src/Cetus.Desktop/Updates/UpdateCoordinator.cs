@@ -8,12 +8,9 @@ using Cetus.Configuration;
 namespace Cetus.Updates;
 
 /// <summary>
-/// Desktop-side update orchestration: check, prompt, download with progress,
-/// hand off to the Inno Setup installer and exit. Interactive checks report
-/// "already up to date" or failures. Startup checks stay quiet: when an
-/// update is found the coordinator announces it via a tray balloon, then
-/// downloads and installs silently — the release-notes role moved to the
-/// GitHub Pages announcement page, which the new build opens after restart.
+/// Desktop-side update orchestration: check and announce new releases,
+/// then download and install only after the user requests it. Interactive
+/// checks report "already up to date" or failures.
 /// </summary>
 internal sealed class UpdateCoordinator
 {
@@ -27,6 +24,10 @@ internal sealed class UpdateCoordinator
     private readonly Action<string, MessageBoxImage>? _showInfo;
     private readonly IUpdateNoticeSink? _browser;
     private readonly Action? _showWindow;
+    private readonly Func<bool> _isInstalledEdition;
+    private readonly Action<double?>? _taskbarProgressOverride;
+    private readonly Action<string>? _launchInstallerOverride;
+    private readonly Action<UpdateDownloadResult, ReleaseInfo>? _applyPortableOverride;
     private string _releasesPageUrl = UpdateCheckResult.Failed("x").ReleasesPageUrl;
     private int _updateTaskRunning;
     private AvailableUpdate? _available;
@@ -66,7 +67,11 @@ internal sealed class UpdateCoordinator
         Action<string>? openAnnouncement = null,
         Action<string, MessageBoxImage>? showInfo = null,
         IUpdateNoticeSink? browser = null,
-        Action? showWindow = null)
+        Action? showWindow = null,
+        Func<bool>? isInstalledEdition = null,
+        Action<double?>? taskbarProgress = null,
+        Action<string>? launchInstaller = null,
+        Action<UpdateDownloadResult, ReleaseInfo>? applyPortable = null)
     {
         _owner = owner;
         _exitApplication = exitApplication;
@@ -78,6 +83,10 @@ internal sealed class UpdateCoordinator
         _showInfo = showInfo;
         _browser = browser;
         _showWindow = showWindow;
+        _isInstalledEdition = isInstalledEdition ?? InstalledEdition.IsInstalled;
+        _taskbarProgressOverride = taskbarProgress;
+        _launchInstallerOverride = launchInstaller;
+        _applyPortableOverride = applyPortable;
     }
 
     public async Task CheckForUpdatesAsync(bool interactive)
@@ -115,18 +124,27 @@ internal sealed class UpdateCoordinator
 
                 if (!interactive)
                 {
-                    await PrepareReleaseAsync(found, result.Source, InstalledEdition.IsInstalled());
+                    await PrepareReleaseAsync(found, result.Source, _isInstalledEdition());
                     return;
                 }
 
                 // A manual check re-surfaces a notice the user dismissed earlier.
                 _dismissedVersion = null;
-                await PresentAsync(found, InstalledEdition.IsInstalled(), result.Source);
+                bool installedEdition = _isInstalledEdition();
+                _available = new AvailableUpdate(found, result.Source, installedEdition);
+                PostUpdateState();
+                await PresentAsync(found, installedEdition, result.Source);
                 return;
             }
 
             if (!interactive)
             {
+                if (result.Error is null && _available is not null)
+                {
+                    _available = null;
+                    _dismissedVersion = null;
+                    PostUpdateState();
+                }
                 return;
             }
 
@@ -152,7 +170,7 @@ internal sealed class UpdateCoordinator
     /// </summary>
     private Task PrepareReleaseAsync(ReleaseInfo release, UpdateFeedSource source, bool installedEdition)
     {
-        _available ??= new AvailableUpdate(release, source, installedEdition);
+        _available = new AvailableUpdate(release, source, installedEdition);
 
         if (!installedEdition && DevModeFlag.IsActive)
         {
@@ -215,6 +233,12 @@ internal sealed class UpdateCoordinator
             return;
         }
 
+        if (DevModeFlag.IsActive)
+        {
+            _notify("CETUS 更新", "开发构建不做应用内升级，请打开发布页获取正式包。", OpenAvailableReleasePage);
+            return;
+        }
+
         _dismissedVersion = null;
         _updateBusy = true;
         SetBusy(0);
@@ -223,20 +247,14 @@ internal sealed class UpdateCoordinator
         {
             if (update.InstalledEdition)
             {
-                string installer = await _service.DownloadInstallerWithFallbackAsync(
+                UpdateDownloadResult download = await _service.DownloadInstallerWithFallbackAsync(
                     update.Release.Version,
                     update.Source,
                     new Progress<double>(ReportProgress),
-                    CancellationToken.None).ContinueWith(
-                        static task => task.Result.Path,
-                        TaskScheduler.Default);
-                _settings.SetUpdateSource(ToSettingValue(update.Source));
+                    CancellationToken.None);
+                _settings.SetUpdateSource(ToSettingValue(download.Source));
                 UpdateRejection.Clear(update.Release.Version);
-                Process.Start(new ProcessStartInfo(installer)
-                {
-                    UseShellExecute = true,
-                    Arguments = "/SILENT",
-                });
+                LaunchInstaller(download.Path);
                 _exitApplication();
                 return;
             }
@@ -246,10 +264,8 @@ internal sealed class UpdateCoordinator
                 update.Source,
                 new Progress<double>(ReportProgress),
                 CancellationToken.None);
-            _settings.SetUpdateSource(ToSettingValue(bundle.Source));
-            UpdateRejection.Clear(update.Release.Version);
             SetBusy(0.999);
-            await ApplyPortableUpdateAsync(null, null, update.Release, update.Source);
+            ApplyDownloadedPortableUpdate(bundle, null, update.Release);
         }
         catch (Exception error)
         {
@@ -293,7 +309,8 @@ internal sealed class UpdateCoordinator
             _currentVersion,
             _updateBusy,
             _updateProgress,
-            _dismissedVersion is not null && _dismissedVersion == update.Release.Version);
+            _dismissedVersion is not null && _dismissedVersion == update.Release.Version,
+            installable: !DevModeFlag.IsActive);
     }
 
     /// <summary>Pushes the current update state into the Harness page.</summary>
@@ -315,31 +332,27 @@ internal sealed class UpdateCoordinator
     };
 
     /// <summary>
-    /// Applies a portable zip bundle: download into the cache, extract to a
-    /// staging folder, then hand control to a takeover script that runs
-    /// after CETUS exits. Throws on any failure so the caller can report.
+    /// Stages an already verified portable bundle, then hands control to a
+    /// takeover script that runs after CETUS exits.
     /// </summary>
-    private async Task ApplyPortableUpdateAsync(
+    private void ApplyDownloadedPortableUpdate(
+        UpdateDownloadResult download,
         UpdatePromptDialog? prompt,
-        CancellationTokenSource? cancellation,
-        ReleaseInfo release,
-        UpdateFeedSource source)
+        ReleaseInfo release)
     {
-        UpdateDownloadResult download = await _service.DownloadPortableBundleWithFallbackAsync(
-            release.Version,
-            source,
-            new Progress<double>(value =>
-            {
-                prompt?.ReportProgress(value);
-                ReportTaskbarProgress(value);
-            }),
-            cancellation?.Token ?? CancellationToken.None);
         _settings.SetUpdateSource(ToSettingValue(download.Source));
+        if (_applyPortableOverride is not null)
+        {
+            _applyPortableOverride(download, release);
+            return;
+        }
+
         prompt?.ReportStatus("下载完成，正在解压并准备升级…", isError: false);
         string staging = PortableUpdateApplier.PrepareStaging(download.Path, release.Version);
         string script = PortableUpdateApplier.WriteApplyScript(
             staging, AppContext.BaseDirectory, Environment.ProcessId, download.Path, release.Version);
         PortableUpdateApplier.LaunchApplyScript(script);
+        UpdateRejection.Clear(release.Version);
         prompt?.Close();
         _notify("CETUS 更新", "便携更新已就绪，CETUS 即将退出并升级到新版本。", null);
         _exitApplication();
@@ -350,6 +363,12 @@ internal sealed class UpdateCoordinator
     /// <summary>Taskbar download progress; null clears, negative shows indeterminate, otherwise 0..1.</summary>
     private void SetTaskbarProgress(double? value)
     {
+        if (_taskbarProgressOverride is not null)
+        {
+            _taskbarProgressOverride(value);
+            return;
+        }
+
         System.Windows.Shell.TaskbarItemInfo info = _owner.TaskbarItemInfo ??= new();
         if (value is null)
         {
@@ -411,6 +430,13 @@ internal sealed class UpdateCoordinator
         });
         try
         {
+            if (DevModeFlag.IsActive)
+            {
+                prompt.SetDownloading(false);
+                prompt.ReportStatus("开发构建不做应用内升级，请打开发布页获取正式包。", isError: true);
+                return;
+            }
+
             if (installedEdition)
             {
                 UpdateDownloadResult download = await _service.DownloadInstallerWithFallbackAsync(
@@ -422,23 +448,17 @@ internal sealed class UpdateCoordinator
                 // The user asked for this version explicitly, so the automatic
                 // suppression no longer applies to it.
                 UpdateRejection.Clear(release.Version);
-                Process.Start(new ProcessStartInfo(download.Path)
-                {
-                    UseShellExecute = true,
-                    Arguments = "/SILENT",
-                });
+                LaunchInstaller(download.Path);
                 _exitApplication();
             }
             else
             {
-                if (DevModeFlag.IsActive)
-                {
-                    prompt.SetDownloading(false);
-                    prompt.ReportStatus("开发构建不做应用内升级，请打开发布页获取正式包。", isError: true);
-                    return;
-                }
-
-                await ApplyPortableUpdateAsync(prompt, cancellation, release, source);
+                UpdateDownloadResult download = await _service.DownloadPortableBundleWithFallbackAsync(
+                    release.Version,
+                    source,
+                    progress,
+                    cancellation.Token);
+                ApplyDownloadedPortableUpdate(download, prompt, release);
             }
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
@@ -466,6 +486,21 @@ internal sealed class UpdateCoordinator
         }
 
         _ = MessageBox.Show(_owner, message, "CETUS · 更新", MessageBoxButton.OK, image);
+    }
+
+    private void LaunchInstaller(string path)
+    {
+        if (_launchInstallerOverride is not null)
+        {
+            _launchInstallerOverride(path);
+            return;
+        }
+
+        Process.Start(new ProcessStartInfo(path)
+        {
+            UseShellExecute = true,
+            Arguments = "/SILENT",
+        });
     }
 
     private void OpenReleasesPage()
