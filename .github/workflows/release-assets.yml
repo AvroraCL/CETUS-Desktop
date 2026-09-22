@@ -55,6 +55,15 @@ jobs:
           }
           "CETUS_ISCC=$iscc" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+      - name: Prepare DSH session fixture for socket tests
+        run: |
+          $dshHome = Join-Path $env:USERPROFILE '.dsh'
+          New-Item -ItemType Directory -Force -Path $dshHome | Out-Null
+          @(
+            'client-connection/browser-session:'
+            '  secret: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+          ) | Set-Content -LiteralPath (Join-Path $dshHome '.credentials.yaml') -Encoding utf8NoBOM
+
       - name: Build and test release
         env:
           CETUS_VERSION: ${{ inputs.version }}
