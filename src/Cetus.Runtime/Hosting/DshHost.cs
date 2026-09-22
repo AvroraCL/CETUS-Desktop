@@ -121,6 +121,7 @@ public sealed class DshHost : IDshHost
             // original owner's Job Object. Only adopt what we can prove is alive.
             if (IsRecordedOwnerAlive(out string? ownerDetail))
             {
+                EnsureLoopbackBinding();
                 _observedOwner = $"adopted endpoint（{ownerDetail}）";
                 MarkReadyAndStartMonitoring();
                 return;
@@ -142,6 +143,7 @@ public sealed class DshHost : IDshHost
                 DshProbeResult retry = await _probe.ProbeAsync(cancellationToken);
                 if (retry.IsHealthy)
                 {
+                    EnsureLoopbackBinding();
                     MarkReadyAndStartMonitoring();
                     return;
                 }
@@ -265,12 +267,24 @@ public sealed class DshHost : IDshHost
     }
 
     /// <summary>
-    /// Owned-sidecar safety net: a ready DSH must not be listening on a
-    /// wildcard address. The spawned process was given an explicit loopback
-    /// host, so a violation means upstream behavior changed — stop the tree
-    /// and surface a hard failure (the safe-mode panel picks it up).
-    /// Reused external services are the user's own and are not policed.
+    /// Safety net: a ready DSH must not be listening on a wildcard address.
+    /// Spawned sidecars get an explicit loopback host, so a violation means
+    /// upstream behavior changed — stop the tree and surface a hard failure
+    /// (the safe-mode panel picks it up). Reused endpoints are not stopped
+    /// (they are not ours), but they are still policed and refused when not
+    /// loopback-only so WebView2 never talks to a LAN-exposed service.
     /// </summary>
+    private void EnsureLoopbackBinding()
+    {
+        if (LoopbackBindingGuard.IsLoopbackOnly(_endpoint.Port))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"DSH 监听在非回环地址（端口 {_endpoint.Port}），已拒绝使用以保护本机安全。");
+    }
+
     private async Task RequireLoopbackBindingAsync()
     {
         if (LoopbackBindingGuard.IsLoopbackOnly(_endpoint.Port))

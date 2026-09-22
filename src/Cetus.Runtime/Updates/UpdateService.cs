@@ -195,7 +195,7 @@ public sealed class UpdateService : IDisposable
 
     /// <summary>
     /// Downloads the release's installer into the update cache directory and
-    /// verifies its SHA-256 against SHA256SUMS when that asset exists.
+    /// verifies its SHA-256 against the release SHA256SUMS asset. Missing sums fail closed.
     /// Returns the local installer path.
     /// </summary>
     public Task<string> DownloadInstallerAsync(
@@ -513,8 +513,8 @@ public sealed class UpdateService : IDisposable
         ReleaseAsset? checksum = UpdateFeed.SelectChecksumAsset(release);
         if (checksum is null)
         {
-            // Older releases ship no sums file; accept the HTTPS-only download.
-            return;
+            throw new InvalidOperationException(
+                $"Release {release.TagName} is missing SHA256SUMS; refusing to install an unverified package.");
         }
 
         string sums = await _downloadClient.GetStringAsync(checksum.DownloadUrl, cancellationToken);

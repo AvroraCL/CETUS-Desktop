@@ -424,6 +424,44 @@ public sealed class UpdateServiceTests
     }
 
     [Fact]
+    public async Task DownloadInstallerAsync_ThrowsWhenChecksumAssetMissing()
+    {
+        string? originalDir = Environment.GetEnvironmentVariable("CETUS_UPDATE_DIR");
+        using var directory = new TemporaryDirectory();
+        try
+        {
+            Environment.SetEnvironmentVariable("CETUS_UPDATE_DIR", directory.Path);
+            var release = new ReleaseInfo(
+                "v0.2.1",
+                new Version(0, 2, 1),
+                null,
+                [new ReleaseAsset(InstallerName, "https://github.com/Cetus-Setup-0.2.1.exe", InstallerBytes.Length)]);
+            var handler = new FakeHandler
+            {
+                Responder = _ => new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent(InstallerBytes),
+                },
+            };
+            using var service = new UpdateService(handler);
+
+            InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => service.DownloadInstallerAsync(
+                    release,
+                    UpdateFeedSource.GitHub,
+                    progress: null,
+                    CancellationToken.None));
+
+            Assert.Contains("SHA256SUMS", ex.Message);
+            Assert.False(File.Exists(Path.Combine(directory.Path, InstallerName)));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("CETUS_UPDATE_DIR", originalDir);
+        }
+    }
+
+    [Fact]
     public async Task DownloadInstallerWithFallbackAsync_ChecksumFailureUsesOtherSource()
     {
         string? originalDir = Environment.GetEnvironmentVariable("CETUS_UPDATE_DIR");

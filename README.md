@@ -33,12 +33,12 @@ CETUS 把官方 Web UI、Agent 能力和插件生态装进一个开箱即用的 
 - 可选开机自启：登录 Windows 后 CETUS 在后台启动并驻留托盘，DSH 提前就绪、点开即用
 - DSH 设置页内建「CETUS设置」：启动检查更新、手动检查更新、任务完成提醒、全局快捷键、开机自启、关闭按钮行为（托盘/退出）、DSH 端口、DSH 版本查询，改动实时保存
 
-### 下载 v0.3.6
+### 下载 v0.3.7
 
 | 文件 | 说明 |
 |---|---|
-| [Cetus-Setup-0.3.6.exe](https://github.com/AvroraCL/CETUS-Desktop/releases/download/v0.3.6/Cetus-Setup-0.3.6.exe) | 中文安装向导，按当前用户安装，无需管理员权限 |
-| [Cetus-0.3.6-win-x64-portable.zip](https://github.com/AvroraCL/CETUS-Desktop/releases/download/v0.3.6/Cetus-0.3.6-win-x64-portable.zip) | 便携版，解压后直接运行 |
+| [Cetus-Setup-0.3.7.exe](https://github.com/AvroraCL/CETUS-Desktop/releases/download/v0.3.7/Cetus-Setup-0.3.7.exe) | 中文安装向导，按当前用户安装，无需管理员权限 |
+| [Cetus-0.3.7-win-x64-portable.zip](https://github.com/AvroraCL/CETUS-Desktop/releases/download/v0.3.7/Cetus-0.3.7-win-x64-portable.zip) | 便携版，解压后直接运行 |
 
 历史版本与更新日志见 [Releases](https://github.com/AvroraCL/CETUS-Desktop/releases)。
 
@@ -47,6 +47,8 @@ CETUS 把官方 Web UI、Agent 能力和插件生态装进一个开箱即用的 
 CETUS 目前处于早期开发阶段，**M0 桌面骨架与 M2 自包含打包已经完成并通过冒烟测试**。
 
 当前版本可以正常启动、加载、监控和退出 DeepSeek Harness。DSH 进程异常退出或连续健康检查失败时，CETUS 会执行有限次数的自动恢复，恢复耗尽后进入安全模式诊断页；代码签名仍在推进中。现阶段更适合愿意参与测试和反馈的用户，不建议将它视为完全稳定的正式产品。
+
+v0.3.7：更新包强制校验 SHA256SUMS（缺失即拒绝安装）；认领/复用已有 DSH 服务时同样校验回环绑定。
 
 ### 系统要求
 
@@ -201,9 +203,9 @@ scripts\installer-smoke.ps1 -InstallerPath dist\Cetus-Setup-<版本>.exe -Expect
 
 版本信息：
 
-- 文件版本：`0.0.3.2`
+- 文件版本：`0.0.3.7`
 - 产品名称：`CETUS鲸鱼座`
-- 产品版本：`0.3.2`
+- 产品版本：`0.3.7`
 - 版权：`AvroraCL`
 
 ### 验证场景
