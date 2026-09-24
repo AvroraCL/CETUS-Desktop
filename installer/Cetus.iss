@@ -103,7 +103,9 @@ Type: filesandordirs; Name: "{app}\WebView2"
 Type: filesandordirs; Name: "{app}\logs"
 Type: filesandordirs; Name: "{app}\updates"
 Type: files; Name: "{app}\settings.json"
+Type: files; Name: "{app}\settings.json.tmp*"
 Type: files; Name: "{app}\recent-workspaces.json"
+Type: files; Name: "{app}\recent-workspaces.json.tmp*"
 
 [Code]
 // Ask to close only the Cetus installed in {app}, plus its own node sidecar.

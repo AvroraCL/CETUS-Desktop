@@ -324,7 +324,6 @@
     ui.notes.style.display = state.notes ? '' : 'none';
 
     const busy = state.installing === true || state.installing === 'true';
-    const ready = state.ready === true || state.ready === 'true';
     const installable = state.installable !== false && state.installable !== 'false';
     if (busy) {
       const progress = Number(state.progress);
@@ -343,7 +342,7 @@
     } else {
       ui.title.textContent = '发现 CETUS 新版本';
       ui.bar.style.display = 'none';
-      ui.primary.textContent = ready ? '安装并重启' : '立即更新';
+      ui.primary.textContent = '立即更新';
       ui.primary.dataset.mode = 'install';
     }
 

@@ -12,6 +12,10 @@ namespace Cetus.Configuration;
 /// </summary>
 internal sealed class CetusSettingsDialog : Window
 {
+    /// <summary>Raised after any toggle changes so the owner can apply
+    /// live-behavior settings (e.g. hotkey registration) immediately.</summary>
+    public event EventHandler? SettingChanged;
+
     public CetusSettingsDialog(CetusSettings settings)
     {
         Title = "Cetus · CETUS设置";
@@ -30,15 +34,15 @@ internal sealed class CetusSettingsDialog : Window
         });
 
         panel.Children.Add(MakeToggle("启动时检查更新", "启动 CETUS 时自动检测新版本",
-            settings.CheckUpdatesOnStartup, changed => settings.SetCheckUpdatesOnStartup(changed)));
+            settings.CheckUpdatesOnStartup, changed => OnToggle(settings, changed)));
         panel.Children.Add(MakeToggle("任务完成提醒", "会话不在前台时，任务完成弹出托盘通知",
-            settings.NotifyOnAgentComplete, changed => settings.SetNotifyOnAgentComplete(changed)));
+            settings.NotifyOnAgentComplete, changed => OnToggle(settings, changed)));
         panel.Children.Add(MakeToggle("全局快捷键", "Ctrl+Alt+Space 随时唤起或隐藏 CETUS",
-            settings.GlobalHotkeyEnabled, changed => settings.SetGlobalHotkeyEnabled(changed)));
+            settings.GlobalHotkeyEnabled, changed => OnToggle(settings, changed)));
         panel.Children.Add(MakeToggle("开机自启", "登录 Windows 后 CETUS 在后台启动并驻留托盘",
             Cetus.Platform.AutostartManager.IsEnabled(), changed => Cetus.Platform.AutostartManager.SetEnabled(changed)));
         panel.Children.Add(MakeToggle("关闭按钮最小化到托盘", "开启时点关闭按钮驻留托盘，关闭则直接退出",
-            settings.CloseToTray, changed => settings.SetCloseToTray(changed)));
+            settings.CloseToTray, changed => OnToggle(settings, changed)));
 
         var buttons = new StackPanel
         {
@@ -51,6 +55,11 @@ internal sealed class CetusSettingsDialog : Window
         panel.Children.Add(buttons);
 
         Content = panel;
+    }
+
+    private void OnToggle(CetusSettings settings, bool changed)
+    {
+        SettingChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private static StackPanel MakeToggle(

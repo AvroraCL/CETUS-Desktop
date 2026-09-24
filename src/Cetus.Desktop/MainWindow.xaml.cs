@@ -447,7 +447,28 @@ public partial class MainWindow : Window
     private void OpenCetusSettings()
     {
         ShowWindow();
-        new Configuration.CetusSettingsDialog(_settings) { Owner = this }.ShowDialog();
+        var dialog = new Configuration.CetusSettingsDialog(_settings) { Owner = this };
+        dialog.SettingChanged += (_, _) =>
+        {
+            // Live-behavior settings: the hotkey hook must register/unregister
+            // immediately, and a failure surfaces right here instead of a
+            // silent revert.
+            if (_settings.GlobalHotkeyEnabled)
+            {
+                if (_hotkeys?.Register() != true)
+                {
+                    _tray?.ShowBalloonTip(
+                        "CETUS · 全局快捷键",
+                        "Ctrl+Alt+Space 被其他程序占用，快捷键未生效。",
+                        null);
+                }
+            }
+            else
+            {
+                _hotkeys?.Unregister();
+            }
+        };
+        dialog.ShowDialog();
     }
 
     private void OnGlobalHotkeyToggle()
