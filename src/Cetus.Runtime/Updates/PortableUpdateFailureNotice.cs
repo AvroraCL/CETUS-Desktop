@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Text;
 using System.Text.Json;
@@ -104,7 +105,7 @@ public static class UpdateRejection
                 }
 
                 builder.AppendLine(value);
-                File.WriteAllText(FilePath, builder.ToString(), new UTF8Encoding(false));
+                WriteAtomically(builder.ToString());
             }
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
@@ -128,11 +129,30 @@ public static class UpdateRejection
                 string[] kept = File.ReadLines(FilePath)
                     .Where(line => line.Trim().Length > 0 && Normalize(line) != value)
                     .ToArray();
-                File.WriteAllText(FilePath, string.Join(Environment.NewLine, kept), new UTF8Encoding(false));
+                WriteAtomically(string.Join(Environment.NewLine, kept));
             }
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
+        }
+    }
+
+    /// <summary>
+    /// Atomic tmp+rename write with a per-writer unique temp name, matching
+    /// the pattern used by settings persistence.
+    /// </summary>
+    private static void WriteAtomically(string content)
+    {
+        string temporaryPath = FilePath + ".tmp" + Guid.NewGuid().ToString("N");
+        File.WriteAllText(temporaryPath, content, new UTF8Encoding(false));
+        try
+        {
+            File.Move(temporaryPath, FilePath, overwrite: true);
+        }
+        catch
+        {
+            File.Delete(temporaryPath);
+            throw;
         }
     }
 

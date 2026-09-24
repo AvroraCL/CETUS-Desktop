@@ -132,6 +132,9 @@ public sealed class DshTurnEndWatcher : IDisposable
 
     private async Task FollowAsync(string sessionId, CancellationToken token)
     {
+        // Snapshot the title for THIS follow session so a concurrent
+        // discovery re-run cannot rename another session's turn-end notice.
+        string title = _latestTitle ?? sessionId;
         using var mux = new DshStreamMuxClient(_dshHomeOverride);
         mux.Item += item =>
         {
@@ -139,7 +142,7 @@ public sealed class DshTurnEndWatcher : IDisposable
                 && parsed.EventType == "turn/end"
                 && parsed.TurnEndKind is { } reason)
             {
-                TurnEnded?.Invoke(this, new DshTurnEndedEventArgs(sessionId, _latestTitle ?? sessionId, reason));
+                TurnEnded?.Invoke(this, new DshTurnEndedEventArgs(sessionId, title, reason));
             }
         };
 

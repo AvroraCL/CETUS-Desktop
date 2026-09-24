@@ -35,9 +35,18 @@ public static class RuntimeLog
                     // rotated to .old.log; the append below starts a fresh file
                 }
 
-                File.AppendAllText(
+                // File.AppendAllText opens with FileShare.Read only, so a
+                // second concurrent Cetus process would silently lose every
+                // line. Share ReadWrite like the log readers do.
+                using (var stream = new FileStream(
                     CurrentLogFile,
-                    $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {message}{Environment.NewLine}");
+                    FileMode.Append,
+                    FileAccess.Write,
+                    FileShare.ReadWrite | FileShare.Delete))
+                using (var writer = new StreamWriter(stream))
+                {
+                    writer.Write($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {message}{Environment.NewLine}");
+                }
             }
         }
         catch (IOException)
