@@ -126,9 +126,12 @@ public partial class MainWindow : Window
 
             _hotkeys = new GlobalHotkeyManager(source);
             _hotkeys.ToggleRequested += OnGlobalHotkeyToggle;
-            if (_settings.GlobalHotkeyEnabled)
+            if (_settings.GlobalHotkeyEnabled && !_hotkeys.Register())
             {
-                _hotkeys.Register();
+                _tray?.ShowBalloonTip(
+                    "CETUS · 全局快捷键",
+                    "Ctrl+Alt+Space 被其他程序占用，快捷键未生效。可在 CETUS设置 中关闭。",
+                    ShowWindow);
             }
         }
 
@@ -289,7 +292,8 @@ public partial class MainWindow : Window
             ExitApplication,
             path => _ = OpenWorkspaceAsync(path),
             PickWorkspace,
-            () => ExportDiagnosticsAsync()));
+            () => ExportDiagnosticsAsync(),
+            OpenCetusSettings));
         _tray.SetRetryEnabled(_runtime.State.CanRetry);
     }
 
@@ -450,6 +454,13 @@ public partial class MainWindow : Window
         });
     }
 
+    /// <summary>Native settings dialog, reachable even when the DSH page is down.</summary>
+    private void OpenCetusSettings()
+    {
+        ShowWindow();
+        new Configuration.CetusSettingsDialog(_settings) { Owner = this }.ShowDialog();
+    }
+
     private void OnGlobalHotkeyToggle()
     {
         if (_isExiting)
@@ -542,9 +553,13 @@ public partial class MainWindow : Window
                 _settings.SetGlobalHotkeyEnabled(hotkeyEnabled);
                 if (hotkeyEnabled)
                 {
-                    // Registration can fail while another app owns the combo;
-                    // the state re-post below keeps the switch truthful.
-                    _hotkeys?.Register();
+                    if (_hotkeys?.Register() != true)
+                    {
+                        _tray?.ShowBalloonTip(
+                            "CETUS · 全局快捷键",
+                            "Ctrl+Alt+Space 被其他程序占用，快捷键未生效。",
+                            null);
+                    }
                 }
                 else
                 {

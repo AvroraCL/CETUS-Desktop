@@ -166,6 +166,8 @@ public sealed class DshTurnEndWatcher : IDisposable
 
     public void Dispose()
     {
+        CancellationTokenSource? cancellation;
+        Task? loop;
         lock (_gate)
         {
             if (_disposed)
@@ -174,8 +176,22 @@ public sealed class DshTurnEndWatcher : IDisposable
             }
 
             _disposed = true;
+            cancellation = _cancellation;
+            loop = _loop;
+            _cancellation = null;
+            _loop = null;
         }
 
-        _cancellation?.Cancel();
+        cancellation?.Cancel();
+        try
+        {
+            loop?.Wait(TimeSpan.FromSeconds(2));
+        }
+        catch
+        {
+            // The loop unwinds through cancellation; nothing to observe.
+        }
+
+        cancellation?.Dispose();
     }
 }

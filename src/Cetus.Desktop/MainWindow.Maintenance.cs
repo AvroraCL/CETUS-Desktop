@@ -125,13 +125,20 @@ public partial class MainWindow
             maintenanceDone = true;
             _ = Task.Run(() =>
             {
-                RetentionCleaner.PruneLogs(CetusPaths.LogDirectory);
-                RetentionCleaner.PruneStaleFiles(
-                    CetusPaths.UpdateCacheDirectory, "*.exe", RetentionCleaner.DefaultUpdateCacheMaxAge);
-                RetentionCleaner.PruneStaleFiles(
-                    CetusPaths.UpdateCacheDirectory, "*.zip", RetentionCleaner.DefaultUpdateCacheMaxAge);
-                RetentionCleaner.PruneStaleDirectories(
-                    CetusPaths.UpdateCacheDirectory, "staging-", RetentionCleaner.DefaultUpdateCacheMaxAge);
+                try
+                {
+                    RetentionCleaner.PruneLogs(CetusPaths.LogDirectory);
+                    RetentionCleaner.PruneStaleFiles(
+                        CetusPaths.UpdateCacheDirectory, "*.exe", RetentionCleaner.DefaultUpdateCacheMaxAge);
+                    RetentionCleaner.PruneStaleFiles(
+                        CetusPaths.UpdateCacheDirectory, "*.zip", RetentionCleaner.DefaultUpdateCacheMaxAge);
+                    RetentionCleaner.PruneStaleDirectories(
+                        CetusPaths.UpdateCacheDirectory, "staging-", RetentionCleaner.DefaultUpdateCacheMaxAge);
+                }
+                catch (Exception error)
+                {
+                    Configuration.RuntimeLog.Append("background prune failed: " + error.Message);
+                }
             });
         };
         _backgroundHeartbeat.Start();

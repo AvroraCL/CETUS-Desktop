@@ -163,6 +163,17 @@ internal sealed class DesktopRuntime
                 canRetry: !_isExiting);
             return DesktopRuntimeResult.Busy;
         }
+        catch (Microsoft.Web.WebView2.Core.WebView2RuntimeNotFoundException)
+        {
+            await StopHostAsync();
+            var missing = new InvalidOperationException(
+                "未检测到 WebView2 运行时（Windows 10/11 通常已预装）。" + Environment.NewLine +
+                Environment.NewLine +
+                "请安装 Microsoft Edge WebView2 运行时后重试：" + Environment.NewLine +
+                "https://developer.microsoft.com/microsoft-edge/webview2/");
+            Transition(DesktopRuntimePhase.Failed, "缺少 WebView2 运行时", canRetry: true, missing);
+            return DesktopRuntimeResult.Failed(missing);
+        }
         catch (Exception error)
         {
             await StopHostAsync();

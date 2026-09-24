@@ -30,9 +30,9 @@ public static class RuntimeLog
             Directory.CreateDirectory(directory);
             lock (Gate)
             {
-                if (File.Exists(CurrentLogFile) && IsFull(CurrentLogFile))
+                if (File.Exists(CurrentLogFile) && IsFull(CurrentLogFile) && TryRotate(CurrentLogFile))
                 {
-                    Rotate(CurrentLogFile);
+                    // rotated to .old.log; the append below starts a fresh file
                 }
 
                 File.AppendAllText(
@@ -48,13 +48,29 @@ public static class RuntimeLog
         }
     }
 
-    private static bool IsFull(string path) =>
-        new FileInfo(path).Length > MaxLinesPerFile * 90;
+    // Rotation threshold in bytes (~360 KB, about MaxLinesPerFile short lines).
+    private const long MaxLogBytes = MaxLinesPerFile * 90L;
 
-    private static void Rotate(string path)
+    private static bool IsFull(string path) =>
+        new FileInfo(path).Length > MaxLogBytes;
+
+    /// <summary>
+    /// Best-effort rotation: when .old.log is held open by a reader (e.g. the
+    /// diagnostics export), keep appending to the current file instead of
+    /// dropping the entry.
+    /// </summary>
+    private static bool TryRotate(string path)
     {
-        string rotated = path.Replace(".log", ".old.log");
-        File.Delete(rotated);
-        File.Move(path, rotated);
+        try
+        {
+            string rotated = path.Replace(".log", ".old.log");
+            File.Delete(rotated);
+            File.Move(path, rotated);
+            return true;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
     }
 }

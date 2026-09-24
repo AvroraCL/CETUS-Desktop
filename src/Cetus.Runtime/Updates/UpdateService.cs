@@ -635,7 +635,7 @@ public sealed class UpdateService : IDisposable
         if (checksum is null)
         {
             throw new InvalidOperationException(
-                $"Release {release.TagName} is missing SHA256SUMS; refusing to install an unverified package.");
+                $"发布 {release.TagName} 缺少 SHA256SUMS 校验文件，拒绝安装未经验证的更新包。");
         }
 
         string sums = await _downloadClient.GetStringAsync(checksum.DownloadUrl, cancellationToken);

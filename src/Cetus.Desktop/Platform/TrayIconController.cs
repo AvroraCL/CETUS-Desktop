@@ -12,7 +12,8 @@ internal sealed record TrayCommands(
     Action ExitApplication,
     Action<string> OpenWorkspace,
     Func<string?> PickWorkspace,
-    Func<Task> ExportDiagnostics);
+    Func<Task> ExportDiagnostics,
+    Action OpenCetusSettings);
 
 /// <summary>
 /// Owns the notification-area icon, menu and Explorer restart recovery.
@@ -55,6 +56,11 @@ internal sealed class TrayIconController : IDisposable
         _retryItem = new ToolStripMenuItem("重试连接 DSH");
         _retryItem.Click += async (_, _) => await commands.RetryDsh();
         _menu.Items.Add(_retryItem);
+
+        var settingsItem = new ToolStripMenuItem("CETUS 设置…");
+        settingsItem.ToolTipText = "DSH 离线时也能管理 CETUS 设置";
+        settingsItem.Click += (_, _) => commands.OpenCetusSettings();
+        _menu.Items.Add(settingsItem);
 
         var configurePortItem = new ToolStripMenuItem("设置 DSH 端口…");
         configurePortItem.Click += async (_, _) => await commands.ConfigurePort();

@@ -29,12 +29,21 @@ public static class RetentionCleaner
         int deleted = 0;
         try
         {
-            string[] candidates = Directory
-                .EnumerateFiles(directory, searchPattern, SearchOption.TopDirectoryOnly)
-                .OrderByDescending(File.GetLastWriteTimeUtc)
-                .ToArray();
+            List<string> candidates;
+            try
+            {
+                candidates = Directory
+                    .EnumerateFiles(directory, searchPattern, SearchOption.TopDirectoryOnly)
+                    .OrderByDescending(File.GetLastWriteTimeUtc)
+                    .ToList();
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                return 0;
+            }
+
             DateTimeOffset cutoff = DateTimeOffset.UtcNow - maxAge;
-            for (int index = 0; index < candidates.Length; index++)
+            for (int index = 0; index < candidates.Count; index++)
             {
                 bool beyondKeep = index >= keepNewest;
                 bool tooOld;
@@ -42,7 +51,7 @@ public static class RetentionCleaner
                 {
                     tooOld = File.GetLastWriteTimeUtc(candidates[index]) < cutoff;
                 }
-                catch (IOException)
+                catch (Exception evalError) when (evalError is IOException or UnauthorizedAccessException)
                 {
                     continue;
                 }
@@ -63,9 +72,10 @@ public static class RetentionCleaner
                 }
             }
         }
-        catch (IOException)
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
             // The directory vanished or is unreadable; nothing to prune.
+            _ = error;
         }
 
         return deleted;

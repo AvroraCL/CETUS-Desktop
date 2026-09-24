@@ -412,7 +412,7 @@
 
     const portPill = cetusPill('cetus-setting-port');
     portPill.addEventListener('click', () => postCetus({ type: 'cetus-open-port-settings' }));
-    group.appendChild(cetusRow('DSH 端口', 'DSH 服务监听端口，修改后重启生效', portPill));
+    group.appendChild(cetusRow('DSH 端口', 'DSH 服务监听端口，保存后自动重连', portPill));
 
     const dshPill = cetusPill('cetus-setting-dsh');
     group.appendChild(cetusRow(
