@@ -262,7 +262,7 @@ public sealed class CetusSettings
         }
 
         Directory.CreateDirectory(directory);
-        string temporaryPath = _settingsPath + ".tmp";
+        string temporaryPath = _settingsPath + ".tmp" + Guid.NewGuid().ToString("N");
         string json = JsonSerializer.Serialize(new SettingsFile
         {
             Port = _configuredPort,

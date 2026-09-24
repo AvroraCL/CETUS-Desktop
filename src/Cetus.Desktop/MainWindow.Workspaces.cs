@@ -83,7 +83,7 @@ public partial class MainWindow
                 endpoint, workspaceId, CancellationToken.None);
             await FocusSessionCoreAsync(sessionId);
         }
-        catch (Exception error) when (error is HttpRequestException or InvalidOperationException or TaskCanceledException)
+        catch (Exception error) when (error is HttpRequestException or InvalidOperationException or TaskCanceledException or TimeoutException)
         {
             if (!_isExiting)
             {
@@ -108,7 +108,7 @@ public partial class MainWindow
         {
             await FocusSessionCoreAsync(sessionId);
         }
-        catch (Exception error) when (error is HttpRequestException or InvalidOperationException or TaskCanceledException)
+        catch (Exception error) when (error is HttpRequestException or InvalidOperationException or TaskCanceledException or TimeoutException)
         {
             // The window is already up; a failed refocus must not surface.
         }

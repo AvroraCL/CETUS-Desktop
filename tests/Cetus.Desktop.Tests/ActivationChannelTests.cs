@@ -8,40 +8,40 @@ public sealed class ActivationChannelTests
     private static string UniqueId() => "test-" + Guid.NewGuid().ToString("N");
 
     [Fact]
-    public async Task ForwardedWorkspace_ReachesServerEvent()
+    public void ForwardedWorkspace_ReachesServerEvent()
     {
         string id = UniqueId();
         TaskCompletionSource<ActivationRequest> received = new(TaskCreationOptions.RunContinuationsAsynchronously);
         using var server = new ActivationChannel(id, request => received.TrySetResult(request));
         server.Start();
 
-        bool forwarded = await ActivationChannel.TryForwardAsync(@"F:\repos\demo", id);
+        bool forwarded = ActivationChannel.TryForwardAsync(@"F:\repos\demo", id);
 
         Assert.True(forwarded);
-        ActivationRequest request = await received.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        ActivationRequest request = received.Task.Result;
         Assert.Equal(@"F:\repos\demo", request.WorkspacePath);
     }
 
     [Fact]
-    public async Task PlainForward_SendsNullWorkspace()
+    public void PlainForward_SendsNullWorkspace()
     {
         string id = UniqueId();
         TaskCompletionSource<ActivationRequest> received = new(TaskCreationOptions.RunContinuationsAsynchronously);
         using var server = new ActivationChannel(id, request => received.TrySetResult(request));
         server.Start();
 
-        bool forwarded = await ActivationChannel.TryForwardAsync(null, id);
+        bool forwarded = ActivationChannel.TryForwardAsync(null, id);
 
         Assert.True(forwarded);
-        ActivationRequest request = await received.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        ActivationRequest request = received.Task.Result;
         Assert.Null(request.WorkspacePath);
     }
 
     [Fact]
-    public async Task TryForward_WithoutServer_ReturnsFalse()
+    public void TryForward_WithoutServer_ReturnsFalse()
     {
         // A unique id keeps the probe away from any really running instance.
-        bool forwarded = await ActivationChannel.TryForwardAsync(
+        bool forwarded = ActivationChannel.TryForwardAsync(
             @"F:\repos\nobody-home", UniqueId());
 
         Assert.False(forwarded);

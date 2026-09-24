@@ -32,8 +32,7 @@ public partial class App : System.Windows.Application
         LaunchRequest launch = LaunchArgs.Parse(e.Args);
         if (!_singleInstance.IsPrimaryInstance)
         {
-            if (!ActivationChannel.TryForwardAsync(launch.WorkspacePath, instanceId)
-                .GetAwaiter().GetResult())
+            if (!ActivationChannel.TryForwardAsync(launch.WorkspacePath, instanceId))
             {
                 MessageBox.Show(
                     "Cetus 已经在运行了。",

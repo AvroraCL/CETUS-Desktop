@@ -111,29 +111,35 @@ public sealed class ActivationChannel : IDisposable
     /// Best-effort forward from a second launch. Returns false when no
     /// primary instance answered within the timeout.
     /// </summary>
-    public static Task<bool> TryForwardAsync(string? workspacePath, string? instanceId = null)
+    public static bool TryForwardAsync(string? workspacePath, string? instanceId = null)
     {
         string message = JsonSerializer.Serialize(new { workspace = workspacePath });
-        return TryForwardMessageAsync(message, instanceId);
+        return TryForwardMessage(message, instanceId);
     }
 
-    private static async Task<bool> TryForwardMessageAsync(string message, string? instanceId)
+    /// <summary>
+    /// Deliberately synchronous at the transport level: runs on the second
+    /// launch's UI thread during OnStartup, and an async pipe op would
+    /// capture the DispatcherSynchronizationContext and deadlock on the
+    /// caller's GetResult(). The 2s budget bounds Connect; the payload is
+    /// one small write that cannot meaningfully stall.
+    /// </summary>
+    private static bool TryForwardMessage(string message, string? instanceId)
     {
         byte[] payload = Encoding.UTF8.GetBytes(message);
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         try
         {
-            await using var client = new NamedPipeClientStream(
+            using var client = new NamedPipeClientStream(
                 ".",
                 BuildPipeName(instanceId),
                 PipeDirection.Out,
-                PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
-            await client.ConnectAsync(timeout.Token);
-            await client.WriteAsync(payload, timeout.Token);
-            await client.FlushAsync(timeout.Token);
+                PipeOptions.CurrentUserOnly);
+            client.Connect(2000);
+            client.Write(payload, 0, payload.Length);
+            client.Flush();
             return true;
         }
-        catch (Exception error) when (error is IOException or OperationCanceledException or ObjectDisposedException)
+        catch (Exception error) when (error is IOException or ObjectDisposedException or TimeoutException)
         {
             return false;
         }

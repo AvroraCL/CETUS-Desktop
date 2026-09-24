@@ -393,6 +393,17 @@ internal sealed class BrowserSession : IBrowserSession, IUpdateNoticeSink, IDisp
 
     private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
+        // The injected bridge lives only in the DSH page. Arbitrary third-
+        // party sites load in iframes (Harness sidebar browser) and can post
+        // messages with any payload — including a spoofed source field — so
+        // the sender's ORIGIN must be the trusted DSH origin, not just the
+        // message body.
+        if (e.Source is not { } messageSource
+            || _navigationPolicy?.Allows(messageSource) != true)
+        {
+            return;
+        }
+
         try
         {
             using JsonDocument message = JsonDocument.Parse(e.WebMessageAsJson);

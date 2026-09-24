@@ -167,12 +167,17 @@ public partial class MainWindow : Window
             return;
         }
 
+        // The rollback guard must run regardless of navigation outcome: a
+        // build whose DSH page fails to load is exactly the one whose
+        // rejection has to be recorded, or the silent updater re-announces
+        // the known-bad release on every launch.
+        ShowPortableUpdateFailureIfPresent();
+
         // Visible phase: load the DSH page with the status line showing.
         try
         {
             await _runtime.NavigateHomeAsync();
             WriteUpdateHealthMarker(updateHealthPath);
-            ShowPortableUpdateFailureIfPresent();
         }
         catch (Exception error)
         {
@@ -435,23 +440,7 @@ public partial class MainWindow : Window
     /// <summary>Realtime mux path: raise the same completion notice the instant a turn ends.</summary>
     private void OnTurnEnded(object? sender, DshTurnEndedEventArgs e)
     {
-        Dispatcher.BeginInvoke(() =>
-        {
-            if (_isExiting || _tray is null || !_settings.NotifyOnAgentComplete)
-            {
-                return;
-            }
-
-            if (IsVisible && ForegroundWindow.IsCurrent(this))
-            {
-                return;
-            }
-
-            _tray.ShowBalloonTip(
-                "任务完成",
-                $"「{e.Title}」已完成回复",
-                () => _ = FocusSessionAsync(e.SessionId));
-        });
+        Dispatcher.BeginInvoke(() => NotifyTurnFinished(e.SessionId, e.Title));
     }
 
     /// <summary>Native settings dialog, reachable even when the DSH page is down.</summary>

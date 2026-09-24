@@ -130,7 +130,7 @@ public sealed class RecentWorkspaces
         }
 
         Directory.CreateDirectory(directory);
-        string temporaryPath = _filePath + ".tmp";
+        string temporaryPath = _filePath + ".tmp" + Guid.NewGuid().ToString("N");
         string json = JsonSerializer.Serialize(new RecentWorkspaceFile
         {
             Entries = _entries
