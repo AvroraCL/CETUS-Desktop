@@ -332,15 +332,6 @@ internal sealed class UpdateCoordinator
     /// <summary>Pushes the current update state into the Harness page.</summary>
     public void PostUpdateState() => _browser?.PostUpdateState();
 
-    /// <summary>Pushes the current update state only when a notice can change.</summary>
-    private void PostUpdateStateIfKnown()
-    {
-        if (_available is not null)
-        {
-            PostUpdateState();
-        }
-    }
-
     private static string ToSettingValue(UpdateFeedSource source) => source switch
     {
         UpdateFeedSource.GitCode => "gitcode",
@@ -401,8 +392,6 @@ internal sealed class UpdateCoordinator
         }
     }
 
-    private void ReportTaskbarProgress(double value) => SetTaskbarProgress(value);
-
     private void OpenAnnouncementPage()
     {
         if (_openAnnouncement is { } open)
@@ -442,7 +431,7 @@ internal sealed class UpdateCoordinator
         var progress = new Progress<double>(value =>
         {
             prompt.ReportProgress(value);
-            ReportTaskbarProgress(value);
+            SetTaskbarProgress(value);
         });
         try
         {

@@ -123,7 +123,6 @@ public sealed class BridgeScriptTests
         string[] candidates =
         [
             Path.Combine(AppContext.BaseDirectory, "runtime", "node.exe"),
-            @"D:\Cetus\runtime\node.exe",
             @"C:\Program Files\nodejs\node.exe",
         ];
         foreach (string candidate in candidates)

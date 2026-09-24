@@ -112,20 +112,10 @@ public partial class MainWindow
         }
         catch
         {
-            OpenInSystemBrowser(url);
+            Platform.SystemBrowser.Open(url);
         }
     }
-    private static void OpenInSystemBrowser(string url)
-    {
-        try
-        {
-            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-        }
-        catch
-        {
-            // Shell execution failure must not crash the desktop app.
-        }
-    }
+
     private async Task CheckForUpdatesFromSettingsAsync()
     {
         if (_isExiting)

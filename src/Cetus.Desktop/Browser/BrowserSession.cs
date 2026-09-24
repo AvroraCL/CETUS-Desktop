@@ -203,7 +203,7 @@ internal sealed class BrowserSession : IBrowserSession, IUpdateNoticeSink, IDisp
         }
 
         e.Cancel = true;
-        OpenInSystemBrowser(e.Uri);
+        Cetus.Platform.SystemBrowser.Open(e.Uri);
     }
 
     /// <summary>
@@ -377,7 +377,7 @@ internal sealed class BrowserSession : IBrowserSession, IUpdateNoticeSink, IDisp
         CoreWebView2NewWindowRequestedEventArgs e)
     {
         e.Handled = true;
-        OpenInSystemBrowser(e.Uri);
+        Cetus.Platform.SystemBrowser.Open(e.Uri);
     }
 
     private void OnNavigationCompleted(
@@ -521,24 +521,6 @@ internal sealed class BrowserSession : IBrowserSession, IUpdateNoticeSink, IDisp
     private bool IsTrusted(string uriText)
     {
         return _navigationPolicy?.Allows(uriText) == true;
-    }
-
-    private static void OpenInSystemBrowser(string uriText)
-    {
-        if (!Uri.TryCreate(uriText, UriKind.Absolute, out Uri? uri)
-            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
-        {
-            return;
-        }
-
-        try
-        {
-            Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
-        }
-        catch
-        {
-            // Shell execution failure must not crash the desktop app.
-        }
     }
 
     public void Dispose()
