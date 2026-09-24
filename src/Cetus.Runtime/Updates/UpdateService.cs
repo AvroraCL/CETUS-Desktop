@@ -56,10 +56,9 @@ public sealed class UpdateService : IDisposable
         "https://gitcode.com/api/v5/repos/HelenaSG/CETUS-Desktop/releases";
 
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(10);
-    private static readonly TimeSpan DownloadTimeout = TimeSpan.FromMinutes(30);
 
     private readonly HttpClient _client;
-    private readonly HttpClient _downloadClient;
+    private readonly ReleaseDownloader _downloader;
     private readonly string _githubFeed;
     private readonly string _gitCodeReleases;
 
@@ -78,12 +77,7 @@ public sealed class UpdateService : IDisposable
         _client.Timeout = requestTimeout;
         _client.DefaultRequestHeaders.UserAgent.ParseAdd("cetus-desktop-update-check");
         _client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
-        // A separate long-timeout client for release payloads: HttpClient's
-        // timeout covers the whole body read even with ResponseHeadersRead,
-        // so the 10s check timeout would abort every large download.
-        _downloadClient = handler is null ? new HttpClient() : new HttpClient(handler);
-        _downloadClient.Timeout = DownloadTimeout;
-        _downloadClient.DefaultRequestHeaders.UserAgent.ParseAdd("cetus-desktop-update-check");
+        _downloader = new ReleaseDownloader(handler);
     }
 
     /// <summary>The configured GitHub feed; CETUS_UPDATE_FEED overrides it.</summary>
@@ -389,28 +383,10 @@ public sealed class UpdateService : IDisposable
         ReleaseAsset? installer = selectAsset(release)
             ?? throw new InvalidOperationException("发布中没有找到安装器文件。");
 
-        // Bail out early with an actionable message instead of dying mid-
-        // download when the volume cannot hold the payload (~2x headroom
-        // for the copy that follows).
-        if (installer.Size > 0 && !HasEnoughFreeSpace(CetusPaths.UpdateCacheDirectory, installer.Size * 2))
-        {
-            throw new InvalidOperationException(
-                $"磁盘空间不足：更新需要约 {installer.Size / 1024 / 1024 * 2} MB 可用空间。");
-        }
+        // Disk-space headroom is enforced by the downloader and produces the
+        // actionable 磁盘空间不足 message before any bytes move.
 
-        Directory.CreateDirectory(CetusPaths.UpdateCacheDirectory);
-        string targetPath = Path.Combine(CetusPaths.UpdateCacheDirectory, installer.Name);
-        try
-        {
-            await DownloadToFileAsync(installer, targetPath, progress, cancellationToken);
-            await VerifyDownloadAsync(release, installer.Name, targetPath, cancellationToken);
-            return targetPath;
-        }
-        catch
-        {
-            TryDelete(targetPath);
-            throw;
-        }
+        return await _downloader.DownloadAsync(release, installer, progress, cancellationToken);
     }
 
     private async Task<ReleaseInfo?> GetGitHubLatestAsync(CancellationToken cancellationToken)
@@ -603,58 +579,6 @@ public sealed class UpdateService : IDisposable
         return new ReleaseInfo(tagElement.GetString()!, version, notes, assets);
     }
 
-    private async Task DownloadToFileAsync(
-        ReleaseAsset asset,
-        string targetPath,
-        IProgress<double>? progress,
-        CancellationToken cancellationToken)
-    {
-        using HttpResponseMessage response = await _downloadClient.GetAsync(
-            asset.DownloadUrl,
-            HttpCompletionOption.ResponseHeadersRead,
-            cancellationToken);
-        response.EnsureSuccessStatusCode();
-        long? totalLength = response.Content.Headers.ContentLength;
-
-        await using Stream source = await response.Content.ReadAsStreamAsync(cancellationToken);
-        await using FileStream target = File.Create(targetPath);
-        byte[] buffer = new byte[81920];
-        long totalRead = 0;
-        int read;
-        while ((read = await source.ReadAsync(buffer, cancellationToken)) > 0)
-        {
-            await target.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
-            totalRead += read;
-            if (totalLength is > 0)
-            {
-                progress?.Report(Math.Min(1.0, (double)totalRead / totalLength.Value));
-            }
-        }
-
-        progress?.Report(1.0);
-    }
-
-    private async Task VerifyDownloadAsync(
-        ReleaseInfo release,
-        string installerName,
-        string targetPath,
-        CancellationToken cancellationToken)
-    {
-        ReleaseAsset? checksum = UpdateFeed.SelectChecksumAsset(release);
-        if (checksum is null)
-        {
-            throw new InvalidOperationException(
-                $"发布 {release.TagName} 缺少 SHA256SUMS 校验文件，拒绝安装未经验证的更新包。");
-        }
-
-        string sums = await _downloadClient.GetStringAsync(checksum.DownloadUrl, cancellationToken);
-        string actualHash = UpdateFeed.ComputeFileHash(targetPath);
-        if (!UpdateFeed.VerifyChecksum(sums, installerName, actualHash, out string? error))
-        {
-            throw new InvalidOperationException(error);
-        }
-    }
-
     private static string? ReadEnvironmentFeed()
     {
         string? value = Environment.GetEnvironmentVariable("CETUS_UPDATE_FEED");
@@ -680,35 +604,9 @@ public sealed class UpdateService : IDisposable
 
     private sealed record FeedResult(UpdateFeedSource Source, ReleaseInfo? Release, string? Error);
 
-    private static bool HasEnoughFreeSpace(string directory, long requiredBytes)
-    {
-        try
-        {
-            string? root = Path.GetPathRoot(Path.GetFullPath(directory));
-            return root is null
-                || new DriveInfo(root).AvailableFreeSpace >= requiredBytes;
-        }
-        catch (Exception error) when (error is ArgumentException or System.IO.IOException)
-        {
-            return true; // cannot tell — assume yes and let the write fail
-        }
-    }
-
-    private static void TryDelete(string path)
-    {
-        try
-        {
-            File.Delete(path);
-        }
-        catch (IOException)
-        {
-            // A failed download must not mask its own error.
-        }
-    }
-
     public void Dispose()
     {
         _client.Dispose();
-        _downloadClient.Dispose();
+        _downloader.Dispose();
     }
 }
