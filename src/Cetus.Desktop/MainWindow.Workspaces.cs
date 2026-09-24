@@ -14,7 +14,7 @@ namespace Cetus;
 /// </summary>
 public partial class MainWindow
 {
-    private string? _pendingWorkspacePath;
+    private readonly Queue<string> _pendingWorkspacePaths = new();
     private bool _isOpeningWorkspace;
     /// <summary>
     /// Entry point for workspace activations (launch args, IPC forwarding,
@@ -36,7 +36,9 @@ public partial class MainWindow
 
         if (_runtime.State.Phase != DesktopRuntimePhase.Ready || !_browserSession.IsInitialized || _isOpeningWorkspace)
         {
-            _pendingWorkspacePath = path;
+            // Queue instead of overwriting: every forwarded workspace is opened
+            // in order once the runtime is ready (or the current open finishes).
+            _pendingWorkspacePaths.Enqueue(path);
             return;
         }
 
@@ -45,9 +47,7 @@ public partial class MainWindow
 
     private string? ConsumePendingWorkspace()
     {
-        string? path = _pendingWorkspacePath;
-        _pendingWorkspacePath = null;
-        return path;
+        return _pendingWorkspacePaths.Count > 0 ? _pendingWorkspacePaths.Dequeue() : null;
     }
 
     private async Task OpenWorkspaceAsync(string path)
@@ -55,13 +55,16 @@ public partial class MainWindow
         string normalized = RecentWorkspaces.NormalizePath(path);
         if (!Directory.Exists(normalized))
         {
-            _tray?.ShowBalloonTip("CETUS · 工作区", $"目录不存在：{normalized}");
+            // Summon the window too: a stale Jump List / shortcut forwarded by
+            // a second launch must not leave the user staring at nothing.
+            ShowWindow();
+            _tray?.ShowBalloonTip("CETUS · 工作区", $"目录不存在：{normalized}", ShowWindow);
             return;
         }
 
         if (_isOpeningWorkspace)
         {
-            _pendingWorkspacePath = normalized;
+            _pendingWorkspacePaths.Enqueue(normalized);
             return;
         }
 
