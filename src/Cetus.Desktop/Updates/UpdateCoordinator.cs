@@ -29,6 +29,8 @@ internal sealed class UpdateCoordinator
     private readonly Action<string>? _launchInstallerOverride;
     private readonly Action<UpdateDownloadResult, ReleaseInfo>? _applyPortableOverride;
     private string _releasesPageUrl = UpdateCheckResult.Failed("x").ReleasesPageUrl;
+    private DateTimeOffset? _lastCheckAt;
+    private static readonly TimeSpan RecheckAfterDismiss = TimeSpan.FromHours(1);
     private int _updateTaskRunning;
     private AvailableUpdate? _available;
     private Version? _dismissedVersion;
@@ -103,6 +105,7 @@ internal sealed class UpdateCoordinator
 
         try
         {
+            _lastCheckAt = DateTimeOffset.UtcNow;
             UpdateCheckResult result = await _service.CheckAsync(
                 _currentVersion,
                 _settings.UpdateSource,
@@ -193,12 +196,25 @@ internal sealed class UpdateCoordinator
     /// <summary>True while a newer release is known and installable on demand.</summary>
     public bool HasAvailableUpdate => _available is not null;
 
-    /// <summary>Renders the in-page notice again after the user dismissed it.</summary>
+    /// <summary>
+    /// Hides the in-page notice after the user dismissed it. A network
+    /// re-check only makes sense when the dismissed version may no longer be
+    /// the newest one; when the same release is still current, re-checking
+    /// would just re-announce the identical update the user just dismissed.
+    /// </summary>
     public void DismissNotice()
     {
         _dismissedVersion = _available?.Release.Version;
         PostUpdateState();
-        _ = CheckForUpdatesAsync(interactive: false);
+
+        // Re-check only when enough time has passed for a newer release to
+        // plausibly exist (otherwise dismissal and re-announcement ping-pong).
+        if (_available is null
+            || _lastCheckAt is null
+            || DateTimeOffset.UtcNow - _lastCheckAt.Value >= RecheckAfterDismiss)
+        {
+            _ = CheckForUpdatesAsync(interactive: false);
+        }
     }
 
     /// <summary>Opens the release page for the available (or latest known) release.</summary>

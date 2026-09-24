@@ -389,6 +389,15 @@ public sealed class UpdateService : IDisposable
         ReleaseAsset? installer = selectAsset(release)
             ?? throw new InvalidOperationException("发布中没有找到安装器文件。");
 
+        // Bail out early with an actionable message instead of dying mid-
+        // download when the volume cannot hold the payload (~2x headroom
+        // for the copy that follows).
+        if (installer.Size > 0 && !HasEnoughFreeSpace(CetusPaths.UpdateCacheDirectory, installer.Size * 2))
+        {
+            throw new InvalidOperationException(
+                $"磁盘空间不足：更新需要约 {installer.Size / 1024 / 1024 * 2} MB 可用空间。");
+        }
+
         Directory.CreateDirectory(CetusPaths.UpdateCacheDirectory);
         string targetPath = Path.Combine(CetusPaths.UpdateCacheDirectory, installer.Name);
         try
@@ -670,6 +679,20 @@ public sealed class UpdateService : IDisposable
         source == UpdateFeedSource.GitCode ? "GitCode" : "GitHub";
 
     private sealed record FeedResult(UpdateFeedSource Source, ReleaseInfo? Release, string? Error);
+
+    private static bool HasEnoughFreeSpace(string directory, long requiredBytes)
+    {
+        try
+        {
+            string? root = Path.GetPathRoot(Path.GetFullPath(directory));
+            return root is null
+                || new DriveInfo(root).AvailableFreeSpace >= requiredBytes;
+        }
+        catch (Exception error) when (error is ArgumentException or System.IO.IOException)
+        {
+            return true; // cannot tell — assume yes and let the write fail
+        }
+    }
 
     private static void TryDelete(string path)
     {
