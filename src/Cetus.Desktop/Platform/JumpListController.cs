@@ -28,7 +28,7 @@ internal static class JumpListController
                 Title = entry.Title,
                 Description = entry.Path,
                 ApplicationPath = executablePath,
-                Arguments = entry.Path,
+                Arguments = $"\"{entry.Path}\"",
                 WorkingDirectory = entry.Path,
                 IconResourcePath = executablePath,
             });

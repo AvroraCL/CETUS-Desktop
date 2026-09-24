@@ -80,9 +80,17 @@ public partial class MainWindow
             return;
         }
 
-        _settings.SetWindowPlacement(
-            $"{Math.Round(restore.Left)},{Math.Round(restore.Top)},{Math.Round(restore.Width)},{Math.Round(restore.Height)}",
-            maximized);
+        try
+        {
+            _settings.SetWindowPlacement(
+                $"{Math.Round(restore.Left)},{Math.Round(restore.Top)},{Math.Round(restore.Width)},{Math.Round(restore.Height)}",
+                maximized);
+        }
+        catch (Exception error) when (error is System.IO.IOException or System.UnauthorizedAccessException)
+        {
+            // Window placement is a nicety; a full disk must not crash exit.
+            Cetus.Configuration.RuntimeLog.Append("window placement save failed: " + error.Message);
+        }
     }
 
     private static (double Left, double Top, double Width, double Height)? ParseWindowBounds(string? bounds)

@@ -142,9 +142,9 @@ public sealed class RecentWorkspaces
                 })
                 .ToList(),
         }, CachedIndented);
-        File.WriteAllText(temporaryPath, json);
         try
         {
+            File.WriteAllText(temporaryPath, json);
             File.Move(temporaryPath, _filePath, overwrite: true);
         }
         catch

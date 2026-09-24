@@ -72,8 +72,18 @@ public partial class MainWindow
         try
         {
             ShowWindow();
-            _recentWorkspaces.Add(normalized);
-            RefreshWorkspaceEntries();
+            try
+            {
+                _recentWorkspaces.Add(normalized);
+                RefreshWorkspaceEntries();
+            }
+            catch (Exception persistError) when (persistError is IOException or UnauthorizedAccessException)
+            {
+                // The session still opens; a failing recent-list persist
+                // (disk full, AV lock) must not abort it silently.
+                Configuration.RuntimeLog.Append(
+                    "recent-workspaces persist failed: " + persistError.Message);
+            }
 
             Uri endpoint = _runtime.Endpoint;
             _dshSessionClient ??= new DshSessionClient(_settings.DshHomeOverride);

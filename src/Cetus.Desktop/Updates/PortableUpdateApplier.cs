@@ -110,7 +110,7 @@ internal static class PortableUpdateApplier
 
             function Restore-Backup {
                 if (-not (Test-Path -LiteralPath $backup)) { return }
-                Get-ChildItem -LiteralPath $backup -Force | Copy-Item -Destination $target -Recurse -Force
+                Get-ChildItem -LiteralPath $backup -Force | Copy-Item -Destination ($target -replace '\[', '`[' -replace '\]', '`]') -Recurse -Force
                 Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction SilentlyContinue
             }
 
@@ -156,7 +156,7 @@ internal static class PortableUpdateApplier
                 }
 
                 $copyStarted = $true
-                Get-ChildItem -LiteralPath $staging -Force | Copy-Item -Destination $target -Recurse -Force
+                Get-ChildItem -LiteralPath $staging -Force | Copy-Item -Destination ($target -replace '\[', '`[' -replace '\]', '`]') -Recurse -Force
                 $exe = Join-Path $target 'Cetus.exe'
                 if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'New package did not install Cetus.exe.' }
                 Write-UpdateLog 'Copy completed; launching the new version.'

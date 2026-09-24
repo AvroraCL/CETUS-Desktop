@@ -276,9 +276,9 @@ public sealed class CetusSettings
             WindowMaximized = _windowMaximized,
         },
             CachedIndented);
-        File.WriteAllText(temporaryPath, json);
         try
         {
+            File.WriteAllText(temporaryPath, json);
             File.Move(temporaryPath, _settingsPath, overwrite: true);
         }
         catch

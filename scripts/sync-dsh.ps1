@@ -96,8 +96,11 @@ if (-not $NoBootstrap) {
 if ($Push) {
     git add eng/runtime.json eng/dsh-runtime/package.json eng/dsh-runtime/package-lock.json
     git commit -m "chore: sync DSH to $target"
+    if ($LASTEXITCODE -ne 0) { throw "git commit failed with exit code $LASTEXITCODE." }
     git push origin main
+    if ($LASTEXITCODE -ne 0) { throw "git push origin failed with exit code $LASTEXITCODE." }
     git push gitcode main
+    if ($LASTEXITCODE -ne 0) { throw "git push gitcode failed with exit code $LASTEXITCODE." }
     Write-Host "pushed DSH $target sync commit." -ForegroundColor Green
 }
 
